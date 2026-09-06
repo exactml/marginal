@@ -1,4 +1,4 @@
-"""Typed schema for `.marginal/config.yaml` (REQUIREMENTS.md §6, §28).
+"""Typed schema for `.marginal/config.yaml`.
 
 These models define structure and defaults only. They intentionally do not
 validate the *semantics* of a setting (e.g. whether a `models.*.provider` is
@@ -16,7 +16,7 @@ SUPPORTED_CONFIG_VERSION = 1
 
 
 class ReviewTone(str, Enum):
-    """Review communication style (REQUIREMENTS.md §13)."""
+    """Review communication style."""
 
     CONCISE = "concise"
     DETAILED = "detailed"
@@ -41,8 +41,8 @@ class ContextConfig(BaseModel):
 
     git_history: bool = True
     code_graph: bool = True
-    # Secure default: cross-repository access is permission-controlled (§10)
-    # and must be turned on explicitly.
+    # Secure default: cross-repository access is permission-controlled and
+    # must be turned on explicitly.
     cross_repository: bool = False
 
 
@@ -51,12 +51,12 @@ class OwnershipConfig(BaseModel):
 
     codeowners: bool = True
     # Secure default: marginal must not notify anyone unless explicitly
-    # configured to (§20).
+    # configured to.
     notify_responsible: bool = False
 
 
 class ModelSpec(BaseModel):
-    """A single model role assignment. Parsed structurally only — see §4/§5."""
+    """A single model role assignment, parsed structurally only."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -75,7 +75,7 @@ class PermissionsRead(BaseModel):
 class PermissionsWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # The one write default that's on — it's the core feature (§28).
+    # The one write default that's on — it's the core feature.
     comments: bool = True
     labels: bool = False
     approve: bool = False
@@ -84,7 +84,7 @@ class PermissionsWrite(BaseModel):
 
 
 class PermissionsConfig(BaseModel):
-    """Agent permissions (§28). Defaults follow least privilege."""
+    """Agent permissions. Defaults follow least privilege."""
 
     model_config = ConfigDict(extra="forbid")
 

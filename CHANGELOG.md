@@ -8,12 +8,11 @@
 
 - Repository-local config schema: `marginal.config.load_config` parses and
   validates `.marginal/config.yaml` (review behavior, context toggles, model
-  selection, ownership behavior, policy paths, and agent permissions from
-  REQUIREMENTS.md §6/§28) into a typed `MarginalConfig`, defaulting every
-  field to the least-privilege example in the spec and raising
-  `ConfigParseError` on malformed YAML or `ConfigValidationError` on invalid
-  values (both `ConfigError`), each with a clear message. Adds `pydantic`
-  and `pyyaml` as runtime dependencies
+  selection, ownership behavior, policy paths, and agent permissions) into a
+  typed `MarginalConfig`, defaulting every field to a least-privilege
+  baseline and raising `ConfigParseError` on malformed YAML or
+  `ConfigValidationError` on invalid values (both `ConfigError`), each with
+  a clear message. Adds `pydantic` and `pyyaml` as runtime dependencies
 
   ([#3](https://github.com/exactml/marginal/issues/3), PR TBD)
 
