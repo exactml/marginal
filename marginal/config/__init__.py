@@ -1,6 +1,6 @@
 """Repository-local configuration loading."""
 
-from marginal.config.errors import ConfigError
+from marginal.config.errors import ConfigError, ConfigParseError, ConfigValidationError
 from marginal.config.loader import load_config
 from marginal.config.schema import (
     ContextConfig,
@@ -16,6 +16,8 @@ from marginal.config.schema import (
 
 __all__ = [
     "ConfigError",
+    "ConfigParseError",
+    "ConfigValidationError",
     "ContextConfig",
     "MarginalConfig",
     "ModelSpec",

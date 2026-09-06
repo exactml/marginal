@@ -2,7 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from marginal.config import ConfigError, MarginalConfig, ReviewTone, load_config
+from marginal.config import (
+    ConfigParseError,
+    ConfigValidationError,
+    MarginalConfig,
+    ReviewTone,
+    load_config,
+)
 
 FULL_CONFIG = """
 version: 1
@@ -113,7 +119,7 @@ def test_partial_config_merges_with_defaults(tmp_path):
 def test_unsupported_version_is_rejected(tmp_path):
     write_config(tmp_path, "version: 2\n")
 
-    with pytest.raises(ConfigError, match="unsupported config version"):
+    with pytest.raises(ConfigValidationError, match="unsupported config version"):
         load_config(tmp_path)
 
 
@@ -121,7 +127,7 @@ def test_unsupported_version_is_rejected(tmp_path):
 def test_confidence_threshold_out_of_range_is_rejected(tmp_path, threshold):
     write_config(tmp_path, f"review:\n  confidence_threshold: {threshold}\n")
 
-    with pytest.raises(ConfigError):
+    with pytest.raises(ConfigValidationError):
         load_config(tmp_path)
 
 
@@ -129,49 +135,49 @@ def test_confidence_threshold_out_of_range_is_rejected(tmp_path, threshold):
 def test_non_positive_max_comments_is_rejected(tmp_path, max_comments):
     write_config(tmp_path, f"review:\n  max_comments: {max_comments}\n")
 
-    with pytest.raises(ConfigError):
+    with pytest.raises(ConfigValidationError):
         load_config(tmp_path)
 
 
 def test_invalid_tone_is_rejected(tmp_path):
     write_config(tmp_path, "review:\n  tone: sarcastic\n")
 
-    with pytest.raises(ConfigError):
+    with pytest.raises(ConfigValidationError):
         load_config(tmp_path)
 
 
 def test_unknown_top_level_key_is_rejected(tmp_path):
     write_config(tmp_path, "reviw:\n  enabled: false\n")
 
-    with pytest.raises(ConfigError):
+    with pytest.raises(ConfigValidationError):
         load_config(tmp_path)
 
 
 def test_unknown_nested_key_is_rejected(tmp_path):
     write_config(tmp_path, "review:\n  enable: false\n")
 
-    with pytest.raises(ConfigError):
+    with pytest.raises(ConfigValidationError):
         load_config(tmp_path)
 
 
 def test_incomplete_model_spec_is_rejected(tmp_path):
     write_config(tmp_path, "models:\n  planner:\n    provider: anthropic\n")
 
-    with pytest.raises(ConfigError):
+    with pytest.raises(ConfigValidationError):
         load_config(tmp_path)
 
 
 def test_malformed_yaml_is_rejected(tmp_path):
     write_config(tmp_path, "review:\n  enabled: [true\n")
 
-    with pytest.raises(ConfigError, match="invalid YAML"):
+    with pytest.raises(ConfigParseError, match="invalid YAML"):
         load_config(tmp_path)
 
 
 def test_non_mapping_top_level_is_rejected(tmp_path):
     write_config(tmp_path, "- just\n- a\n- list\n")
 
-    with pytest.raises(ConfigError, match="expected a YAML mapping"):
+    with pytest.raises(ConfigParseError, match="expected a YAML mapping"):
         load_config(tmp_path)
 
 
