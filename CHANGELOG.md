@@ -14,7 +14,8 @@
   `ConfigValidationError` on invalid values (both `ConfigError`), each with
   a clear message. Adds `pydantic` and `pyyaml` as runtime dependencies
 
-  ([#3](https://github.com/exactml/marginal/issues/3), PR TBD)
+  ([ISSUE-3](https://github.com/exactml/marginal/issues/3),
+  [PR-4](https://github.com/exactml/marginal/pull/4))
 
 ### Improvements
 
