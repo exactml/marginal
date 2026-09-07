@@ -22,7 +22,8 @@
   `graph`, `policy`, `agent`, `review`, `github`, `cli`), `ruff` + `pytest`
   tooling, CI workflow, `CONTRIBUTING.md`, and the language/runtime ADR
 
-  ([#1](https://github.com/exactml/marginal/issues/1), PR TBD)
+  ([ISSUE-1](https://github.com/exactml/marginal/issues/1),
+  [PR-2](https://github.com/exactml/marginal/pull/2))
 
 ### Fixes
 
