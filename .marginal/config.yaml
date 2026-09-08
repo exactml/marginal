@@ -1,0 +1,30 @@
+version: 1
+review:
+  enabled: true
+  inline_comments: true
+  confidence_threshold: 0.85
+  max_comments: 8
+  tone: concise
+context:
+  git_history: true
+  code_graph: true
+  cross_repository: false
+ownership:
+  codeowners: true
+  notify_responsible: false
+models:
+  reviewer:
+    provider: anthropic
+    model: claude-sonnet-5
+policies: []
+permissions:
+  read:
+    repository: true
+    issues: true
+    pull_requests: true
+  write:
+    comments: true
+    labels: false
+    approve: false
+    push: false
+    merge: false
