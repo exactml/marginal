@@ -6,6 +6,20 @@
 
 ### New Features
 
+- GitHub API client: `marginal.github.GitHubClient` wraps the GitHub REST API
+  (pull request reads, review writes) for one `"owner/name"` repo, gating
+  every method on the caller's `PermissionsConfig` before it touches the
+  network — a denied read or write raises `PermissionDeniedError` with no
+  request made, and `event="APPROVE"` on `create_review` additionally
+  requires `permissions.write.approve`. Reads its token only from
+  `GITHUB_TOKEN`, never from `.marginal/config.yaml`, and surfaces non-2xx
+  responses as typed errors (`GitHubAuthenticationError`,
+  `GitHubNotFoundError`, `GitHubAPIError`) instead of raw HTTP exceptions.
+  Adds `requests` as a core runtime dependency
+
+  ([ISSUE-9](https://github.com/exactml/marginal/issues/9),
+  [PR-10](https://github.com/exactml/marginal/pull/10))
+
 - `marginal init` CLI command: scaffolds `.marginal/config.yaml` (serialized
   from a default `MarginalConfig`, so it can never drift from the schema),
   an empty `.marginal/policies/`, and a starter
