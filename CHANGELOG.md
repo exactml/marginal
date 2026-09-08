@@ -21,6 +21,16 @@
 
 ### Improvements
 
+- Configures a real `models.reviewer` (anthropic, `claude-sonnet-5`) in this
+  repo's own `.marginal/config.yaml`, and passes
+  `anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}` through to
+  `marginal-action` in `.github/workflows/marginal.yml` (requires
+  `marginal-action` v1.1.0's provider-key forwarding). Still needs the
+  `ANTHROPIC_API_KEY` repository secret added manually before this repo's
+  own PRs get a real generated finding instead of a `MissingCredentialsError`
+
+  ([ISSUE-23](https://github.com/exactml/marginal/issues/23))
+
 ### Fixes
 
 - `marginal init`'s scaffolded `.github/workflows/marginal.yml`: dropped the
