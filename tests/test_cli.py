@@ -1,5 +1,15 @@
+from unittest.mock import patch
+
+import pytest
+
 from marginal.cli import main
 from marginal.config import MarginalConfig, load_config
+from marginal.github.errors import (
+    GitHubAPIError,
+    GitHubAuthenticationError,
+    GitHubNotFoundError,
+    PermissionDeniedError,
+)
 
 
 def test_init_creates_all_artifacts(tmp_path, capsys):
@@ -68,3 +78,64 @@ def test_generated_config_round_trips_through_load_config(tmp_path):
     main(["init", str(tmp_path)])
 
     assert load_config(tmp_path) == MarginalConfig()
+
+
+# -- review ------------------------------------------------------------
+
+
+def test_review_prints_pr_summary_and_posts_nothing(tmp_path, capsys, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    with patch("marginal.cli.review.GitHubClient") as mock_client_cls:
+        client = mock_client_cls.return_value
+        client.get_pull_request.return_value = {
+            "title": "Fix flaky retry logic",
+            "state": "open",
+            "base": {"sha": "abc123"},
+            "head": {"sha": "def456"},
+        }
+        client.get_pull_request_files.return_value = [
+            {"filename": "marginal/retry.py"},
+            {"filename": "tests/test_retry.py"},
+        ]
+
+        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    args, _ = mock_client_cls.call_args
+    assert args[0] == "acme/widgets"
+
+    out = capsys.readouterr().out
+    assert "PR #42: Fix flaky retry logic" in out
+    assert "State: open" in out
+    assert "Base: abc123  Head: def456" in out
+    assert "Files changed: 2" in out
+    assert "marginal/retry.py" in out
+    assert "tests/test_retry.py" in out
+    client.create_review.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        PermissionDeniedError("this operation requires permissions.read.pull_requests"),
+        GitHubAuthenticationError(
+            "the GitHub client requires the GITHUB_TOKEN environment variable to be set"
+        ),
+        GitHubAPIError(500, "Internal Server Error"),
+        GitHubNotFoundError(404, "Not Found"),
+    ],
+    ids=["permission-denied", "auth-error", "api-error", "not-found"],
+)
+def test_review_prints_clean_message_on_error(tmp_path, capsys, monkeypatch, error):
+    monkeypatch.chdir(tmp_path)
+
+    with patch("marginal.cli.review.GitHubClient") as mock_client_cls:
+        mock_client_cls.return_value.get_pull_request.side_effect = error
+
+        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "marginal review:" in err
+    assert "Traceback" not in err
