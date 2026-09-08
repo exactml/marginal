@@ -6,6 +6,18 @@
 
 ### New Features
 
+### Improvements
+
+### Fixes
+
+### Warnings
+
+## marginal v0.1.0, 2026-09-08
+
+### Breaking Changes
+
+### New Features
+
 - `marginal review --comment`: posts the same PR summary `marginal review`
   already prints locally as a single PR comment, via the existing
   `GitHubClient.create_review(..., event="COMMENT")` — no new
