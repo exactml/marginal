@@ -12,9 +12,6 @@ CONFIG_FILE = Path(".marginal") / "config.yaml"
 POLICIES_DIR = Path(".marginal") / "policies"
 WORKFLOW_FILE = Path(".github") / "workflows" / "marginal.yml"
 
-# The GitHub Action referenced below (exactml/marginal-action) has not
-# shipped yet, so this is a forward-looking template: it won't resolve until
-# that action is published.
 WORKFLOW_TEMPLATE = """\
 name: marginal
 
@@ -24,8 +21,9 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
-      - uses: actions/checkout@v4
       - uses: exactml/marginal-action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
