@@ -27,6 +27,9 @@ Homepage = "https://github.com/exactml/marginal"
 Repository = "https://github.com/exactml/marginal"
 Issues = "https://github.com/exactml/marginal/issues"
 
+[project.scripts]
+marginal = "marginal.cli:main"
+
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.34"]
 openai = ["openai>=1.40"]
