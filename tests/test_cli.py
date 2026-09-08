@@ -218,11 +218,7 @@ def _write_reviewer_config(tmp_path):
     config_dir = tmp_path / ".marginal"
     config_dir.mkdir()
     (config_dir / "config.yaml").write_text(
-        "version: 1\n"
-        "models:\n"
-        "  reviewer:\n"
-        "    provider: anthropic\n"
-        "    model: claude-3-5-sonnet\n"
+        "version: 1\nmodels:\n  reviewer:\n    provider: anthropic\n    model: claude-3-5-sonnet\n"
     )
 
 

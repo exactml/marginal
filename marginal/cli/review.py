@@ -95,7 +95,5 @@ async def _generate_finding(model_spec: ModelSpec, files: list[dict[str, object]
 
 
 def _build_finding_prompt(files: list[dict[str, object]]) -> str:
-    diff = "\n\n".join(
-        f"--- {file['filename']} ---\n{file.get('patch', '')}" for file in files
-    )
+    diff = "\n\n".join(f"--- {file['filename']} ---\n{file.get('patch', '')}" for file in files)
     return f"{FINDING_PROMPT_INSTRUCTIONS}\n\n{diff}"
