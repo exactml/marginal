@@ -1,7 +1,7 @@
 """Environment-variable credential lookup for providers.
 
-Per `docs/REQUIREMENTS.md` §4 and §34, provider credentials come from the
-environment only and must never be read from `.marginal/config.yaml`.
+Credentials come from the environment only and must never be read from
+`.marginal/config.yaml`.
 """
 
 import os
