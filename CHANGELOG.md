@@ -86,7 +86,8 @@
   importable module and `marginal` console command are unaffected — only
   the `pip install` name changes
 
-  ([PR-16](https://github.com/exactml/marginal/pull/16))
+  ([ISSUE-17](https://github.com/exactml/marginal/issues/17),
+  [PR-16](https://github.com/exactml/marginal/pull/16))
 
 - Project scaffold: `marginal` package layout (`config`, `providers`, `context`,
   `graph`, `policy`, `agent`, `review`, `github`, `cli`), `ruff` + `pytest`
