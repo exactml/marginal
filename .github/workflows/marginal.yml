@@ -12,3 +12,4 @@ jobs:
       - uses: exactml/marginal-action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
