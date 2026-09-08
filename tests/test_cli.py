@@ -139,3 +139,72 @@ def test_review_prints_clean_message_on_error(tmp_path, capsys, monkeypatch, err
     err = capsys.readouterr().err
     assert "marginal review:" in err
     assert "Traceback" not in err
+
+
+def test_review_with_comment_flag_posts_the_printed_summary(tmp_path, capsys, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    with patch("marginal.cli.review.GitHubClient") as mock_client_cls:
+        client = mock_client_cls.return_value
+        client.get_pull_request.return_value = {
+            "title": "Fix flaky retry logic",
+            "state": "open",
+            "base": {"sha": "abc123"},
+            "head": {"sha": "def456"},
+        }
+        client.get_pull_request_files.return_value = [
+            {"filename": "marginal/retry.py"},
+            {"filename": "tests/test_retry.py"},
+        ]
+
+        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+
+    client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT")
+
+
+def test_review_without_comment_flag_posts_nothing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    with patch("marginal.cli.review.GitHubClient") as mock_client_cls:
+        client = mock_client_cls.return_value
+        client.get_pull_request.return_value = {
+            "title": "Fix flaky retry logic",
+            "state": "open",
+            "base": {"sha": "abc123"},
+            "head": {"sha": "def456"},
+        }
+        client.get_pull_request_files.return_value = []
+
+        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    client.create_review.assert_not_called()
+
+
+def test_review_with_comment_flag_maps_permission_denied_to_clean_error(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    with patch("marginal.cli.review.GitHubClient") as mock_client_cls:
+        client = mock_client_cls.return_value
+        client.get_pull_request.return_value = {
+            "title": "Fix flaky retry logic",
+            "state": "open",
+            "base": {"sha": "abc123"},
+            "head": {"sha": "def456"},
+        }
+        client.get_pull_request_files.return_value = []
+        client.create_review.side_effect = PermissionDeniedError(
+            "this operation requires permissions.write.comments"
+        )
+
+        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "marginal review:" in err
+    assert "Traceback" not in err

@@ -6,6 +6,17 @@
 
 ### New Features
 
+- `marginal review --comment`: posts the same PR summary `marginal review`
+  already prints locally as a single PR comment, via the existing
+  `GitHubClient.create_review(..., event="COMMENT")` — no new
+  GitHub-writing code path. Omitting `--comment` leaves behavior unchanged
+  (local-only, nothing posted). A `PermissionDeniedError` raised while
+  posting (`permissions.write.comments` off) surfaces through the same
+  clean one-line/non-zero-exit handling as a fetch-time error
+
+  ([ISSUE-13](https://github.com/exactml/marginal/issues/13),
+  [PR-14](https://github.com/exactml/marginal/pull/14))
+
 - `marginal review` CLI subcommand: fetches a pull request's metadata and
   changed files via `GitHubClient` and prints a plain-text summary — title,
   state, base/head SHA, and the changed file list. Posts nothing back to
