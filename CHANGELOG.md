@@ -6,6 +6,19 @@
 
 ### New Features
 
+- `marginal review` generates a real finding: when `models.reviewer` is
+  configured, it builds a prompt from the PR's changed files (filename +
+  patch) asking for the single most important, actionable issue, calls that
+  model's `.generate()`, and folds the result into the same summary that's
+  already printed and, with `--comment`, posted — no second comment, no new
+  GitHub-writing path. Without `models.reviewer` configured, behavior is
+  unchanged: metadata-only, no model call attempted. A `ProviderError`
+  raised while generating surfaces through the same clean
+  one-line/non-zero-exit handling as a GitHub error. Still no validation,
+  deduplication, or confidence scoring — one raw, unvalidated finding
+
+  ([ISSUE-21](https://github.com/exactml/marginal/issues/21))
+
 ### Improvements
 
 ### Fixes
