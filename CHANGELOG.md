@@ -6,6 +6,18 @@
 
 ### New Features
 
+### Improvements
+
+### Fixes
+
+### Warnings
+
+## marginal v0.1.1, 2026-09-08
+
+### Breaking Changes
+
+### New Features
+
 - `marginal review` generates a real finding: when `models.reviewer` is
   configured, it builds a prompt from the PR's changed files (filename +
   patch) asking for the single most important, actionable issue, calls that
