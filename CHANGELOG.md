@@ -6,6 +6,17 @@
 
 ### New Features
 
+- `marginal init` CLI command: scaffolds `.marginal/config.yaml` (serialized
+  from a default `MarginalConfig`, so it can never drift from the schema),
+  an empty `.marginal/policies/`, and a starter
+  `.github/workflows/marginal.yml`. Each artifact is skipped (not
+  overwritten) if already present, unless `--force` is given. Adds the
+  `marginal` console entry point and an argparse-based subcommand dispatcher
+  in `marginal/cli/` for future subcommands to plug into
+
+  ([ISSUE-7](https://github.com/exactml/marginal/issues/7),
+  [PR-8](https://github.com/exactml/marginal/pull/8))
+
 - Model provider abstraction (BYOK): `marginal.providers.get_provider` resolves
   a config `ModelSpec` to a `ModelProvider` (`generate`, `generate_structured`,
   `stream`), with concrete `anthropic` and `openai` implementations. Each
