@@ -1,0 +1,14 @@
+name: marginal
+
+on:
+  pull_request:
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: exactml/marginal-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
