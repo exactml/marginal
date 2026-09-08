@@ -6,6 +6,17 @@
 
 ### New Features
 
+- `marginal review` CLI subcommand: fetches a pull request's metadata and
+  changed files via `GitHubClient` and prints a plain-text summary — title,
+  state, base/head SHA, and the changed file list. Posts nothing back to
+  GitHub, since there's no analysis yet to report, and catches
+  `PermissionDeniedError`, `GitHubAuthenticationError`, and `GitHubAPIError`
+  at the CLI boundary, printing each as a single line instead of a raw
+  traceback and exiting non-zero
+
+  ([ISSUE-11](https://github.com/exactml/marginal/issues/11),
+  [PR-12](https://github.com/exactml/marginal/pull/12))
+
 - GitHub API client: `marginal.github.GitHubClient` wraps the GitHub REST API
   (pull request reads, review writes) for one `"owner/name"` repo, gating
   every method on the caller's `PermissionsConfig` before it touches the
