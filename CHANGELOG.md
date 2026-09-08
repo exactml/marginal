@@ -80,6 +80,15 @@
 
 ### Improvements
 
+- PyPI packaging: publishes as `marginal-review` on PyPI (the `marginal` name
+  is already taken by an unrelated project) via a trusted-publishing
+  GitHub Actions workflow triggered on a published GitHub Release. The
+  importable module and `marginal` console command are unaffected — only
+  the `pip install` name changes
+
+  ([ISSUE-17](https://github.com/exactml/marginal/issues/17),
+  [PR-16](https://github.com/exactml/marginal/pull/16))
+
 - Project scaffold: `marginal` package layout (`config`, `providers`, `context`,
   `graph`, `policy`, `agent`, `review`, `github`, `cli`), `ruff` + `pytest`
   tooling, CI workflow, `CONTRIBUTING.md`, and the language/runtime ADR
