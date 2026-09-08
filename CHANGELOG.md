@@ -10,6 +10,16 @@
 
 ### Fixes
 
+- `marginal init`'s scaffolded `.github/workflows/marginal.yml`: dropped the
+  stale "action hasn't shipped yet" comment now that `marginal-action` is
+  published, dropped the redundant `actions/checkout@v4` step (the action
+  already checks out the consuming repo internally), and added the
+  `permissions: pull-requests: write` block the action's README documents
+  as required. Also adds this same corrected workflow to `marginal`'s own
+  repo, so it reviews its own PRs via `exactml/marginal-action@v1`
+
+  ([ISSUE-19](https://github.com/exactml/marginal/issues/19))
+
 ### Warnings
 
 ## marginal v0.1.0, 2026-09-08
