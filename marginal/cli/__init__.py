@@ -26,13 +26,16 @@ def main(argv: list[str] | None = None) -> int:
     review_parser.add_argument(
         "--pr", type=int, required=True, dest="pr_number", help="Pull request number"
     )
+    review_parser.add_argument(
+        "--comment", action="store_true", help="Post the summary as a PR comment"
+    )
 
     args = parser.parse_args(argv)
 
     if args.command == "init":
         return run_init(args.path, force=args.force)
     if args.command == "review":
-        return run_review(args.repo, args.pr_number)
+        return run_review(args.repo, args.pr_number, comment=args.comment)
 
     parser.error(f"unknown command: {args.command}")
     return 2
