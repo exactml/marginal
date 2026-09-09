@@ -21,7 +21,8 @@
   identifying and updating a prior review or accepting the (now much
   smaller, collapsed) repetition, and is left open
 
-  ([ISSUE-36](https://github.com/exactml/marginal/issues/36))
+  ([ISSUE-36](https://github.com/exactml/marginal/issues/36),
+  [PR-38](https://github.com/exactml/marginal/pull/38))
 
 ### Fixes
 
