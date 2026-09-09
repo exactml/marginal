@@ -73,8 +73,8 @@ class AnthropicProvider:
                 stream=True,
                 **kwargs,
             )
+            async for event in response:
+                if event.type == "content_block_delta" and event.delta.type == "text_delta":
+                    yield event.delta.text
         except anthropic.APIError as exc:
             raise ProviderAPIError("anthropic", str(exc)) from exc
-        async for event in response:
-            if event.type == "content_block_delta" and event.delta.type == "text_delta":
-                yield event.delta.text

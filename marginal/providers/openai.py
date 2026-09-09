@@ -63,9 +63,9 @@ class OpenAIProvider:
                 stream=True,
                 **kwargs,
             )
+            async for chunk in response:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
         except openai.APIError as exc:
             raise ProviderAPIError("openai", str(exc)) from exc
-        async for chunk in response:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                yield delta
