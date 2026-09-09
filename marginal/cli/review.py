@@ -11,14 +11,16 @@ from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubAPIError, GitHubAuthenticationError, PermissionDeniedError
 from marginal.providers.errors import ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
-from marginal.review import Finding
+from marginal.review import Finding, filter_findings
 
 FINDING_PROMPT_INSTRUCTIONS = (
     "You are reviewing a pull request. Identify the single most important, "
     "actionable issue in the diff below. Report the file it's in, the line "
     "number in the new version of the file if you can identify one (omit it "
-    "if you can't), a severity, and a concise 2-3 sentence explanation of "
-    "the problem."
+    "if you can't), a severity, a confidence between 0.0 and 1.0 for how "
+    "likely this is a real, actionable issue (not a false positive or a "
+    "stylistic nitpick), and a concise 2-3 sentence explanation of the "
+    "problem."
 )
 
 
@@ -31,10 +33,14 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     changed file list.
 
     If `models.reviewer` is configured, also generates one unvalidated,
-    structured `Finding` from that model over the changed files' diffs and
-    appends it to the printed summary (`Finding (severity): file[:line]`
-    followed by the message), same as before this existed. Without
-    `models.reviewer`, the summary stays metadata-only.
+    structured `Finding` from that model over the changed files' diffs, then
+    runs it through `marginal.review.filter_findings`: dropped outright if
+    its self-reported `confidence` is below `config.review.confidence_threshold`,
+    otherwise capped alongside any others at `config.review.max_comments`
+    (highest-confidence first). A finding that survives appends to the
+    printed summary (`Finding (severity): file[:line]` followed by the
+    message). Without `models.reviewer`, or if the finding gets filtered
+    out, the summary stays metadata-only, same as if nothing was generated.
 
     If `comment` is set, also posts a PR review via
     `GitHubClient.create_review(..., event="COMMENT", comments=...)`. A
@@ -72,6 +78,11 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
             return 1
 
     findings = [finding] if finding is not None else []
+    findings = filter_findings(
+        findings,
+        confidence_threshold=config.review.confidence_threshold,
+        max_comments=config.review.max_comments,
+    )
     inline_comments = _build_inline_comments(findings)
 
     base_lines = [

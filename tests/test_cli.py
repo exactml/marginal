@@ -218,7 +218,9 @@ def test_review_with_comment_flag_maps_permission_denied_to_clean_error(
 
 def test_build_inline_comments_skips_findings_without_a_line():
     findings = [
-        Finding(file="a.py", line=None, severity=Severity.LOW, message="no line here"),
+        Finding(
+            file="a.py", line=None, severity=Severity.LOW, confidence=0.9, message="no line here"
+        ),
     ]
 
     assert _build_inline_comments(findings) == []
@@ -226,9 +228,17 @@ def test_build_inline_comments_skips_findings_without_a_line():
 
 def test_build_inline_comments_builds_one_entry_per_anchored_finding():
     findings = [
-        Finding(file="a.py", line=10, severity=Severity.HIGH, message="issue in a"),
-        Finding(file="b.py", line=None, severity=Severity.LOW, message="issue in b, unanchored"),
-        Finding(file="c.py", line=3, severity=Severity.MEDIUM, message="issue in c"),
+        Finding(file="a.py", line=10, severity=Severity.HIGH, confidence=0.9, message="issue in a"),
+        Finding(
+            file="b.py",
+            line=None,
+            severity=Severity.LOW,
+            confidence=0.9,
+            message="issue in b, unanchored",
+        ),
+        Finding(
+            file="c.py", line=3, severity=Severity.MEDIUM, confidence=0.9, message="issue in c"
+        ),
     ]
 
     assert _build_inline_comments(findings) == [
@@ -296,6 +306,7 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(tmp_path, capsy
                 file="marginal/retry.py",
                 line=2,
                 severity=Severity.HIGH,
+                confidence=0.9,
                 message="This introduces a blocking sleep in an async retry loop.",
             )
         )
@@ -361,6 +372,7 @@ def test_review_with_finding_missing_line_falls_back_to_filename(tmp_path, capsy
                 file="marginal/retry.py",
                 line=None,
                 severity=Severity.MEDIUM,
+                confidence=0.9,
                 message="Consider adding a backoff cap.",
             )
         )
@@ -397,6 +409,7 @@ def test_review_with_unanchored_finding_posts_it_in_the_summary_body_not_inline(
                 file="marginal/retry.py",
                 line=None,
                 severity=Severity.MEDIUM,
+                confidence=0.9,
                 message="Consider adding a backoff cap.",
             )
         )
@@ -407,6 +420,46 @@ def test_review_with_unanchored_finding_posts_it_in_the_summary_body_not_inline(
     out = capsys.readouterr().out
     assert "Finding (medium): marginal/retry.py" in out
 
+    client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT", comments=[])
+
+
+def test_review_drops_a_finding_below_the_confidence_threshold(tmp_path, capsys, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+
+    with (
+        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
+        patch("marginal.cli.review.get_provider") as mock_get_provider,
+    ):
+        client = mock_client_cls.return_value
+        client.get_pull_request.return_value = {
+            "title": "Fix flaky retry logic",
+            "state": "open",
+            "base": {"sha": "abc123"},
+            "head": {"sha": "def456"},
+        }
+        client.get_pull_request_files.return_value = [
+            {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
+        ]
+        provider = mock_get_provider.return_value
+        provider.generate_structured = AsyncMock(
+            return_value=Finding(
+                file="marginal/retry.py",
+                line=2,
+                severity=Severity.LOW,
+                confidence=0.5,
+                message="Might be worth a second look, but not sure.",
+            )
+        )
+
+        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "Finding (" not in out
+
+    # Below the default confidence_threshold (0.85) -- filtered out entirely,
+    # same as if no finding had been generated at all.
     client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT", comments=[])
 
 

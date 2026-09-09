@@ -6,6 +6,22 @@
 
 ### New Features
 
+- `marginal review` now wires up `config.review.confidence_threshold` and
+  `config.review.max_comments`, both previously dead config. `Finding` gets
+  a required `confidence: float` field (the model self-reports it via the
+  generation prompt), and every generated finding is run through the new
+  `marginal.review.filter_findings` before it can reach a PR comment: dropped
+  outright below `confidence_threshold`, then capped at `max_comments`
+  (highest-confidence first). If everything gets filtered out, behavior is
+  unchanged from no finding being generated at all -- metadata-only summary,
+  nothing posted beyond that. `marginal review` currently only ever
+  generates one finding per run, so the `max_comments` cap doesn't yet have
+  a real multi-finding case to bite on -- covered directly against
+  `filter_findings` instead
+
+  ([ISSUE-28](https://github.com/exactml/marginal/issues/28),
+  [PR-35](https://github.com/exactml/marginal/pull/35))
+
 ### Improvements
 
 ### Fixes
