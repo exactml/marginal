@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from marginal.cli import main
-from marginal.cli.review import _build_inline_comments
+from marginal.cli.review import _base_lines, _build_inline_comments, _finding_badge
 from marginal.config import MarginalConfig, load_config
 from marginal.github.errors import (
     GitHubAPIError,
@@ -109,12 +109,10 @@ def test_review_prints_pr_summary_and_posts_nothing(tmp_path, capsys, monkeypatc
     assert args[0] == "acme/widgets"
 
     out = capsys.readouterr().out
-    assert "PR #42: Fix flaky retry logic" in out
-    assert "State: open" in out
-    assert "Base: abc123  Head: def456" in out
-    assert "Files changed: 2" in out
-    assert "marginal/retry.py" in out
-    assert "tests/test_retry.py" in out
+    assert "### 🤖 marginal review" in out
+    assert "**PR #42: Fix flaky retry logic** · open · `abc123` → `def456` · 2 files changed" in out
+    assert "- `marginal/retry.py`" in out
+    assert "- `tests/test_retry.py`" in out
     client.create_review.assert_not_called()
 
 
@@ -242,9 +240,59 @@ def test_build_inline_comments_builds_one_entry_per_anchored_finding():
     ]
 
     assert _build_inline_comments(findings) == [
-        {"path": "a.py", "line": 10, "body": "issue in a"},
-        {"path": "c.py", "line": 3, "body": "issue in c"},
+        {"path": "a.py", "line": 10, "body": "🟠 **High** · 90% confidence\n\nissue in a"},
+        {"path": "c.py", "line": 3, "body": "🟡 **Medium** · 90% confidence\n\nissue in c"},
     ]
+
+
+# -- review: badge and body template --------------------------------------
+
+
+def test_finding_badge_includes_severity_and_confidence():
+    finding = Finding(file="a.py", line=5, severity=Severity.CRITICAL, confidence=0.92, message="x")
+
+    assert _finding_badge(finding, with_location=False) == "🔴 **Critical** · 92% confidence"
+
+
+def test_finding_badge_with_location_includes_file_and_line():
+    finding = Finding(file="a.py", line=5, severity=Severity.CRITICAL, confidence=0.9, message="x")
+
+    assert (
+        _finding_badge(finding, with_location=True) == "🔴 **Critical** · 90% confidence — `a.py:5`"
+    )
+
+
+def test_finding_badge_with_location_omits_the_line_when_absent():
+    finding = Finding(file="a.py", line=None, severity=Severity.LOW, confidence=0.9, message="x")
+
+    assert _finding_badge(finding, with_location=True) == "⚪ **Low** · 90% confidence — `a.py`"
+
+
+def _pull_request(title="Fix flaky retry logic", state="open"):
+    return {"title": title, "state": state, "base": {"sha": "abc123"}, "head": {"sha": "def456"}}
+
+
+def test_base_lines_collapses_the_file_list_behind_details():
+    rendered = "\n".join(
+        _base_lines(42, _pull_request(), ["marginal/retry.py", "tests/test_retry.py"])
+    )
+
+    assert "### 🤖 marginal review" in rendered
+    assert (
+        "**PR #42: Fix flaky retry logic** · open · `abc123` → `def456` · 2 files changed"
+        in rendered
+    )
+    assert "<details>" in rendered
+    assert "<summary>Changed files (2)</summary>" in rendered
+    assert "- `marginal/retry.py`" in rendered
+    assert "- `tests/test_retry.py`" in rendered
+
+
+def test_base_lines_skips_the_details_block_with_no_files():
+    rendered = "\n".join(_base_lines(42, _pull_request(), []))
+
+    assert "0 files changed" in rendered
+    assert "<details>" not in rendered
 
 
 # -- review: LLM finding -------------------------------------------------
@@ -279,7 +327,7 @@ def test_review_without_reviewer_model_skips_generation(tmp_path, capsys, monkey
     assert exit_code == 0
     mock_get_provider.assert_not_called()
     out = capsys.readouterr().out
-    assert "Finding (" not in out
+    assert "confidence" not in out
 
 
 def test_review_with_anchored_finding_posts_it_as_inline_comment(tmp_path, capsys, monkeypatch):
@@ -315,7 +363,7 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(tmp_path, capsy
 
     assert exit_code == 0
     out = capsys.readouterr().out
-    assert "Finding (high): marginal/retry.py:2" in out
+    assert "🟠 **High** · 90% confidence — `marginal/retry.py:2`" in out
     assert "This introduces a blocking sleep in an async retry loop." in out
 
     call = provider.generate_structured.call_args
@@ -329,11 +377,16 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(tmp_path, capsy
     # only rides along as an inline `comments` entry.
     expected_body = "\n".join(
         [
-            "PR #42: Fix flaky retry logic",
-            "State: open",
-            "Base: abc123  Head: def456",
-            "Files changed: 1",
-            "  marginal/retry.py",
+            "### 🤖 marginal review",
+            "",
+            "**PR #42: Fix flaky retry logic** · open · `abc123` → `def456` · 1 file changed",
+            "",
+            "<details>",
+            "<summary>Changed files (1)</summary>",
+            "",
+            "- `marginal/retry.py`",
+            "",
+            "</details>",
         ]
     )
     client.create_review.assert_called_once_with(
@@ -344,7 +397,10 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(tmp_path, capsy
             {
                 "path": "marginal/retry.py",
                 "line": 2,
-                "body": "This introduces a blocking sleep in an async retry loop.",
+                "body": (
+                    "🟠 **High** · 90% confidence\n\n"
+                    "This introduces a blocking sleep in an async retry loop."
+                ),
             }
         ],
     )
@@ -381,7 +437,7 @@ def test_review_with_finding_missing_line_falls_back_to_filename(tmp_path, capsy
 
     assert exit_code == 0
     out = capsys.readouterr().out
-    assert "Finding (medium): marginal/retry.py" in out
+    assert "🟡 **Medium** · 90% confidence — `marginal/retry.py`" in out
     assert "marginal/retry.py:None" not in out
 
 
@@ -418,7 +474,7 @@ def test_review_with_unanchored_finding_posts_it_in_the_summary_body_not_inline(
 
     assert exit_code == 0
     out = capsys.readouterr().out
-    assert "Finding (medium): marginal/retry.py" in out
+    assert "🟡 **Medium** · 90% confidence — `marginal/retry.py`" in out
 
     client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT", comments=[])
 
@@ -456,7 +512,7 @@ def test_review_drops_a_finding_below_the_confidence_threshold(tmp_path, capsys,
 
     assert exit_code == 0
     out = capsys.readouterr().out
-    assert "Finding (" not in out
+    assert "confidence" not in out
 
     # Below the default confidence_threshold (0.85) -- filtered out entirely,
     # same as if no finding had been generated at all.

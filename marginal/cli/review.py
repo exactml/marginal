@@ -11,7 +11,14 @@ from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubAPIError, GitHubAuthenticationError, PermissionDeniedError
 from marginal.providers.errors import ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
-from marginal.review import Finding, filter_findings
+from marginal.review import Finding, Severity, filter_findings
+
+SEVERITY_EMOJI = {
+    Severity.CRITICAL: "🔴",
+    Severity.HIGH: "🟠",
+    Severity.MEDIUM: "🟡",
+    Severity.LOW: "⚪",
+}
 
 FINDING_PROMPT_INSTRUCTIONS = (
     "You are reviewing a pull request. Identify the single most important, "
@@ -30,7 +37,8 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     Loads `.marginal/config.yaml` under `path` and builds a `GitHubClient`
     gated by its `permissions`, then fetches the pull request's metadata and
     changed files and prints its title, state, base/head SHA, and the
-    changed file list.
+    changed file list (collapsed behind a Markdown `<details>` block so it
+    doesn't dominate the output on larger PRs).
 
     If `models.reviewer` is configured, also generates one unvalidated,
     structured `Finding` from that model over the changed files' diffs, then
@@ -38,9 +46,10 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     its self-reported `confidence` is below `config.review.confidence_threshold`,
     otherwise capped alongside any others at `config.review.max_comments`
     (highest-confidence first). A finding that survives appends to the
-    printed summary (`Finding (severity): file[:line]` followed by the
-    message). Without `models.reviewer`, or if the finding gets filtered
-    out, the summary stays metadata-only, same as if nothing was generated.
+    printed summary as a severity+confidence badge (e.g. `🔴 **Critical** ·
+    92% confidence`) followed by its message. Without `models.reviewer`, or
+    if the finding gets filtered out, the summary stays metadata-only, same
+    as if nothing was generated.
 
     If `comment` is set, also posts a PR review via
     `GitHubClient.create_review(..., event="COMMENT", comments=...)`. A
@@ -85,13 +94,7 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     )
     inline_comments = _build_inline_comments(findings)
 
-    base_lines = [
-        f"PR #{pr_number}: {pull_request['title']}",
-        f"State: {pull_request['state']}",
-        f"Base: {pull_request['base']['sha']}  Head: {pull_request['head']['sha']}",
-        f"Files changed: {len(filenames)}",
-        *(f"  {filename}" for filename in filenames),
-    ]
+    base_lines = _base_lines(pr_number, pull_request, filenames)
     summary = "\n".join(base_lines + [line for f in findings for line in _finding_lines(f)])
     print(summary)
 
@@ -108,10 +111,54 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     return 0
 
 
+def _base_lines(pr_number: int, pull_request: dict[str, object], filenames: list[str]) -> list[str]:
+    """Render the review header: a title line plus a collapsed file list.
+
+    The file list sits behind a `<details>` block so it doesn't dominate the
+    review on larger PRs -- expanding it is one click, not a wall of text.
+    """
+    file_word = "file" if len(filenames) == 1 else "files"
+    lines = [
+        "### 🤖 marginal review",
+        "",
+        f"**PR #{pr_number}: {pull_request['title']}** · {pull_request['state']} · "
+        f"`{pull_request['base']['sha']}` → `{pull_request['head']['sha']}` · "
+        f"{len(filenames)} {file_word} changed",
+    ]
+    if filenames:
+        lines += [
+            "",
+            "<details>",
+            f"<summary>Changed files ({len(filenames)})</summary>",
+            "",
+            *(f"- `{filename}`" for filename in filenames),
+            "",
+            "</details>",
+        ]
+    return lines
+
+
+def _finding_badge(finding: Finding, *, with_location: bool) -> str:
+    """Render a finding's severity+confidence as one line, e.g.
+
+    `🔴 **Critical** · 92% confidence` -- optionally suffixed with its file
+    location, for contexts (like a review's overall body) that aren't
+    already anchored to that location the way an inline comment is.
+    """
+    badge = (
+        f"{SEVERITY_EMOJI[finding.severity]} **{finding.severity.value.title()}** · "
+        f"{finding.confidence:.0%} confidence"
+    )
+    if with_location:
+        location = finding.file if finding.line is None else f"{finding.file}:{finding.line}"
+        badge += f" — `{location}`"
+    return badge
+
+
 def _finding_lines(finding: Finding) -> list[str]:
-    """Render one `Finding` as the `["", "Finding (severity): location", message]` block."""
-    location = finding.file if finding.line is None else f"{finding.file}:{finding.line}"
-    return ["", f"Finding ({finding.severity.value}): {location}", finding.message]
+    """Render one `Finding` as `["", badge, "", message]`, badge and message
+    each getting their own paragraph."""
+    return ["", _finding_badge(finding, with_location=True), "", finding.message]
 
 
 def _build_inline_comments(findings: list[Finding]) -> list[dict[str, object]]:
@@ -119,10 +166,15 @@ def _build_inline_comments(findings: list[Finding]) -> list[dict[str, object]]:
 
     A finding with no `line` is left out here -- callers should fall back to
     including it in the review's overall body instead, so it isn't silently
-    dropped.
+    dropped. The comment's own file/line already anchors it in the diff, so
+    its badge skips repeating the location.
     """
     return [
-        {"path": finding.file, "line": finding.line, "body": finding.message}
+        {
+            "path": finding.file,
+            "line": finding.line,
+            "body": f"{_finding_badge(finding, with_location=False)}\n\n{finding.message}",
+        }
         for finding in findings
         if finding.line is not None
     ]

@@ -8,6 +8,22 @@
 
 ### Improvements
 
+- `marginal review`'s output is restructured for readability instead of flat
+  indented text. Findings (both inline comments and the summary-body
+  fallback) now lead with a severity+confidence badge (`🔴 **Critical** ·
+  92% confidence`) before the message, so they're triageable by eye without
+  reading the prose. The overall review gets a `### 🤖 marginal review`
+  heading and a compact one-line PR summary, with the changed-file list
+  collapsed behind a `<details>` block so it doesn't dominate the review on
+  larger PRs. Still not addressed: re-running `marginal review --comment`
+  on the same PR after a new push still posts a fresh review restating this
+  same header/file-list block -- true dedup across pushes needs either
+  identifying and updating a prior review or accepting the (now much
+  smaller, collapsed) repetition, and is left open
+
+  ([ISSUE-36](https://github.com/exactml/marginal/issues/36),
+  [PR-38](https://github.com/exactml/marginal/pull/38))
+
 ### Fixes
 
 ### Warnings
