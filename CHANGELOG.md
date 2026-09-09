@@ -19,7 +19,8 @@
   a real multi-finding case to bite on -- covered directly against
   `filter_findings` instead
 
-  ([ISSUE-28](https://github.com/exactml/marginal/issues/28))
+  ([ISSUE-28](https://github.com/exactml/marginal/issues/28),
+  [PR-35](https://github.com/exactml/marginal/pull/35))
 
 ### Improvements
 
