@@ -15,7 +15,8 @@
   filename. This is what makes inline per-line comments and confidence-based
   filtering possible next
 
-  ([ISSUE-26](https://github.com/exactml/marginal/issues/26))
+  ([ISSUE-26](https://github.com/exactml/marginal/issues/26),
+  [PR-30](https://github.com/exactml/marginal/pull/30))
 
 ### Improvements
 
