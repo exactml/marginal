@@ -11,12 +11,14 @@ from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubAPIError, GitHubAuthenticationError, PermissionDeniedError
 from marginal.providers.errors import ProviderError
 from marginal.providers.factory import get_provider
+from marginal.review import Finding
 
 FINDING_PROMPT_INSTRUCTIONS = (
     "You are reviewing a pull request. Identify the single most important, "
-    "actionable issue in the diff below. Be concise and specific: name the "
-    "file and explain the problem in 2-3 sentences. If you see nothing worth "
-    "flagging, say so plainly."
+    "actionable issue in the diff below. Report the file it's in, the line "
+    "number in the new version of the file if you can identify one (omit it "
+    "if you can't), a severity, and a concise 2-3 sentence explanation of "
+    "the problem."
 )
 
 
@@ -28,10 +30,10 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     changed files and prints its title, state, base/head SHA, and the
     changed file list.
 
-    If `models.reviewer` is configured, also generates one unvalidated
-    finding from that model over the changed files' diffs and appends it to
-    the summary. Without it, the summary stays metadata-only, unchanged from
-    before this existed.
+    If `models.reviewer` is configured, also generates one unvalidated,
+    structured `Finding` from that model over the changed files' diffs and
+    appends it to the summary. Without it, the summary stays metadata-only,
+    unchanged from before this existed.
 
     If `comment` is set, also posts that same summary as a single PR comment
     via `GitHubClient.create_review(..., event="COMMENT")`. Otherwise posts
@@ -56,7 +58,7 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     filenames = [str(file["filename"]) for file in files]
 
     reviewer_model = config.models.get("reviewer")
-    finding = None
+    finding: Finding | None = None
     if reviewer_model is not None:
         try:
             finding = asyncio.run(_generate_finding(reviewer_model, files))
@@ -71,8 +73,9 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
         f"Files changed: {len(filenames)}",
         *(f"  {filename}" for filename in filenames),
     ]
-    if finding:
-        summary_lines += ["", "Finding:", finding]
+    if finding is not None:
+        location = finding.file if finding.line is None else f"{finding.file}:{finding.line}"
+        summary_lines += ["", f"Finding ({finding.severity.value}): {location}", finding.message]
     summary = "\n".join(summary_lines)
 
     print(summary)
@@ -87,11 +90,13 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     return 0
 
 
-async def _generate_finding(model_spec: ModelSpec, files: list[dict[str, object]]) -> str:
-    """Generate one unvalidated finding from `model_spec` over `files`' diffs."""
+async def _generate_finding(model_spec: ModelSpec, files: list[dict[str, object]]) -> Finding:
+    """Generate one unvalidated `Finding` from `model_spec` over `files`' diffs."""
     provider = get_provider(model_spec)
     prompt = _build_finding_prompt(files)
-    return await provider.generate(prompt)
+    result = await provider.generate_structured(prompt, schema=Finding)
+    assert isinstance(result, Finding)
+    return result
 
 
 def _build_finding_prompt(files: list[dict[str, object]]) -> str:
