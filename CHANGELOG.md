@@ -21,6 +21,21 @@
   ([ISSUE-26](https://github.com/exactml/marginal/issues/26),
   [PR-30](https://github.com/exactml/marginal/pull/30))
 
+- `marginal review --comment` now posts a finding anchored to a `line` as an
+  inline review comment (`{path, line, body}`) instead of folding it into
+  the one overall review body. A finding with no identifiable line still
+  falls back to the body, so nothing is silently dropped. Still exactly one
+  `create_review` call either way — inline comments ride along with the
+  same review as its `comments` list. `PermissionDeniedError` maps through
+  the same existing clean error path, unchanged. The printed local summary
+  is unaffected: it still shows every finding (anchored or not), same as
+  before — only the posted review body drops the ones that now ride inline
+  instead, an omission caught live by `marginal-action`'s own real review of
+  this PR's diff
+
+  ([ISSUE-27](https://github.com/exactml/marginal/issues/27),
+  [PR-33](https://github.com/exactml/marginal/pull/33))
+
 ### Improvements
 
 ### Fixes

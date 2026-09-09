@@ -32,12 +32,17 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
 
     If `models.reviewer` is configured, also generates one unvalidated,
     structured `Finding` from that model over the changed files' diffs and
-    appends it to the summary. Without it, the summary stays metadata-only,
-    unchanged from before this existed.
+    appends it to the printed summary (`Finding (severity): file[:line]`
+    followed by the message), same as before this existed. Without
+    `models.reviewer`, the summary stays metadata-only.
 
-    If `comment` is set, also posts that same summary as a single PR comment
-    via `GitHubClient.create_review(..., event="COMMENT")`. Otherwise posts
-    nothing back to GitHub.
+    If `comment` is set, also posts a PR review via
+    `GitHubClient.create_review(..., event="COMMENT", comments=...)`. A
+    finding anchored to a `line` is posted as an inline `comments` entry
+    instead of being folded into the review's overall body -- it still shows
+    up in the printed summary above, just not duplicated into the body too.
+    One with no identifiable line still falls back to the body, so it isn't
+    silently dropped. Omitting `--comment` posts nothing back to GitHub.
 
     Returns 0 on success. A denied permission, missing/invalid token,
     GitHub API error, or `ProviderError` — whether raised while fetching,
@@ -66,28 +71,50 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
             print(f"marginal review: {exc}", file=sys.stderr)
             return 1
 
-    summary_lines = [
+    findings = [finding] if finding is not None else []
+    inline_comments = _build_inline_comments(findings)
+
+    base_lines = [
         f"PR #{pr_number}: {pull_request['title']}",
         f"State: {pull_request['state']}",
         f"Base: {pull_request['base']['sha']}  Head: {pull_request['head']['sha']}",
         f"Files changed: {len(filenames)}",
         *(f"  {filename}" for filename in filenames),
     ]
-    if finding is not None:
-        location = finding.file if finding.line is None else f"{finding.file}:{finding.line}"
-        summary_lines += ["", f"Finding ({finding.severity.value}): {location}", finding.message]
-    summary = "\n".join(summary_lines)
-
+    summary = "\n".join(base_lines + [line for f in findings for line in _finding_lines(f)])
     print(summary)
 
     if comment:
+        body = "\n".join(
+            base_lines + [line for f in findings if f.line is None for line in _finding_lines(f)]
+        )
         try:
-            client.create_review(pr_number, summary, event="COMMENT")
+            client.create_review(pr_number, body, event="COMMENT", comments=inline_comments)
         except (PermissionDeniedError, GitHubAuthenticationError, GitHubAPIError) as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
             return 1
 
     return 0
+
+
+def _finding_lines(finding: Finding) -> list[str]:
+    """Render one `Finding` as the `["", "Finding (severity): location", message]` block."""
+    location = finding.file if finding.line is None else f"{finding.file}:{finding.line}"
+    return ["", f"Finding ({finding.severity.value}): {location}", finding.message]
+
+
+def _build_inline_comments(findings: list[Finding]) -> list[dict[str, object]]:
+    """Build one GitHub review `comments` entry per line-anchored finding.
+
+    A finding with no `line` is left out here -- callers should fall back to
+    including it in the review's overall body instead, so it isn't silently
+    dropped.
+    """
+    return [
+        {"path": finding.file, "line": finding.line, "body": finding.message}
+        for finding in findings
+        if finding.line is not None
+    ]
 
 
 async def _generate_finding(model_spec: ModelSpec, files: list[dict[str, object]]) -> Finding:

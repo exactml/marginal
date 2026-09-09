@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from marginal.cli import main
+from marginal.cli.review import _build_inline_comments
 from marginal.config import MarginalConfig, load_config
 from marginal.github.errors import (
     GitHubAPIError,
@@ -164,7 +165,7 @@ def test_review_with_comment_flag_posts_the_printed_summary(tmp_path, capsys, mo
     assert exit_code == 0
     out = capsys.readouterr().out
 
-    client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT")
+    client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT", comments=[])
 
 
 def test_review_without_comment_flag_posts_nothing(tmp_path, monkeypatch):
@@ -212,6 +213,30 @@ def test_review_with_comment_flag_maps_permission_denied_to_clean_error(
     assert "Traceback" not in err
 
 
+# -- review: inline comment building -------------------------------------
+
+
+def test_build_inline_comments_skips_findings_without_a_line():
+    findings = [
+        Finding(file="a.py", line=None, severity=Severity.LOW, message="no line here"),
+    ]
+
+    assert _build_inline_comments(findings) == []
+
+
+def test_build_inline_comments_builds_one_entry_per_anchored_finding():
+    findings = [
+        Finding(file="a.py", line=10, severity=Severity.HIGH, message="issue in a"),
+        Finding(file="b.py", line=None, severity=Severity.LOW, message="issue in b, unanchored"),
+        Finding(file="c.py", line=3, severity=Severity.MEDIUM, message="issue in c"),
+    ]
+
+    assert _build_inline_comments(findings) == [
+        {"path": "a.py", "line": 10, "body": "issue in a"},
+        {"path": "c.py", "line": 3, "body": "issue in c"},
+    ]
+
+
 # -- review: LLM finding -------------------------------------------------
 
 
@@ -247,7 +272,7 @@ def test_review_without_reviewer_model_skips_generation(tmp_path, capsys, monkey
     assert "Finding (" not in out
 
 
-def test_review_with_reviewer_model_includes_finding(tmp_path, capsys, monkeypatch):
+def test_review_with_anchored_finding_posts_it_as_inline_comment(tmp_path, capsys, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_reviewer_config(tmp_path)
 
@@ -288,7 +313,30 @@ def test_review_with_reviewer_model_includes_finding(tmp_path, capsys, monkeypat
     assert "marginal/retry.py" in prompt
     assert "time.sleep(1)" in prompt
 
-    client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT")
+    # The anchored finding stays in the printed summary above for local
+    # visibility, but isn't duplicated into the posted review body -- it
+    # only rides along as an inline `comments` entry.
+    expected_body = "\n".join(
+        [
+            "PR #42: Fix flaky retry logic",
+            "State: open",
+            "Base: abc123  Head: def456",
+            "Files changed: 1",
+            "  marginal/retry.py",
+        ]
+    )
+    client.create_review.assert_called_once_with(
+        42,
+        expected_body,
+        event="COMMENT",
+        comments=[
+            {
+                "path": "marginal/retry.py",
+                "line": 2,
+                "body": "This introduces a blocking sleep in an async retry loop.",
+            }
+        ],
+    )
 
 
 def test_review_with_finding_missing_line_falls_back_to_filename(tmp_path, capsys, monkeypatch):
@@ -323,6 +371,43 @@ def test_review_with_finding_missing_line_falls_back_to_filename(tmp_path, capsy
     out = capsys.readouterr().out
     assert "Finding (medium): marginal/retry.py" in out
     assert "marginal/retry.py:None" not in out
+
+
+def test_review_with_unanchored_finding_posts_it_in_the_summary_body_not_inline(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+
+    with (
+        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
+        patch("marginal.cli.review.get_provider") as mock_get_provider,
+    ):
+        client = mock_client_cls.return_value
+        client.get_pull_request.return_value = {
+            "title": "Fix flaky retry logic",
+            "state": "open",
+            "base": {"sha": "abc123"},
+            "head": {"sha": "def456"},
+        }
+        client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
+        provider = mock_get_provider.return_value
+        provider.generate_structured = AsyncMock(
+            return_value=Finding(
+                file="marginal/retry.py",
+                line=None,
+                severity=Severity.MEDIUM,
+                message="Consider adding a backoff cap.",
+            )
+        )
+
+        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "Finding (medium): marginal/retry.py" in out
+
+    client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT", comments=[])
 
 
 def test_review_with_malformed_structured_output_maps_to_clean_message(
