@@ -6,6 +6,18 @@
 
 ### New Features
 
+### Improvements
+
+### Fixes
+
+### Warnings
+
+## marginal v0.1.2, 2026-09-09
+
+### Breaking Changes
+
+### New Features
+
 - `marginal review`'s generated finding is now structured
   (`marginal.review.Finding`: `file`, `line`, `severity`, `message`) instead
   of a raw text blob — generated via `ModelProvider.generate_structured()`
