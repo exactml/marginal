@@ -9,7 +9,7 @@ from marginal.config.loader import load_config
 from marginal.config.schema import ModelSpec
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubAPIError, GitHubAuthenticationError, PermissionDeniedError
-from marginal.providers.errors import ProviderError
+from marginal.providers.errors import ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
 from marginal.review import Finding
 
@@ -95,7 +95,10 @@ async def _generate_finding(model_spec: ModelSpec, files: list[dict[str, object]
     provider = get_provider(model_spec)
     prompt = _build_finding_prompt(files)
     result = await provider.generate_structured(prompt, schema=Finding)
-    assert isinstance(result, Finding)
+    if not isinstance(result, Finding):
+        raise ProviderResponseError(
+            f"expected a Finding from generate_structured, got {type(result).__name__}"
+        )
     return result
 
 
