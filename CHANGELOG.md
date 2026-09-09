@@ -25,6 +25,17 @@
 
 ### Fixes
 
+- Provider SDK errors (`anthropic.APIError`, `openai.APIError` — bad
+  request, auth failure, rate limit, network error) no longer crash with a
+  raw traceback. `AnthropicProvider`/`OpenAIProvider`'s `generate`,
+  `generate_structured`, and `stream` now catch them and re-raise as the
+  new `ProviderAPIError` (a `ProviderError`), so `run_review`'s existing
+  clean error path handles them with no changes needed there. Found live in
+  CI via an Anthropic key that wasn't scoped to a workspace
+
+  ([ISSUE-31](https://github.com/exactml/marginal/issues/31),
+  [PR-32](https://github.com/exactml/marginal/pull/32))
+
 ### Warnings
 
 ## marginal v0.1.1, 2026-09-08
