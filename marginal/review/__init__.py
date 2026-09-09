@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Severity(str, Enum):
@@ -24,4 +24,18 @@ class Finding(BaseModel):
     file: str
     line: int | None = None
     severity: Severity
+    confidence: float = Field(ge=0.0, le=1.0)
     message: str
+
+
+def filter_findings(
+    findings: list[Finding], *, confidence_threshold: float, max_comments: int
+) -> list[Finding]:
+    """Drop low-confidence findings, then cap the rest at `max_comments`.
+
+    A finding below `confidence_threshold` is dropped outright. Of the ones
+    that pass, only the `max_comments` highest-confidence survive -- so a
+    review never posts more than that many findings.
+    """
+    passing = [finding for finding in findings if finding.confidence >= confidence_threshold]
+    return sorted(passing, key=lambda finding: finding.confidence, reverse=True)[:max_comments]
