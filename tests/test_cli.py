@@ -325,6 +325,36 @@ def test_review_with_finding_missing_line_falls_back_to_filename(tmp_path, capsy
     assert "marginal/retry.py:None" not in out
 
 
+def test_review_with_malformed_structured_output_maps_to_clean_message(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+
+    with (
+        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
+        patch("marginal.cli.review.get_provider") as mock_get_provider,
+    ):
+        client = mock_client_cls.return_value
+        client.get_pull_request.return_value = {
+            "title": "Fix flaky retry logic",
+            "state": "open",
+            "base": {"sha": "abc123"},
+            "head": {"sha": "def456"},
+        }
+        client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
+        provider = mock_get_provider.return_value
+        provider.generate_structured = AsyncMock(return_value=object())
+
+        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "marginal review:" in err
+    assert "Traceback" not in err
+    client.create_review.assert_not_called()
+
+
 def test_review_with_reviewer_model_maps_provider_error_to_clean_message(
     tmp_path, capsys, monkeypatch
 ):
