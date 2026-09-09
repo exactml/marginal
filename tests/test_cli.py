@@ -304,8 +304,8 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(tmp_path, capsy
 
     assert exit_code == 0
     out = capsys.readouterr().out
-    assert "Finding (" not in out
-    assert "This introduces a blocking sleep in an async retry loop." not in out
+    assert "Finding (high): marginal/retry.py:2" in out
+    assert "This introduces a blocking sleep in an async retry loop." in out
 
     call = provider.generate_structured.call_args
     assert call.kwargs["schema"] is Finding
@@ -313,9 +313,21 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(tmp_path, capsy
     assert "marginal/retry.py" in prompt
     assert "time.sleep(1)" in prompt
 
+    # The anchored finding stays in the printed summary above for local
+    # visibility, but isn't duplicated into the posted review body -- it
+    # only rides along as an inline `comments` entry.
+    expected_body = "\n".join(
+        [
+            "PR #42: Fix flaky retry logic",
+            "State: open",
+            "Base: abc123  Head: def456",
+            "Files changed: 1",
+            "  marginal/retry.py",
+        ]
+    )
     client.create_review.assert_called_once_with(
         42,
-        out.rstrip("\n"),
+        expected_body,
         event="COMMENT",
         comments=[
             {
