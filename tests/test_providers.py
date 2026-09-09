@@ -1,12 +1,15 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import anthropic
+import openai
 import pytest
 from pydantic import BaseModel
 
 from marginal.config import ModelSpec
 from marginal.providers import (
     MissingCredentialsError,
+    ProviderAPIError,
     ProviderResponseError,
     UnknownProviderError,
     get_provider,
@@ -19,6 +22,13 @@ from marginal.providers.openai import OpenAIProvider
 class Verdict(BaseModel):
     approved: bool
     reason: str
+
+
+def _sdk_error(exc_cls: type[Exception], message: str) -> Exception:
+    """Build an SDK exception instance without its real (heavier) constructor args."""
+    error = exc_cls.__new__(exc_cls)
+    Exception.__init__(error, message)
+    return error
 
 
 # -- credentials --------------------------------------------------------
@@ -161,6 +171,53 @@ async def test_anthropic_stream_yields_only_text_deltas():
     assert chunks == ["he", "llo"]
 
 
+async def test_anthropic_generate_wraps_sdk_api_error():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.side_effect = _sdk_error(anthropic.APIError, "rate limited")
+    provider = _anthropic_provider(client)
+
+    with pytest.raises(ProviderAPIError, match="rate limited"):
+        await provider.generate("say hi")
+
+
+async def test_anthropic_generate_structured_wraps_sdk_api_error():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.side_effect = _sdk_error(anthropic.APIError, "bad request")
+    provider = _anthropic_provider(client)
+
+    with pytest.raises(ProviderAPIError, match="bad request"):
+        await provider.generate_structured("review this", Verdict)
+
+
+async def test_anthropic_stream_wraps_sdk_api_error():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.side_effect = _sdk_error(anthropic.APIError, "connection reset")
+    provider = _anthropic_provider(client)
+
+    with pytest.raises(ProviderAPIError, match="connection reset"):
+        async for _ in provider.stream("say hi"):
+            pass
+
+
+async def test_anthropic_stream_wraps_sdk_api_error_mid_iteration():
+    async def failing_stream():
+        yield SimpleNamespace(
+            type="content_block_delta", delta=SimpleNamespace(type="text_delta", text="he")
+        )
+        raise _sdk_error(anthropic.APIError, "connection reset mid-stream")
+
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.return_value = failing_stream()
+    provider = _anthropic_provider(client)
+
+    chunks = []
+    with pytest.raises(ProviderAPIError, match="connection reset mid-stream"):
+        async for chunk in provider.stream("say hi"):
+            chunks.append(chunk)
+
+    assert chunks == ["he"]
+
+
 # -- OpenAIProvider -----------------------------------------------------
 
 
@@ -228,3 +285,48 @@ async def test_openai_stream_yields_only_non_empty_deltas():
     chunks = [chunk async for chunk in provider.stream("say hi")]
 
     assert chunks == ["he", "llo"]
+
+
+async def test_openai_generate_wraps_sdk_api_error():
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock())))
+    client.chat.completions.create.side_effect = _sdk_error(openai.APIError, "rate limited")
+    provider = _openai_provider(client)
+
+    with pytest.raises(ProviderAPIError, match="rate limited"):
+        await provider.generate("say hi")
+
+
+async def test_openai_generate_structured_wraps_sdk_api_error():
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock())))
+    client.chat.completions.create.side_effect = _sdk_error(openai.APIError, "bad request")
+    provider = _openai_provider(client)
+
+    with pytest.raises(ProviderAPIError, match="bad request"):
+        await provider.generate_structured("review this", Verdict)
+
+
+async def test_openai_stream_wraps_sdk_api_error():
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock())))
+    client.chat.completions.create.side_effect = _sdk_error(openai.APIError, "connection reset")
+    provider = _openai_provider(client)
+
+    with pytest.raises(ProviderAPIError, match="connection reset"):
+        async for _ in provider.stream("say hi"):
+            pass
+
+
+async def test_openai_stream_wraps_sdk_api_error_mid_iteration():
+    async def failing_stream():
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="he"))])
+        raise _sdk_error(openai.APIError, "connection reset mid-stream")
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock())))
+    client.chat.completions.create.return_value = failing_stream()
+    provider = _openai_provider(client)
+
+    chunks = []
+    with pytest.raises(ProviderAPIError, match="connection reset mid-stream"):
+        async for chunk in provider.stream("say hi"):
+            chunks.append(chunk)
+
+    assert chunks == ["he"]
