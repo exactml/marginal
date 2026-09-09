@@ -199,6 +199,25 @@ async def test_anthropic_stream_wraps_sdk_api_error():
             pass
 
 
+async def test_anthropic_stream_wraps_sdk_api_error_mid_iteration():
+    async def failing_stream():
+        yield SimpleNamespace(
+            type="content_block_delta", delta=SimpleNamespace(type="text_delta", text="he")
+        )
+        raise _sdk_error(anthropic.APIError, "connection reset mid-stream")
+
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.return_value = failing_stream()
+    provider = _anthropic_provider(client)
+
+    chunks = []
+    with pytest.raises(ProviderAPIError, match="connection reset mid-stream"):
+        async for chunk in provider.stream("say hi"):
+            chunks.append(chunk)
+
+    assert chunks == ["he"]
+
+
 # -- OpenAIProvider -----------------------------------------------------
 
 
@@ -294,3 +313,20 @@ async def test_openai_stream_wraps_sdk_api_error():
     with pytest.raises(ProviderAPIError, match="connection reset"):
         async for _ in provider.stream("say hi"):
             pass
+
+
+async def test_openai_stream_wraps_sdk_api_error_mid_iteration():
+    async def failing_stream():
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="he"))])
+        raise _sdk_error(openai.APIError, "connection reset mid-stream")
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock())))
+    client.chat.completions.create.return_value = failing_stream()
+    provider = _openai_provider(client)
+
+    chunks = []
+    with pytest.raises(ProviderAPIError, match="connection reset mid-stream"):
+        async for chunk in provider.stream("say hi"):
+            chunks.append(chunk)
+
+    assert chunks == ["he"]
