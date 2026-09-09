@@ -6,6 +6,21 @@
 
 ### New Features
 
+- `marginal review`'s generated finding is now structured
+  (`marginal.review.Finding`: `file`, `line`, `severity`, `message`) instead
+  of a raw text blob — generated via `ModelProvider.generate_structured()`
+  instead of `generate()`. Still folded into the same one summary
+  comment for now (`Finding (severity): file[:line]` followed by the
+  message); a finding with no identifiable line falls back to just the
+  filename. This is what makes inline per-line comments and confidence-based
+  filtering possible next. Raises `ProviderResponseError` (not a bare
+  `assert`, which `-O` strips entirely) if a provider's structured output
+  doesn't actually come back as a `Finding` — caught live by
+  `marginal-action`'s own real review of this PR's diff
+
+  ([ISSUE-26](https://github.com/exactml/marginal/issues/26),
+  [PR-30](https://github.com/exactml/marginal/pull/30))
+
 ### Improvements
 
 ### Fixes

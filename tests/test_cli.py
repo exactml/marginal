@@ -11,6 +11,7 @@ from marginal.github.errors import (
     PermissionDeniedError,
 )
 from marginal.providers.errors import MissingCredentialsError
+from marginal.review import Finding, Severity
 
 
 def test_init_creates_all_artifacts(tmp_path, capsys):
@@ -243,7 +244,7 @@ def test_review_without_reviewer_model_skips_generation(tmp_path, capsys, monkey
     assert exit_code == 0
     mock_get_provider.assert_not_called()
     out = capsys.readouterr().out
-    assert "Finding:" not in out
+    assert "Finding (" not in out
 
 
 def test_review_with_reviewer_model_includes_finding(tmp_path, capsys, monkeypatch):
@@ -265,22 +266,93 @@ def test_review_with_reviewer_model_includes_finding(tmp_path, capsys, monkeypat
             {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
         ]
         provider = mock_get_provider.return_value
-        provider.generate = AsyncMock(
-            return_value="This introduces a blocking sleep in an async retry loop."
+        provider.generate_structured = AsyncMock(
+            return_value=Finding(
+                file="marginal/retry.py",
+                line=2,
+                severity=Severity.HIGH,
+                message="This introduces a blocking sleep in an async retry loop.",
+            )
         )
 
         exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
 
     assert exit_code == 0
     out = capsys.readouterr().out
-    assert "Finding:" in out
+    assert "Finding (high): marginal/retry.py:2" in out
     assert "This introduces a blocking sleep in an async retry loop." in out
 
-    prompt = provider.generate.call_args.args[0]
+    call = provider.generate_structured.call_args
+    assert call.kwargs["schema"] is Finding
+    prompt = call.args[0]
     assert "marginal/retry.py" in prompt
     assert "time.sleep(1)" in prompt
 
     client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT")
+
+
+def test_review_with_finding_missing_line_falls_back_to_filename(tmp_path, capsys, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+
+    with (
+        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
+        patch("marginal.cli.review.get_provider") as mock_get_provider,
+    ):
+        client = mock_client_cls.return_value
+        client.get_pull_request.return_value = {
+            "title": "Fix flaky retry logic",
+            "state": "open",
+            "base": {"sha": "abc123"},
+            "head": {"sha": "def456"},
+        }
+        client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
+        provider = mock_get_provider.return_value
+        provider.generate_structured = AsyncMock(
+            return_value=Finding(
+                file="marginal/retry.py",
+                line=None,
+                severity=Severity.MEDIUM,
+                message="Consider adding a backoff cap.",
+            )
+        )
+
+        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "Finding (medium): marginal/retry.py" in out
+    assert "marginal/retry.py:None" not in out
+
+
+def test_review_with_malformed_structured_output_maps_to_clean_message(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+
+    with (
+        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
+        patch("marginal.cli.review.get_provider") as mock_get_provider,
+    ):
+        client = mock_client_cls.return_value
+        client.get_pull_request.return_value = {
+            "title": "Fix flaky retry logic",
+            "state": "open",
+            "base": {"sha": "abc123"},
+            "head": {"sha": "def456"},
+        }
+        client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
+        provider = mock_get_provider.return_value
+        provider.generate_structured = AsyncMock(return_value=object())
+
+        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "marginal review:" in err
+    assert "Traceback" not in err
+    client.create_review.assert_not_called()
 
 
 def test_review_with_reviewer_model_maps_provider_error_to_clean_message(
