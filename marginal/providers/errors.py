@@ -15,3 +15,13 @@ class MissingCredentialsError(ProviderError):
 
 class ProviderResponseError(ProviderError):
     """A provider returned a response that could not be interpreted as requested."""
+
+
+class ProviderAPIError(ProviderError):
+    """A provider's own SDK raised an API-level error (bad request, auth,
+    rate limit, network failure, etc.) while making a call."""
+
+    def __init__(self, provider: str, message: str) -> None:
+        self.provider = provider
+        self.message = message
+        super().__init__(f"{provider} API error: {message}")

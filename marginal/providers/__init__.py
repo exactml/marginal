@@ -8,6 +8,7 @@ Concrete providers (`anthropic.py`, `openai.py`) are not imported here —
 from marginal.providers.base import ModelProvider
 from marginal.providers.errors import (
     MissingCredentialsError,
+    ProviderAPIError,
     ProviderError,
     ProviderResponseError,
     UnknownProviderError,
@@ -17,6 +18,7 @@ from marginal.providers.factory import get_provider
 __all__ = [
     "MissingCredentialsError",
     "ModelProvider",
+    "ProviderAPIError",
     "ProviderError",
     "ProviderResponseError",
     "UnknownProviderError",
