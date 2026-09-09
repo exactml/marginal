@@ -6,6 +6,18 @@
 
 ### New Features
 
+### Improvements
+
+### Fixes
+
+### Warnings
+
+## marginal v0.1.3, 2026-09-09
+
+### Breaking Changes
+
+### New Features
+
 - `marginal review` now wires up `config.review.confidence_threshold` and
   `config.review.max_comments`, both previously dead config. `Finding` gets
   a required `confidence: float` field (the model self-reports it via the
