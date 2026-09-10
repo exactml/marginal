@@ -3,7 +3,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from marginal.cli import main
-from marginal.cli.review import _base_lines, _build_inline_comments, _finding_badge
+from marginal.cli.review import (
+    _base_lines,
+    _build_finding_prompt,
+    _build_inline_comments,
+    _finding_badge,
+)
 from marginal.config import MarginalConfig, load_config
 from marginal.github.errors import (
     GitHubAPIError,
@@ -295,6 +300,31 @@ def test_base_lines_skips_the_details_block_with_no_files():
     assert "<details>" not in rendered
 
 
+# -- review: policy prompt folding ----------------------------------------
+
+
+def test_build_finding_prompt_without_policies_is_unchanged():
+    files = [{"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}]
+
+    prompt = _build_finding_prompt(files, [])
+
+    assert "policies" not in prompt.lower()
+    assert prompt.endswith("--- marginal/retry.py ---\n@@ -1,3 +1,4 @@\n+time.sleep(1)")
+
+
+def test_build_finding_prompt_folds_policy_content_in():
+    files = [{"filename": "marginal/retry.py", "patch": "+time.sleep(1)"}]
+    policies = [(".marginal/policies/coding.md", "Never use a blocking sleep in async code.")]
+
+    prompt = _build_finding_prompt(files, policies)
+
+    assert ".marginal/policies/coding.md" in prompt
+    assert "Never use a blocking sleep in async code." in prompt
+    # The diff still follows the policy content rather than being replaced by it.
+    assert "+time.sleep(1)" in prompt
+    assert prompt.index("Never use a blocking sleep") < prompt.index("+time.sleep(1)")
+
+
 # -- review: LLM finding -------------------------------------------------
 
 
@@ -578,3 +608,94 @@ def test_review_with_reviewer_model_maps_provider_error_to_clean_message(
     assert "marginal review:" in err
     assert "Traceback" not in err
     client.create_review.assert_not_called()
+
+
+def _write_reviewer_config_with_policies(tmp_path, policy_paths):
+    config_dir = tmp_path / ".marginal"
+    config_dir.mkdir()
+    policies_yaml = "\n".join(f"  - {policy_path}" for policy_path in policy_paths)
+    (config_dir / "config.yaml").write_text(
+        "version: 1\n"
+        "models:\n"
+        "  reviewer:\n"
+        "    provider: anthropic\n"
+        "    model: claude-3-5-sonnet\n"
+        "policies:\n" + policies_yaml + "\n"
+    )
+
+
+def test_review_folds_a_configured_policy_file_into_the_prompt(tmp_path, capsys, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config_with_policies(tmp_path, [".marginal/policies/coding.md"])
+    policies_dir = tmp_path / ".marginal" / "policies"
+    policies_dir.mkdir()
+    (policies_dir / "coding.md").write_text("Never use a blocking sleep in async code.")
+
+    with (
+        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
+        patch("marginal.cli.review.get_provider") as mock_get_provider,
+    ):
+        client = mock_client_cls.return_value
+        client.get_pull_request.return_value = {
+            "title": "Fix flaky retry logic",
+            "state": "open",
+            "base": {"sha": "abc123"},
+            "head": {"sha": "def456"},
+        }
+        client.get_pull_request_files.return_value = [
+            {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
+        ]
+        provider = mock_get_provider.return_value
+        provider.generate_structured = AsyncMock(
+            return_value=Finding(
+                file="marginal/retry.py",
+                line=2,
+                severity=Severity.HIGH,
+                confidence=0.9,
+                message="This introduces a blocking sleep in an async retry loop.",
+            )
+        )
+
+        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    prompt = provider.generate_structured.call_args.args[0]
+    assert ".marginal/policies/coding.md" in prompt
+    assert "Never use a blocking sleep in async code." in prompt
+
+
+def test_review_with_a_missing_policy_file_does_not_crash(tmp_path, capsys, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config_with_policies(tmp_path, [".marginal/policies/missing.md"])
+
+    with (
+        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
+        patch("marginal.cli.review.get_provider") as mock_get_provider,
+    ):
+        client = mock_client_cls.return_value
+        client.get_pull_request.return_value = {
+            "title": "Fix flaky retry logic",
+            "state": "open",
+            "base": {"sha": "abc123"},
+            "head": {"sha": "def456"},
+        }
+        client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
+        provider = mock_get_provider.return_value
+        provider.generate_structured = AsyncMock(
+            return_value=Finding(
+                file="marginal/retry.py",
+                line=None,
+                severity=Severity.LOW,
+                confidence=0.9,
+                message="Minor nit.",
+            )
+        )
+
+        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    err = capsys.readouterr().err
+    assert "policy file not found" in err
+    assert ".marginal/policies/missing.md" in err
+    prompt = provider.generate_structured.call_args.args[0]
+    assert "missing.md" not in prompt

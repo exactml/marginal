@@ -6,6 +6,18 @@
 
 ### New Features
 
+- `marginal review` now folds the content of any `config.policies` files into
+  the finding-generation prompt, via a new `marginal.policy.load_policies`
+  (reads each path relative to the repo root, skipping and warning to stderr
+  on a missing file rather than failing the whole review). With no policies
+  configured -- the default -- the prompt is unchanged from before. This
+  makes `marginal/policy/__init__.py`'s previously-empty stub load-bearing
+  for the first time; folding the loaded policies into a model's own
+  understanding of *why* a policy applies is left for later
+
+  ([ISSUE-29](https://github.com/exactml/marginal/issues/29),
+  [PR-40](https://github.com/exactml/marginal/pull/40))
+
 ### Improvements
 
 - `marginal review`'s output is restructured for readability instead of flat
