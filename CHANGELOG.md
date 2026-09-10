@@ -36,6 +36,13 @@
   ([ISSUE-36](https://github.com/exactml/marginal/issues/36),
   [PR-38](https://github.com/exactml/marginal/pull/38))
 
+- `tests/test_cli.py`'s `review` test cases now share `mock_github_client` and
+  `mock_provider` fixtures and consistently reuse the existing `_pull_request()`
+  helper, replacing roughly ten near-identical inline mock-patching blocks and
+  PR-metadata dict literals. Test-only: no behavior or coverage change
+
+  ([PR-41](https://github.com/exactml/marginal/pull/41))
+
 ### Fixes
 
 ### Warnings
