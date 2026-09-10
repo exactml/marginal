@@ -91,26 +91,43 @@ def test_generated_config_round_trips_through_load_config(tmp_path):
 # -- review ------------------------------------------------------------
 
 
-def test_review_prints_pr_summary_and_posts_nothing(tmp_path, capsys, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+@pytest.fixture
+def mock_github_client():
+    """Patch `marginal.cli.review.GitHubClient`, yielding the class mock.
 
+    Tests read/write `.return_value` for the client instance `main()` will
+    receive, e.g. `mock_github_client.return_value.get_pull_request...`.
+    """
     with patch("marginal.cli.review.GitHubClient") as mock_client_cls:
-        client = mock_client_cls.return_value
-        client.get_pull_request.return_value = {
-            "title": "Fix flaky retry logic",
-            "state": "open",
-            "base": {"sha": "abc123"},
-            "head": {"sha": "def456"},
-        }
-        client.get_pull_request_files.return_value = [
-            {"filename": "marginal/retry.py"},
-            {"filename": "tests/test_retry.py"},
-        ]
+        yield mock_client_cls
 
-        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+@pytest.fixture
+def mock_provider():
+    """Patch `marginal.cli.review.get_provider`, yielding the function mock."""
+    with patch("marginal.cli.review.get_provider") as mock_get_provider:
+        yield mock_get_provider
+
+
+def _pull_request(title="Fix flaky retry logic", state="open"):
+    return {"title": title, "state": state, "base": {"sha": "abc123"}, "head": {"sha": "def456"}}
+
+
+def test_review_prints_pr_summary_and_posts_nothing(
+    tmp_path, capsys, monkeypatch, mock_github_client
+):
+    monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py"},
+        {"filename": "tests/test_retry.py"},
+    ]
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
     assert exit_code == 0
-    args, _ = mock_client_cls.call_args
+    args, _ = mock_github_client.call_args
     assert args[0] == "acme/widgets"
 
     out = capsys.readouterr().out
@@ -133,13 +150,13 @@ def test_review_prints_pr_summary_and_posts_nothing(tmp_path, capsys, monkeypatc
     ],
     ids=["permission-denied", "auth-error", "api-error", "not-found"],
 )
-def test_review_prints_clean_message_on_error(tmp_path, capsys, monkeypatch, error):
+def test_review_prints_clean_message_on_error(
+    tmp_path, capsys, monkeypatch, mock_github_client, error
+):
     monkeypatch.chdir(tmp_path)
+    mock_github_client.return_value.get_pull_request.side_effect = error
 
-    with patch("marginal.cli.review.GitHubClient") as mock_client_cls:
-        mock_client_cls.return_value.get_pull_request.side_effect = error
-
-        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
     assert exit_code == 1
     err = capsys.readouterr().err
@@ -147,23 +164,18 @@ def test_review_prints_clean_message_on_error(tmp_path, capsys, monkeypatch, err
     assert "Traceback" not in err
 
 
-def test_review_with_comment_flag_posts_the_printed_summary(tmp_path, capsys, monkeypatch):
+def test_review_with_comment_flag_posts_the_printed_summary(
+    tmp_path, capsys, monkeypatch, mock_github_client
+):
     monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py"},
+        {"filename": "tests/test_retry.py"},
+    ]
 
-    with patch("marginal.cli.review.GitHubClient") as mock_client_cls:
-        client = mock_client_cls.return_value
-        client.get_pull_request.return_value = {
-            "title": "Fix flaky retry logic",
-            "state": "open",
-            "base": {"sha": "abc123"},
-            "head": {"sha": "def456"},
-        }
-        client.get_pull_request_files.return_value = [
-            {"filename": "marginal/retry.py"},
-            {"filename": "tests/test_retry.py"},
-        ]
-
-        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
 
     assert exit_code == 0
     out = capsys.readouterr().out
@@ -171,44 +183,30 @@ def test_review_with_comment_flag_posts_the_printed_summary(tmp_path, capsys, mo
     client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT", comments=[])
 
 
-def test_review_without_comment_flag_posts_nothing(tmp_path, monkeypatch):
+def test_review_without_comment_flag_posts_nothing(tmp_path, monkeypatch, mock_github_client):
     monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = []
 
-    with patch("marginal.cli.review.GitHubClient") as mock_client_cls:
-        client = mock_client_cls.return_value
-        client.get_pull_request.return_value = {
-            "title": "Fix flaky retry logic",
-            "state": "open",
-            "base": {"sha": "abc123"},
-            "head": {"sha": "def456"},
-        }
-        client.get_pull_request_files.return_value = []
-
-        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
     assert exit_code == 0
     client.create_review.assert_not_called()
 
 
 def test_review_with_comment_flag_maps_permission_denied_to_clean_error(
-    tmp_path, capsys, monkeypatch
+    tmp_path, capsys, monkeypatch, mock_github_client
 ):
     monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = []
+    client.create_review.side_effect = PermissionDeniedError(
+        "this operation requires permissions.write.comments"
+    )
 
-    with patch("marginal.cli.review.GitHubClient") as mock_client_cls:
-        client = mock_client_cls.return_value
-        client.get_pull_request.return_value = {
-            "title": "Fix flaky retry logic",
-            "state": "open",
-            "base": {"sha": "abc123"},
-            "head": {"sha": "def456"},
-        }
-        client.get_pull_request_files.return_value = []
-        client.create_review.side_effect = PermissionDeniedError(
-            "this operation requires permissions.write.comments"
-        )
-
-        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
 
     assert exit_code == 1
     err = capsys.readouterr().err
@@ -273,10 +271,6 @@ def test_finding_badge_with_location_omits_the_line_when_absent():
     assert _finding_badge(finding, with_location=True) == "⚪ **Low** · 90% confidence — `a.py`"
 
 
-def _pull_request(title="Fix flaky retry logic", state="open"):
-    return {"title": title, "state": state, "base": {"sha": "abc123"}, "head": {"sha": "def456"}}
-
-
 def test_base_lines_collapses_the_file_list_behind_details():
     rendered = "\n".join(
         _base_lines(42, _pull_request(), ["marginal/retry.py", "tests/test_retry.py"])
@@ -336,60 +330,44 @@ def _write_reviewer_config(tmp_path):
     )
 
 
-def test_review_without_reviewer_model_skips_generation(tmp_path, capsys, monkeypatch):
+def test_review_without_reviewer_model_skips_generation(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
     monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
 
-    with (
-        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
-        patch("marginal.cli.review.get_provider") as mock_get_provider,
-    ):
-        client = mock_client_cls.return_value
-        client.get_pull_request.return_value = {
-            "title": "Fix flaky retry logic",
-            "state": "open",
-            "base": {"sha": "abc123"},
-            "head": {"sha": "def456"},
-        }
-        client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
-
-        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
     assert exit_code == 0
-    mock_get_provider.assert_not_called()
+    mock_provider.assert_not_called()
     out = capsys.readouterr().out
     assert "confidence" not in out
 
 
-def test_review_with_anchored_finding_posts_it_as_inline_comment(tmp_path, capsys, monkeypatch):
+def test_review_with_anchored_finding_posts_it_as_inline_comment(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
     monkeypatch.chdir(tmp_path)
     _write_reviewer_config(tmp_path)
-
-    with (
-        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
-        patch("marginal.cli.review.get_provider") as mock_get_provider,
-    ):
-        client = mock_client_cls.return_value
-        client.get_pull_request.return_value = {
-            "title": "Fix flaky retry logic",
-            "state": "open",
-            "base": {"sha": "abc123"},
-            "head": {"sha": "def456"},
-        }
-        client.get_pull_request_files.return_value = [
-            {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
-        ]
-        provider = mock_get_provider.return_value
-        provider.generate_structured = AsyncMock(
-            return_value=Finding(
-                file="marginal/retry.py",
-                line=2,
-                severity=Severity.HIGH,
-                confidence=0.9,
-                message="This introduces a blocking sleep in an async retry loop.",
-            )
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(
+        return_value=Finding(
+            file="marginal/retry.py",
+            line=2,
+            severity=Severity.HIGH,
+            confidence=0.9,
+            message="This introduces a blocking sleep in an async retry loop.",
         )
+    )
 
-        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
 
     assert exit_code == 0
     out = capsys.readouterr().out
@@ -436,34 +414,26 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(tmp_path, capsy
     )
 
 
-def test_review_with_finding_missing_line_falls_back_to_filename(tmp_path, capsys, monkeypatch):
+def test_review_with_finding_missing_line_falls_back_to_filename(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
     monkeypatch.chdir(tmp_path)
     _write_reviewer_config(tmp_path)
-
-    with (
-        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
-        patch("marginal.cli.review.get_provider") as mock_get_provider,
-    ):
-        client = mock_client_cls.return_value
-        client.get_pull_request.return_value = {
-            "title": "Fix flaky retry logic",
-            "state": "open",
-            "base": {"sha": "abc123"},
-            "head": {"sha": "def456"},
-        }
-        client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
-        provider = mock_get_provider.return_value
-        provider.generate_structured = AsyncMock(
-            return_value=Finding(
-                file="marginal/retry.py",
-                line=None,
-                severity=Severity.MEDIUM,
-                confidence=0.9,
-                message="Consider adding a backoff cap.",
-            )
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(
+        return_value=Finding(
+            file="marginal/retry.py",
+            line=None,
+            severity=Severity.MEDIUM,
+            confidence=0.9,
+            message="Consider adding a backoff cap.",
         )
+    )
 
-        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
     assert exit_code == 0
     out = capsys.readouterr().out
@@ -472,35 +442,25 @@ def test_review_with_finding_missing_line_falls_back_to_filename(tmp_path, capsy
 
 
 def test_review_with_unanchored_finding_posts_it_in_the_summary_body_not_inline(
-    tmp_path, capsys, monkeypatch
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
 ):
     monkeypatch.chdir(tmp_path)
     _write_reviewer_config(tmp_path)
-
-    with (
-        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
-        patch("marginal.cli.review.get_provider") as mock_get_provider,
-    ):
-        client = mock_client_cls.return_value
-        client.get_pull_request.return_value = {
-            "title": "Fix flaky retry logic",
-            "state": "open",
-            "base": {"sha": "abc123"},
-            "head": {"sha": "def456"},
-        }
-        client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
-        provider = mock_get_provider.return_value
-        provider.generate_structured = AsyncMock(
-            return_value=Finding(
-                file="marginal/retry.py",
-                line=None,
-                severity=Severity.MEDIUM,
-                confidence=0.9,
-                message="Consider adding a backoff cap.",
-            )
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(
+        return_value=Finding(
+            file="marginal/retry.py",
+            line=None,
+            severity=Severity.MEDIUM,
+            confidence=0.9,
+            message="Consider adding a backoff cap.",
         )
+    )
 
-        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
 
     assert exit_code == 0
     out = capsys.readouterr().out
@@ -509,36 +469,28 @@ def test_review_with_unanchored_finding_posts_it_in_the_summary_body_not_inline(
     client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT", comments=[])
 
 
-def test_review_drops_a_finding_below_the_confidence_threshold(tmp_path, capsys, monkeypatch):
+def test_review_drops_a_finding_below_the_confidence_threshold(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
     monkeypatch.chdir(tmp_path)
     _write_reviewer_config(tmp_path)
-
-    with (
-        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
-        patch("marginal.cli.review.get_provider") as mock_get_provider,
-    ):
-        client = mock_client_cls.return_value
-        client.get_pull_request.return_value = {
-            "title": "Fix flaky retry logic",
-            "state": "open",
-            "base": {"sha": "abc123"},
-            "head": {"sha": "def456"},
-        }
-        client.get_pull_request_files.return_value = [
-            {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
-        ]
-        provider = mock_get_provider.return_value
-        provider.generate_structured = AsyncMock(
-            return_value=Finding(
-                file="marginal/retry.py",
-                line=2,
-                severity=Severity.LOW,
-                confidence=0.5,
-                message="Might be worth a second look, but not sure.",
-            )
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(
+        return_value=Finding(
+            file="marginal/retry.py",
+            line=2,
+            severity=Severity.LOW,
+            confidence=0.5,
+            message="Might be worth a second look, but not sure.",
         )
+    )
 
-        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
 
     assert exit_code == 0
     out = capsys.readouterr().out
@@ -550,27 +502,17 @@ def test_review_drops_a_finding_below_the_confidence_threshold(tmp_path, capsys,
 
 
 def test_review_with_malformed_structured_output_maps_to_clean_message(
-    tmp_path, capsys, monkeypatch
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
 ):
     monkeypatch.chdir(tmp_path)
     _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(return_value=object())
 
-    with (
-        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
-        patch("marginal.cli.review.get_provider") as mock_get_provider,
-    ):
-        client = mock_client_cls.return_value
-        client.get_pull_request.return_value = {
-            "title": "Fix flaky retry logic",
-            "state": "open",
-            "base": {"sha": "abc123"},
-            "head": {"sha": "def456"},
-        }
-        client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
-        provider = mock_get_provider.return_value
-        provider.generate_structured = AsyncMock(return_value=object())
-
-        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
     assert exit_code == 1
     err = capsys.readouterr().err
@@ -580,28 +522,18 @@ def test_review_with_malformed_structured_output_maps_to_clean_message(
 
 
 def test_review_with_reviewer_model_maps_provider_error_to_clean_message(
-    tmp_path, capsys, monkeypatch
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
 ):
     monkeypatch.chdir(tmp_path)
     _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
+    mock_provider.side_effect = MissingCredentialsError(
+        "the anthropic provider requires the ANTHROPIC_API_KEY environment variable"
+    )
 
-    with (
-        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
-        patch("marginal.cli.review.get_provider") as mock_get_provider,
-    ):
-        client = mock_client_cls.return_value
-        client.get_pull_request.return_value = {
-            "title": "Fix flaky retry logic",
-            "state": "open",
-            "base": {"sha": "abc123"},
-            "head": {"sha": "def456"},
-        }
-        client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
-        mock_get_provider.side_effect = MissingCredentialsError(
-            "the anthropic provider requires the ANTHROPIC_API_KEY environment variable"
-        )
-
-        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
     assert exit_code == 1
     err = capsys.readouterr().err
@@ -624,39 +556,31 @@ def _write_reviewer_config_with_policies(tmp_path, policy_paths):
     )
 
 
-def test_review_folds_a_configured_policy_file_into_the_prompt(tmp_path, capsys, monkeypatch):
+def test_review_folds_a_configured_policy_file_into_the_prompt(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
     monkeypatch.chdir(tmp_path)
     _write_reviewer_config_with_policies(tmp_path, [".marginal/policies/coding.md"])
     policies_dir = tmp_path / ".marginal" / "policies"
     policies_dir.mkdir()
     (policies_dir / "coding.md").write_text("Never use a blocking sleep in async code.")
-
-    with (
-        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
-        patch("marginal.cli.review.get_provider") as mock_get_provider,
-    ):
-        client = mock_client_cls.return_value
-        client.get_pull_request.return_value = {
-            "title": "Fix flaky retry logic",
-            "state": "open",
-            "base": {"sha": "abc123"},
-            "head": {"sha": "def456"},
-        }
-        client.get_pull_request_files.return_value = [
-            {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
-        ]
-        provider = mock_get_provider.return_value
-        provider.generate_structured = AsyncMock(
-            return_value=Finding(
-                file="marginal/retry.py",
-                line=2,
-                severity=Severity.HIGH,
-                confidence=0.9,
-                message="This introduces a blocking sleep in an async retry loop.",
-            )
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(
+        return_value=Finding(
+            file="marginal/retry.py",
+            line=2,
+            severity=Severity.HIGH,
+            confidence=0.9,
+            message="This introduces a blocking sleep in an async retry loop.",
         )
+    )
 
-        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
     assert exit_code == 0
     prompt = provider.generate_structured.call_args.args[0]
@@ -664,34 +588,26 @@ def test_review_folds_a_configured_policy_file_into_the_prompt(tmp_path, capsys,
     assert "Never use a blocking sleep in async code." in prompt
 
 
-def test_review_with_a_missing_policy_file_does_not_crash(tmp_path, capsys, monkeypatch):
+def test_review_with_a_missing_policy_file_does_not_crash(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
     monkeypatch.chdir(tmp_path)
     _write_reviewer_config_with_policies(tmp_path, [".marginal/policies/missing.md"])
-
-    with (
-        patch("marginal.cli.review.GitHubClient") as mock_client_cls,
-        patch("marginal.cli.review.get_provider") as mock_get_provider,
-    ):
-        client = mock_client_cls.return_value
-        client.get_pull_request.return_value = {
-            "title": "Fix flaky retry logic",
-            "state": "open",
-            "base": {"sha": "abc123"},
-            "head": {"sha": "def456"},
-        }
-        client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
-        provider = mock_get_provider.return_value
-        provider.generate_structured = AsyncMock(
-            return_value=Finding(
-                file="marginal/retry.py",
-                line=None,
-                severity=Severity.LOW,
-                confidence=0.9,
-                message="Minor nit.",
-            )
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(
+        return_value=Finding(
+            file="marginal/retry.py",
+            line=None,
+            severity=Severity.LOW,
+            confidence=0.9,
+            message="Minor nit.",
         )
+    )
 
-        exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
     assert exit_code == 0
     err = capsys.readouterr().err
