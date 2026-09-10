@@ -15,7 +15,8 @@
   for the first time; folding the loaded policies into a model's own
   understanding of *why* a policy applies is left for later
 
-  ([ISSUE-29](https://github.com/exactml/marginal/issues/29))
+  ([ISSUE-29](https://github.com/exactml/marginal/issues/29),
+  [PR-40](https://github.com/exactml/marginal/pull/40))
 
 ### Improvements
 
