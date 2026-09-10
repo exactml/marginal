@@ -9,6 +9,7 @@ from marginal.config.loader import load_config
 from marginal.config.schema import ModelSpec
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubAPIError, GitHubAuthenticationError, PermissionDeniedError
+from marginal.policy import load_policies
 from marginal.providers.errors import ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
 from marginal.review import Finding, Severity, filter_findings
@@ -41,9 +42,12 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     doesn't dominate the output on larger PRs).
 
     If `models.reviewer` is configured, also generates one unvalidated,
-    structured `Finding` from that model over the changed files' diffs, then
-    runs it through `marginal.review.filter_findings`: dropped outright if
-    its self-reported `confidence` is below `config.review.confidence_threshold`,
+    structured `Finding` from that model over the changed files' diffs plus
+    the content of any `config.policies` files (loaded via
+    `marginal.policy.load_policies`, relative to `path`; a missing file is
+    skipped with a warning rather than failing the review), then runs it
+    through `marginal.review.filter_findings`: dropped outright if its
+    self-reported `confidence` is below `config.review.confidence_threshold`,
     otherwise capped alongside any others at `config.review.max_comments`
     (highest-confidence first). A finding that survives appends to the
     printed summary as a severity+confidence badge (e.g. `🔴 **Critical** ·
@@ -80,8 +84,9 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     reviewer_model = config.models.get("reviewer")
     finding: Finding | None = None
     if reviewer_model is not None:
+        policies = load_policies(path, config.policies)
         try:
-            finding = asyncio.run(_generate_finding(reviewer_model, files))
+            finding = asyncio.run(_generate_finding(reviewer_model, files, policies))
         except ProviderError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
             return 1
@@ -180,10 +185,12 @@ def _build_inline_comments(findings: list[Finding]) -> list[dict[str, object]]:
     ]
 
 
-async def _generate_finding(model_spec: ModelSpec, files: list[dict[str, object]]) -> Finding:
-    """Generate one unvalidated `Finding` from `model_spec` over `files`' diffs."""
+async def _generate_finding(
+    model_spec: ModelSpec, files: list[dict[str, object]], policies: list[tuple[str, str]]
+) -> Finding:
+    """Generate one unvalidated `Finding` from `model_spec` over `files`' diffs and `policies`."""
     provider = get_provider(model_spec)
-    prompt = _build_finding_prompt(files)
+    prompt = _build_finding_prompt(files, policies)
     result = await provider.generate_structured(prompt, schema=Finding)
     if not isinstance(result, Finding):
         raise ProviderResponseError(
@@ -192,6 +199,15 @@ async def _generate_finding(model_spec: ModelSpec, files: list[dict[str, object]
     return result
 
 
-def _build_finding_prompt(files: list[dict[str, object]]) -> str:
+def _build_finding_prompt(files: list[dict[str, object]], policies: list[tuple[str, str]]) -> str:
     diff = "\n\n".join(f"--- {file['filename']} ---\n{file.get('patch', '')}" for file in files)
-    return f"{FINDING_PROMPT_INSTRUCTIONS}\n\n{diff}"
+    sections = [FINDING_PROMPT_INSTRUCTIONS]
+    if policies:
+        policy_text = "\n\n".join(f"--- {path} ---\n{content}" for path, content in policies)
+        sections.append(
+            "Also weigh the diff against this repository's own engineering policies "
+            "below -- a violation of one of these is at least as important as a "
+            f"general code-quality issue:\n\n{policy_text}"
+        )
+    sections.append(diff)
+    return "\n\n".join(sections)
