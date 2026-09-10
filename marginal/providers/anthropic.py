@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 import anthropic
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from marginal.providers.credentials import require_env
 from marginal.providers.errors import ProviderAPIError, ProviderResponseError
@@ -59,7 +59,12 @@ class AnthropicProvider:
             raise ProviderAPIError("anthropic", str(exc)) from exc
         for block in response.content:
             if getattr(block, "type", None) == "tool_use" and block.name == _STRUCTURED_OUTPUT_TOOL:
-                return schema.model_validate(block.input)
+                try:
+                    return schema.model_validate(block.input)
+                except ValidationError as exc:
+                    raise ProviderResponseError(
+                        f"anthropic structured output failed schema validation: {exc}"
+                    ) from exc
         raise ProviderResponseError(
             f"anthropic provider did not return the expected {_STRUCTURED_OUTPUT_TOOL!r} tool call"
         )

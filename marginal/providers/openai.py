@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 import openai
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from marginal.providers.credentials import require_env
 from marginal.providers.errors import ProviderAPIError, ProviderResponseError
@@ -53,7 +53,12 @@ class OpenAIProvider:
         content = response.choices[0].message.content
         if content is None:
             raise ProviderResponseError("openai provider returned no structured-output content")
-        return schema.model_validate_json(content)
+        try:
+            return schema.model_validate_json(content)
+        except ValidationError as exc:
+            raise ProviderResponseError(
+                f"openai structured output failed schema validation: {exc}"
+            ) from exc
 
     async def stream(self, prompt: str, **kwargs: object) -> AsyncIterator[str]:
         try:
