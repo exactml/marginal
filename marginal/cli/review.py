@@ -13,6 +13,7 @@ from marginal.policy import load_policies
 from marginal.providers.errors import ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
 from marginal.review import Finding, Severity, filter_findings
+from marginal.review.redact import redact_secrets
 
 SEVERITY_EMOJI = {
     Severity.CRITICAL: "🔴",
@@ -42,10 +43,13 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     doesn't dominate the output on larger PRs).
 
     If `models.reviewer` is configured, also generates one unvalidated,
-    structured `Finding` from that model over the changed files' diffs plus
-    the content of any `config.policies` files (loaded via
-    `marginal.policy.load_policies`, relative to `path`; a missing file is
-    skipped with a warning rather than failing the review), then runs it
+    structured `Finding` from that model over the changed files' diffs --
+    each file's patch run through `marginal.review.redact_secrets` first,
+    so a diff containing a recognizable secret shape never reaches the
+    model with that value intact -- plus the content of any
+    `config.policies` files (loaded via `marginal.policy.load_policies`,
+    relative to `path`; a missing file is skipped with a warning rather
+    than failing the review), then runs it
     through `marginal.review.filter_findings`: dropped outright if its
     self-reported `confidence` is below `config.review.confidence_threshold`,
     otherwise capped alongside any others at `config.review.max_comments`
@@ -200,7 +204,10 @@ async def _generate_finding(
 
 
 def _build_finding_prompt(files: list[dict[str, object]], policies: list[tuple[str, str]]) -> str:
-    diff = "\n\n".join(f"--- {file['filename']} ---\n{file.get('patch', '')}" for file in files)
+    diff = "\n\n".join(
+        f"--- {file['filename']} ---\n{redact_secrets(str(file.get('patch', '')))}"
+        for file in files
+    )
     sections = [FINDING_PROMPT_INSTRUCTIONS]
     if policies:
         policy_text = "\n\n".join(f"--- {path} ---\n{content}" for path, content in policies)
