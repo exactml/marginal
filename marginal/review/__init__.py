@@ -6,6 +6,10 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from marginal.review.redact import redact_secrets
+
+__all__ = ["Finding", "Severity", "filter_findings", "redact_secrets"]
+
 
 class Severity(str, Enum):
     """How serious a finding is."""
