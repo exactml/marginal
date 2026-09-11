@@ -43,17 +43,18 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
 
     If `models.reviewer` is configured, also generates one unvalidated,
     structured `Finding` from that model over the changed files' diffs plus
-    the content of any `config.policies` files (loaded via
-    `marginal.policy.load_policies`, relative to `path`; a missing file is
-    skipped with a warning rather than failing the review), then runs it
-    through `marginal.review.filter_findings`: dropped outright if its
-    self-reported `confidence` is below `config.review.confidence_threshold`,
-    otherwise capped alongside any others at `config.review.max_comments`
-    (highest-confidence first). A finding that survives appends to the
-    printed summary as a severity+confidence badge (e.g. `🔴 **Critical** ·
-    92% confidence`) followed by its message. Without `models.reviewer`, or
-    if the finding gets filtered out, the summary stays metadata-only, same
-    as if nothing was generated.
+    the content of any `config.policies` and `config.anti_policies` files
+    (loaded via `marginal.policy.load_policies`, relative to `path`; a
+    missing file is skipped with a warning rather than failing the review),
+    then runs it through `marginal.review.filter_findings`: dropped
+    outright if its self-reported `confidence` is below
+    `config.review.confidence_threshold`, otherwise capped alongside any
+    others at `config.review.max_comments` (highest-confidence first). A
+    finding that survives appends to the printed summary as a
+    severity+confidence badge (e.g. `🔴 **Critical** · 92% confidence`)
+    followed by its message. Without `models.reviewer`, or if the finding
+    gets filtered out, the summary stays metadata-only, same as if nothing
+    was generated.
 
     If `comment` is set, also posts a PR review via
     `GitHubClient.create_review(..., event="COMMENT", comments=...)`. A
@@ -85,8 +86,9 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     finding: Finding | None = None
     if reviewer_model is not None:
         policies = load_policies(path, config.policies)
+        anti_policies = load_policies(path, config.anti_policies)
         try:
-            finding = asyncio.run(_generate_finding(reviewer_model, files, policies))
+            finding = asyncio.run(_generate_finding(reviewer_model, files, policies, anti_policies))
         except ProviderError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
             return 1
@@ -186,11 +188,15 @@ def _build_inline_comments(findings: list[Finding]) -> list[dict[str, object]]:
 
 
 async def _generate_finding(
-    model_spec: ModelSpec, files: list[dict[str, object]], policies: list[tuple[str, str]]
+    model_spec: ModelSpec,
+    files: list[dict[str, object]],
+    policies: list[tuple[str, str]],
+    anti_policies: list[tuple[str, str]] | None = None,
 ) -> Finding:
-    """Generate one unvalidated `Finding` from `model_spec` over `files`' diffs and `policies`."""
+    """Generate one unvalidated `Finding` from `model_spec` over `files`' diffs,
+    `policies`, and `anti_policies`."""
     provider = get_provider(model_spec)
-    prompt = _build_finding_prompt(files, policies)
+    prompt = _build_finding_prompt(files, policies, anti_policies)
     result = await provider.generate_structured(prompt, schema=Finding)
     if not isinstance(result, Finding):
         raise ProviderResponseError(
@@ -199,7 +205,11 @@ async def _generate_finding(
     return result
 
 
-def _build_finding_prompt(files: list[dict[str, object]], policies: list[tuple[str, str]]) -> str:
+def _build_finding_prompt(
+    files: list[dict[str, object]],
+    policies: list[tuple[str, str]],
+    anti_policies: list[tuple[str, str]] | None = None,
+) -> str:
     diff = "\n\n".join(f"--- {file['filename']} ---\n{file.get('patch', '')}" for file in files)
     sections = [FINDING_PROMPT_INSTRUCTIONS]
     if policies:
@@ -208,6 +218,16 @@ def _build_finding_prompt(files: list[dict[str, object]], policies: list[tuple[s
             "Also weigh the diff against this repository's own engineering policies "
             "below -- a violation of one of these is at least as important as a "
             f"general code-quality issue:\n\n{policy_text}"
+        )
+    if anti_policies:
+        anti_policy_text = "\n\n".join(
+            f"--- {path} ---\n{content}" for path, content in anti_policies
+        )
+        sections.append(
+            "Do not flag any issues matching this repository's anti-policies "
+            "below -- these are deliberate, accepted tradeoffs or intentional "
+            "patterns that must never be reported as findings:\n\n"
+            f"{anti_policy_text}"
         )
     sections.append(diff)
     return "\n\n".join(sections)
