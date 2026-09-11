@@ -18,6 +18,25 @@
   ([ISSUE-29](https://github.com/exactml/marginal/issues/29),
   [PR-40](https://github.com/exactml/marginal/pull/40))
 
+- `marginal review` now redacts likely secrets from a diff before it's
+  folded into the finding-generation prompt, via a new
+  `marginal.review.redact_secrets`: a small, fixed set of high-confidence
+  patterns (PEM private-key blocks, JWTs, GitHub tokens, AWS access keys,
+  and generic `api_key=`/`token=`/`secret=` assignments) get their value
+  masked as `[REDACTED]`. Applied unconditionally to every file's patch as
+  a safety default, not opt-in -- a patch with nothing matching passes
+  through byte-for-byte unchanged, and the generic-assignment pattern is
+  deliberately conservative so it doesn't mangle a plain identifier or
+  function call. Masking it from the model isn't the whole story, though:
+  `run_review` also names any redacted file in a `⚠️ **Redacted a likely
+  secret**` line folded into the same summary/review body, so the client
+  still learns a credential landed in their diff and can rotate it --
+  still exactly one `create_review` call, not a second comment. This is a
+  fixed pattern set, not exhaustive secret detection: false negatives (a
+  real secret in an unrecognized shape) are the accepted failure mode
+
+  ([ISSUE-47](https://github.com/exactml/marginal/issues/47))
+
 ### Improvements
 
 - `marginal review`'s output is restructured for readability instead of flat
