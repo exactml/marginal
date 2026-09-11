@@ -35,7 +35,8 @@
   fixed pattern set, not exhaustive secret detection: false negatives (a
   real secret in an unrecognized shape) are the accepted failure mode
 
-  ([ISSUE-47](https://github.com/exactml/marginal/issues/47))
+  ([ISSUE-47](https://github.com/exactml/marginal/issues/47),
+  [PR-58](https://github.com/exactml/marginal/pull/58))
 
 ### Improvements
 
