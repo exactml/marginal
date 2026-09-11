@@ -8,6 +8,8 @@ from marginal.cli.review import (
     _build_finding_prompt,
     _build_inline_comments,
     _finding_badge,
+    _redacted_filenames,
+    _redaction_warning_lines,
 )
 from marginal.config import MarginalConfig, load_config
 from marginal.github.errors import (
@@ -319,6 +321,39 @@ def test_build_finding_prompt_folds_policy_content_in():
     assert prompt.index("Never use a blocking sleep") < prompt.index("+time.sleep(1)")
 
 
+# -- review: secret redaction in the finding prompt ------------------------
+
+
+def test_build_finding_prompt_redacts_a_secret_in_the_patch():
+    files = [{"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"}]
+
+    prompt = _build_finding_prompt(files, [])
+
+    assert "AKIAIOSFODNN7EXAMPLE" not in prompt
+    assert prompt.endswith("--- marginal/config.py ---\n+api_key = '[REDACTED]'")
+
+
+def test_redacted_filenames_returns_only_files_whose_patch_changed():
+    files = [
+        {"filename": "clean.py", "patch": "+x = 1"},
+        {"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"},
+    ]
+
+    assert _redacted_filenames(files) == ["marginal/config.py"]
+
+
+def test_redaction_warning_lines_empty_when_nothing_redacted():
+    assert _redaction_warning_lines([]) == []
+
+
+def test_redaction_warning_lines_names_every_redacted_file():
+    rendered = "\n".join(_redaction_warning_lines(["config.py", "settings.py"]))
+
+    assert "⚠️ **Redacted a likely secret**" in rendered
+    assert "`config.py`" in rendered
+    assert "`settings.py`" in rendered
+
+
 # -- review: LLM finding -------------------------------------------------
 
 
@@ -615,3 +650,93 @@ def test_review_with_a_missing_policy_file_does_not_crash(
     assert ".marginal/policies/missing.md" in err
     prompt = provider.generate_structured.call_args.args[0]
     assert "missing.md" not in prompt
+
+
+# -- review: secret redaction warning --------------------------------------
+
+
+def _finding(file="marginal/config.py", confidence=0.5, message="not important"):
+    return Finding(
+        file=file, line=None, severity=Severity.LOW, confidence=confidence, message=message
+    )
+
+
+def test_review_warns_in_the_summary_when_a_secret_is_redacted(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"}
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(return_value=_finding())
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "⚠️ **Redacted a likely secret** in `marginal/config.py`" in out
+
+    prompt = provider.generate_structured.call_args.args[0]
+    assert "AKIAIOSFODNN7EXAMPLE" not in prompt
+
+
+def test_review_with_comment_flag_posts_the_redaction_warning_in_the_body(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"}
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(return_value=_finding())
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+
+    assert exit_code == 0
+    body = client.create_review.call_args.args[1]
+    assert "⚠️ **Redacted a likely secret** in `marginal/config.py`" in body
+
+
+def test_review_omits_the_redaction_warning_when_nothing_is_redacted(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(return_value=_finding(file="marginal/retry.py"))
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "Redacted" not in out
+
+
+def test_review_without_reviewer_model_does_not_scan_for_secrets(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"}
+    ]
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    mock_provider.assert_not_called()
+    out = capsys.readouterr().out
+    assert "Redacted" not in out
