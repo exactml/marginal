@@ -6,6 +6,16 @@
 
 ### New Features
 
+- `marginal review` supports `config.anti_policies` files (patterns the model
+  must never flag as findings). Anti-policy files are loaded relative to the
+  repo root via `marginal.policy.load_policies` (skipping and warning to stderr
+  on a missing file rather than failing the whole review) and folded into the
+  prompt under an explicit "do not flag" framing distinct from `config.policies`.
+  With no anti-policies configured -- the default -- the prompt is byte-for-byte
+  unchanged from before
+
+  ([ISSUE-46](https://github.com/exactml/marginal/issues/46))
+
 - `marginal review` now folds the content of any `config.policies` files into
   the finding-generation prompt, via a new `marginal.policy.load_policies`
   (reads each path relative to the repo root, skipping and warning to stderr
