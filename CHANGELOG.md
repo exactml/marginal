@@ -89,7 +89,8 @@
   actually publishing, since publishing fires the PyPI trusted-publish
   workflow immediately and irreversibly
 
-  ([ISSUE-66](https://github.com/exactml/marginal/issues/66))
+  ([ISSUE-66](https://github.com/exactml/marginal/issues/66),
+  [PR-69](https://github.com/exactml/marginal/pull/69))
 
 ### Fixes
 
