@@ -177,6 +177,36 @@ def test_get_pull_request_files_returns_json_list(monkeypatch):
     result = client.get_pull_request_files(1)
 
     assert result == [{"filename": "a.py", "patch": "@@ -1 +1 @@"}]
+    _, kwargs = session.request.call_args
+    assert kwargs["params"] == {"per_page": 100, "page": 1}
+
+
+def test_get_pull_request_files_stops_after_a_single_short_page(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = _response(200, [{"filename": "a.py"}])
+    client = _client(session=session)
+
+    client.get_pull_request_files(1)
+
+    session.request.assert_called_once()
+
+
+def test_get_pull_request_files_follows_every_full_page(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    first_page = [{"filename": f"file_{i}.py"} for i in range(100)]
+    second_page = [{"filename": "last.py"}]
+    session.request.side_effect = [_response(200, first_page), _response(200, second_page)]
+    client = _client(session=session)
+
+    result = client.get_pull_request_files(1)
+
+    assert result == first_page + second_page
+    assert session.request.call_count == 2
+    first_call, second_call = session.request.call_args_list
+    assert first_call.kwargs["params"] == {"per_page": 100, "page": 1}
+    assert second_call.kwargs["params"] == {"per_page": 100, "page": 2}
 
 
 # -- API errors ---------------------------------------------------------

@@ -51,9 +51,26 @@ class GitHubClient:
         return self._request("GET", f"/repos/{self._repo}/pulls/{number}")
 
     def get_pull_request_files(self, number: int) -> list[dict[str, object]]:
-        """Return the PR's changed files, each with its per-file patch."""
+        """Return the PR's changed files, each with its per-file patch.
+
+        Follows every page GitHub returns (up to its own 3000-file-per-PR
+        cap) instead of stopping at the first page, so a PR with more files
+        than fit on one page isn't silently truncated.
+        """
         self._require_read("pull_requests")
-        return self._request("GET", f"/repos/{self._repo}/pulls/{number}/files")
+        files: list[dict[str, object]] = []
+        page = 1
+        while True:
+            batch = self._request(
+                "GET",
+                f"/repos/{self._repo}/pulls/{number}/files",
+                params={"per_page": 100, "page": page},
+            )
+            files.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+        return files
 
     # -- writes ----------------------------------------------------------------
 
@@ -88,7 +105,14 @@ class GitHubClient:
         if not getattr(self._permissions.write, flag):
             raise PermissionDeniedError(f"this operation requires permissions.write.{flag}")
 
-    def _request(self, method: str, path: str, *, json: dict[str, object] | None = None) -> object:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, object] | None = None,
+    ) -> object:
         token = require_github_token()
         response = self._session.request(
             method,
@@ -98,6 +122,7 @@ class GitHubClient:
                 "Accept": "application/vnd.github+json",
             },
             json=json,
+            params=params,
         )
         if response.status_code == 401:
             raise GitHubAuthenticationError("GitHub rejected the configured GITHUB_TOKEN")
