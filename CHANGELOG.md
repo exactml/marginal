@@ -63,6 +63,15 @@
 
   ([PR-41](https://github.com/exactml/marginal/pull/41))
 
+- Added `SECURITY.md` documenting how to report a vulnerability responsibly:
+  GitHub private vulnerability reporting as the intake channel (no public
+  security@ email exists for this project), an acknowledgement/assessment
+  response-time commitment, and a supported-versions policy that -- being
+  pre-1.0 -- covers only the latest `0.1.x` release on PyPI
+
+  ([ISSUE-62](https://github.com/exactml/marginal/issues/62),
+  [PR-67](https://github.com/exactml/marginal/pull/67))
+
 ### Fixes
 
 ### Warnings
