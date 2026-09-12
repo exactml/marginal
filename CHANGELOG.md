@@ -72,6 +72,12 @@
   ([ISSUE-62](https://github.com/exactml/marginal/issues/62),
   [PR-67](https://github.com/exactml/marginal/pull/67))
 
+- Adopted a `CODE_OF_CONDUCT.md` based on the Contributor Covenant (v2.1),
+  with the enforcement contact pointed at the project's existing public
+  maintainer email rather than a fabricated address
+
+  ([ISSUE-63](https://github.com/exactml/marginal/issues/63))
+
 ### Fixes
 
 ### Warnings
