@@ -25,7 +25,7 @@
   both alike
 
   ([ISSUE-60](https://github.com/exactml/marginal/issues/60),
-  [PR-61](https://github.com/exactml/marginal/pull/61))
+  [PR-61](https://github.com/exactml/marginal/pull/61) by [@exactml](https://github.com/exactml))
 
 ### New Features
 
@@ -39,7 +39,7 @@
   understanding of *why* a policy applies is left for later
 
   ([ISSUE-29](https://github.com/exactml/marginal/issues/29),
-  [PR-40](https://github.com/exactml/marginal/pull/40))
+  [PR-40](https://github.com/exactml/marginal/pull/40) by [@exactml](https://github.com/exactml))
 
 - `marginal review` now redacts likely secrets from a diff before it's
   folded into the finding-generation prompt, via a new
@@ -59,7 +59,7 @@
   real secret in an unrecognized shape) are the accepted failure mode
 
   ([ISSUE-47](https://github.com/exactml/marginal/issues/47),
-  [PR-58](https://github.com/exactml/marginal/pull/58))
+  [PR-58](https://github.com/exactml/marginal/pull/58) by [@exactml](https://github.com/exactml))
 
 ### Improvements
 
@@ -77,14 +77,14 @@
   smaller, collapsed) repetition, and is left open
 
   ([ISSUE-36](https://github.com/exactml/marginal/issues/36),
-  [PR-38](https://github.com/exactml/marginal/pull/38))
+  [PR-38](https://github.com/exactml/marginal/pull/38) by [@exactml](https://github.com/exactml))
 
 - `tests/test_cli.py`'s `review` test cases now share `mock_github_client` and
   `mock_provider` fixtures and consistently reuse the existing `_pull_request()`
   helper, replacing roughly ten near-identical inline mock-patching blocks and
   PR-metadata dict literals. Test-only: no behavior or coverage change
 
-  ([PR-41](https://github.com/exactml/marginal/pull/41))
+  ([PR-41](https://github.com/exactml/marginal/pull/41) by [@exactml](https://github.com/exactml))
 
 - Added `SECURITY.md` documenting how to report a vulnerability responsibly:
   GitHub private vulnerability reporting as the intake channel (no public
@@ -93,14 +93,14 @@
   pre-1.0 -- covers only the latest `0.1.x` release on PyPI
 
   ([ISSUE-62](https://github.com/exactml/marginal/issues/62),
-  [PR-67](https://github.com/exactml/marginal/pull/67))
+  [PR-67](https://github.com/exactml/marginal/pull/67) by [@exactml](https://github.com/exactml))
 
 - Adopted a `CODE_OF_CONDUCT.md` based on the Contributor Covenant (v2.1),
   with the enforcement contact pointed at the project's existing public
   maintainer email rather than a fabricated address
 
   ([ISSUE-63](https://github.com/exactml/marginal/issues/63),
-  [PR-68](https://github.com/exactml/marginal/pull/68))
+  [PR-68](https://github.com/exactml/marginal/pull/68) by [@exactml](https://github.com/exactml))
 
 - Added two Claude Code skills under `.claude/skills/`: `dev-setup` wraps
   CONTRIBUTING.md's manual venv/`pip install -e ".[dev]"`/pre-commit steps
@@ -113,7 +113,7 @@
   workflow immediately and irreversibly
 
   ([ISSUE-66](https://github.com/exactml/marginal/issues/66),
-  [PR-69](https://github.com/exactml/marginal/pull/69))
+  [PR-69](https://github.com/exactml/marginal/pull/69) by [@exactml](https://github.com/exactml))
 
 ### Fixes
 
@@ -139,7 +139,7 @@
   `filter_findings` instead
 
   ([ISSUE-28](https://github.com/exactml/marginal/issues/28),
-  [PR-35](https://github.com/exactml/marginal/pull/35))
+  [PR-35](https://github.com/exactml/marginal/pull/35) by [@exactml](https://github.com/exactml))
 
 ### Improvements
 
@@ -166,7 +166,7 @@
   `marginal-action`'s own real review of this PR's diff
 
   ([ISSUE-26](https://github.com/exactml/marginal/issues/26),
-  [PR-30](https://github.com/exactml/marginal/pull/30))
+  [PR-30](https://github.com/exactml/marginal/pull/30) by [@exactml](https://github.com/exactml))
 
 - `marginal review --comment` now posts a finding anchored to a `line` as an
   inline review comment (`{path, line, body}`) instead of folding it into
@@ -181,7 +181,7 @@
   this PR's diff
 
   ([ISSUE-27](https://github.com/exactml/marginal/issues/27),
-  [PR-33](https://github.com/exactml/marginal/pull/33))
+  [PR-33](https://github.com/exactml/marginal/pull/33) by [@exactml](https://github.com/exactml))
 
 ### Improvements
 
@@ -199,7 +199,7 @@
   `marginal-action`'s own review of this PR's diff
 
   ([ISSUE-31](https://github.com/exactml/marginal/issues/31),
-  [PR-32](https://github.com/exactml/marginal/pull/32))
+  [PR-32](https://github.com/exactml/marginal/pull/32) by [@exactml](https://github.com/exactml))
 
 ### Warnings
 
@@ -220,7 +220,7 @@
   one-line/non-zero-exit handling as a GitHub error. Still no validation,
   deduplication, or confidence scoring — one raw, unvalidated finding
 
-  ([ISSUE-21](https://github.com/exactml/marginal/issues/21))
+  ([ISSUE-21](https://github.com/exactml/marginal/issues/21) by [@exactml](https://github.com/exactml))
 
 ### Improvements
 
@@ -232,7 +232,7 @@
   `ANTHROPIC_API_KEY` repository secret added manually before this repo's
   own PRs get a real generated finding instead of a `MissingCredentialsError`
 
-  ([ISSUE-23](https://github.com/exactml/marginal/issues/23))
+  ([ISSUE-23](https://github.com/exactml/marginal/issues/23) by [@exactml](https://github.com/exactml))
 
 ### Fixes
 
@@ -244,7 +244,7 @@
   as required. Also adds this same corrected workflow to `marginal`'s own
   repo, so it reviews its own PRs via `exactml/marginal-action@v1`
 
-  ([ISSUE-19](https://github.com/exactml/marginal/issues/19))
+  ([ISSUE-19](https://github.com/exactml/marginal/issues/19) by [@exactml](https://github.com/exactml))
 
 ### Warnings
 
@@ -263,7 +263,7 @@
   clean one-line/non-zero-exit handling as a fetch-time error
 
   ([ISSUE-13](https://github.com/exactml/marginal/issues/13),
-  [PR-14](https://github.com/exactml/marginal/pull/14))
+  [PR-14](https://github.com/exactml/marginal/pull/14) by [@exactml](https://github.com/exactml))
 
 - `marginal review` CLI subcommand: fetches a pull request's metadata and
   changed files via `GitHubClient` and prints a plain-text summary — title,
@@ -274,7 +274,7 @@
   traceback and exiting non-zero
 
   ([ISSUE-11](https://github.com/exactml/marginal/issues/11),
-  [PR-12](https://github.com/exactml/marginal/pull/12))
+  [PR-12](https://github.com/exactml/marginal/pull/12) by [@exactml](https://github.com/exactml))
 
 - GitHub API client: `marginal.github.GitHubClient` wraps the GitHub REST API
   (pull request reads, review writes) for one `"owner/name"` repo, gating
@@ -288,7 +288,7 @@
   Adds `requests` as a core runtime dependency
 
   ([ISSUE-9](https://github.com/exactml/marginal/issues/9),
-  [PR-10](https://github.com/exactml/marginal/pull/10))
+  [PR-10](https://github.com/exactml/marginal/pull/10) by [@exactml](https://github.com/exactml))
 
 - `marginal init` CLI command: scaffolds `.marginal/config.yaml` (serialized
   from a default `MarginalConfig`, so it can never drift from the schema),
@@ -299,7 +299,7 @@
   in `marginal/cli/` for future subcommands to plug into
 
   ([ISSUE-7](https://github.com/exactml/marginal/issues/7),
-  [PR-8](https://github.com/exactml/marginal/pull/8))
+  [PR-8](https://github.com/exactml/marginal/pull/8) by [@exactml](https://github.com/exactml))
 
 - Model provider abstraction (BYOK): `marginal.providers.get_provider` resolves
   a config `ModelSpec` to a `ModelProvider` (`generate`, `generate_structured`,
@@ -313,7 +313,7 @@
   dependencies
 
   ([ISSUE-5](https://github.com/exactml/marginal/issues/5),
-  [PR-6](https://github.com/exactml/marginal/pull/6))
+  [PR-6](https://github.com/exactml/marginal/pull/6) by [@exactml](https://github.com/exactml))
 
 - Repository-local config schema: `marginal.config.load_config` parses and
   validates `.marginal/config.yaml` (review behavior, context toggles, model
@@ -324,7 +324,7 @@
   a clear message. Adds `pydantic` and `pyyaml` as runtime dependencies
 
   ([ISSUE-3](https://github.com/exactml/marginal/issues/3),
-  [PR-4](https://github.com/exactml/marginal/pull/4))
+  [PR-4](https://github.com/exactml/marginal/pull/4) by [@exactml](https://github.com/exactml))
 
 ### Improvements
 
@@ -335,14 +335,14 @@
   the `pip install` name changes
 
   ([ISSUE-17](https://github.com/exactml/marginal/issues/17),
-  [PR-16](https://github.com/exactml/marginal/pull/16))
+  [PR-16](https://github.com/exactml/marginal/pull/16) by [@exactml](https://github.com/exactml))
 
 - Project scaffold: `marginal` package layout (`config`, `providers`, `context`,
   `graph`, `policy`, `agent`, `review`, `github`, `cli`), `ruff` + `pytest`
   tooling, CI workflow, `CONTRIBUTING.md`, and the language/runtime ADR
 
   ([ISSUE-1](https://github.com/exactml/marginal/issues/1),
-  [PR-2](https://github.com/exactml/marginal/pull/2))
+  [PR-2](https://github.com/exactml/marginal/pull/2) by [@exactml](https://github.com/exactml))
 
 ### Fixes
 
