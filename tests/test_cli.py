@@ -521,7 +521,7 @@ def test_review_with_malformed_structured_output_maps_to_clean_message(
     client.create_review.assert_not_called()
 
 
-def test_review_with_reviewer_model_maps_provider_error_to_clean_message(
+def test_review_with_missing_credentials_maps_to_exit_code_3(
     tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
 ):
     monkeypatch.chdir(tmp_path)
@@ -535,7 +535,7 @@ def test_review_with_reviewer_model_maps_provider_error_to_clean_message(
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
-    assert exit_code == 1
+    assert exit_code == 3
     err = capsys.readouterr().err
     assert "marginal review:" in err
     assert "Traceback" not in err
