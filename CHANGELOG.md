@@ -69,7 +69,8 @@
   response-time commitment, and a supported-versions policy that -- being
   pre-1.0 -- covers only the latest `0.1.x` release on PyPI
 
-  ([ISSUE-62](https://github.com/exactml/marginal/issues/62))
+  ([ISSUE-62](https://github.com/exactml/marginal/issues/62),
+  [PR-67](https://github.com/exactml/marginal/pull/67))
 
 ### Fixes
 
