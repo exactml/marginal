@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from marginal.review import Finding, Severity, filter_findings
+from marginal.review import Finding, Severity, filter_findings, redact_secrets
 
 
 def _finding(confidence: float, **overrides: object) -> Finding:
@@ -50,3 +50,74 @@ def test_filter_findings_drops_low_confidence_before_capping():
     result = filter_findings([below_threshold, kept], confidence_threshold=0.85, max_comments=8)
 
     assert result == [kept]
+
+
+# -- redact_secrets --------------------------------------------------------
+
+
+def test_redact_secrets_passes_through_a_patch_with_no_secrets_unchanged():
+    patch = "@@ -1,3 +1,4 @@\n import os\n+conn = connect(host='db')\n"
+
+    assert redact_secrets(patch) == patch
+
+
+def test_redact_secrets_masks_an_aws_access_key():
+    assert redact_secrets("+aws_key = AKIAIOSFODNN7EXAMPLE") == "+aws_key = [REDACTED]"
+
+
+def test_redact_secrets_masks_a_github_token():
+    token = "ghp_" + "a" * 36
+    assert redact_secrets(f"+token: {token}") == "+token: [REDACTED]"
+
+
+def test_redact_secrets_masks_a_github_fine_grained_token():
+    token = "github_pat_" + "b" * 30
+    assert redact_secrets(f"+GITHUB_TOKEN={token}") == "+GITHUB_TOKEN=[REDACTED]"
+
+
+def test_redact_secrets_masks_a_jwt():
+    jwt = (
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0."
+        "dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+    )
+    assert redact_secrets(f"+jwt = '{jwt}'") == "+jwt = '[REDACTED]'"
+
+
+def test_redact_secrets_masks_a_pem_private_key_block():
+    patch = (
+        "+-----BEGIN RSA PRIVATE KEY-----\n"
+        "+MIIEowIBAAKCAQEA1234567890abcdefgh\n"
+        "+-----END RSA PRIVATE KEY-----\n"
+    )
+
+    assert redact_secrets(patch) == "+[REDACTED]\n"
+
+
+@pytest.mark.parametrize("assignment", ["api_key", "API_KEY", "token", "secret"])
+def test_redact_secrets_masks_a_quoted_generic_assignment(assignment):
+    patch = f'+{assignment} = "sk-abcdef1234567890"'
+
+    assert redact_secrets(patch) == f'+{assignment} = "[REDACTED]"'
+
+
+def test_redact_secrets_masks_an_unquoted_generic_assignment():
+    assert redact_secrets("+token: abc123XYZ789") == "+token: [REDACTED]"
+
+
+def test_redact_secrets_leaves_a_function_call_alone():
+    patch = "+token = generate_token()"
+
+    assert redact_secrets(patch) == patch
+
+
+def test_redact_secrets_leaves_a_plain_lookup_alone():
+    patch = '+secret = os.environ["SECRET_KEY"]'
+
+    assert redact_secrets(patch) == patch
+
+
+def test_redact_secrets_preserves_the_file_separator_framing():
+    patch = "+api_key = 'AKIAIOSFODNN7EXAMPLE'"
+    prompt = f"--- config.py ---\n{redact_secrets(patch)}"
+
+    assert prompt == "--- config.py ---\n+api_key = '[REDACTED]'"

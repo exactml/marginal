@@ -13,6 +13,7 @@ from marginal.policy import load_policies
 from marginal.providers.errors import ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
 from marginal.review import Finding, Severity, filter_findings
+from marginal.review.redact import redact_secrets
 
 SEVERITY_EMOJI = {
     Severity.CRITICAL: "🔴",
@@ -42,10 +43,13 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     doesn't dominate the output on larger PRs).
 
     If `models.reviewer` is configured, also generates one unvalidated,
-    structured `Finding` from that model over the changed files' diffs plus
-    the content of any `config.policies` files (loaded via
-    `marginal.policy.load_policies`, relative to `path`; a missing file is
-    skipped with a warning rather than failing the review), then runs it
+    structured `Finding` from that model over the changed files' diffs --
+    each file's patch run through `marginal.review.redact_secrets` first,
+    so a diff containing a recognizable secret shape never reaches the
+    model with that value intact -- plus the content of any
+    `config.policies` files (loaded via `marginal.policy.load_policies`,
+    relative to `path`; a missing file is skipped with a warning rather
+    than failing the review), then runs it
     through `marginal.review.filter_findings`: dropped outright if its
     self-reported `confidence` is below `config.review.confidence_threshold`,
     otherwise capped alongside any others at `config.review.max_comments`
@@ -54,6 +58,12 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     92% confidence`) followed by its message. Without `models.reviewer`, or
     if the finding gets filtered out, the summary stays metadata-only, same
     as if nothing was generated.
+
+    If redaction actually masked something, the summary also gets a
+    `⚠️ **Redacted a likely secret**` line naming the affected file(s) --
+    this is folded into the same body/summary rather than becoming a
+    second comment, so the client learns about it without a new
+    `create_review` call.
 
     If `comment` is set, also posts a PR review via
     `GitHubClient.create_review(..., event="COMMENT", comments=...)`. A
@@ -83,8 +93,10 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
 
     reviewer_model = config.models.get("reviewer")
     finding: Finding | None = None
+    redacted_files: list[str] = []
     if reviewer_model is not None:
         policies = load_policies(path, config.policies)
+        redacted_files = _redacted_filenames(files)
         try:
             finding = asyncio.run(_generate_finding(reviewer_model, files, policies))
         except ProviderError as exc:
@@ -100,12 +112,17 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     inline_comments = _build_inline_comments(findings)
 
     base_lines = _base_lines(pr_number, pull_request, filenames)
-    summary = "\n".join(base_lines + [line for f in findings for line in _finding_lines(f)])
+    warning_lines = _redaction_warning_lines(redacted_files)
+    summary = "\n".join(
+        base_lines + warning_lines + [line for f in findings for line in _finding_lines(f)]
+    )
     print(summary)
 
     if comment:
         body = "\n".join(
-            base_lines + [line for f in findings if f.line is None for line in _finding_lines(f)]
+            base_lines
+            + warning_lines
+            + [line for f in findings if f.line is None for line in _finding_lines(f)]
         )
         try:
             client.create_review(pr_number, body, event="COMMENT", comments=inline_comments)
@@ -166,6 +183,23 @@ def _finding_lines(finding: Finding) -> list[str]:
     return ["", _finding_badge(finding, with_location=True), "", finding.message]
 
 
+def _redaction_warning_lines(redacted_files: list[str]) -> list[str]:
+    """Render a warning naming `redacted_files`, or `[]` if none were redacted.
+
+    Folded into the same review body as the header and findings rather than
+    a second comment -- `marginal review --comment` posts exactly one
+    `create_review` per run, so this rides along with it.
+    """
+    if not redacted_files:
+        return []
+    files_list = ", ".join(f"`{filename}`" for filename in redacted_files)
+    return [
+        "",
+        f"⚠️ **Redacted a likely secret** in {files_list} before this diff reached "
+        "the review model -- rotate it if it was real.",
+    ]
+
+
 def _build_inline_comments(findings: list[Finding]) -> list[dict[str, object]]:
     """Build one GitHub review `comments` entry per line-anchored finding.
 
@@ -199,8 +233,20 @@ async def _generate_finding(
     return result
 
 
+def _redacted_filenames(files: list[dict[str, object]]) -> list[str]:
+    """Filenames whose patch contains a likely secret that `redact_secrets` masked."""
+    return [
+        str(file["filename"])
+        for file in files
+        if redact_secrets(patch := str(file.get("patch", ""))) != patch
+    ]
+
+
 def _build_finding_prompt(files: list[dict[str, object]], policies: list[tuple[str, str]]) -> str:
-    diff = "\n\n".join(f"--- {file['filename']} ---\n{file.get('patch', '')}" for file in files)
+    diff = "\n\n".join(
+        f"--- {file['filename']} ---\n{redact_secrets(str(file.get('patch', '')))}"
+        for file in files
+    )
     sections = [FINDING_PROMPT_INSTRUCTIONS]
     if policies:
         policy_text = "\n\n".join(f"--- {path} ---\n{content}" for path, content in policies)
