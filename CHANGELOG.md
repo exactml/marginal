@@ -76,7 +76,8 @@
   with the enforcement contact pointed at the project's existing public
   maintainer email rather than a fabricated address
 
-  ([ISSUE-63](https://github.com/exactml/marginal/issues/63))
+  ([ISSUE-63](https://github.com/exactml/marginal/issues/63),
+  [PR-68](https://github.com/exactml/marginal/pull/68))
 
 ### Fixes
 
