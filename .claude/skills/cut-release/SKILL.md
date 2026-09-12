@@ -161,9 +161,27 @@ gh release create v<new> \
 Always create it as `--draft` first -- this stages the tag and notes
 without firing the `published` event (so PyPI publish does not trigger),
 and gives the user a chance to review the notes on GitHub before deciding to
-publish. Base the notes body on the CHANGELOG entries for this version (not
-a copy of the whole CHANGELOG, just this release's section), plus the
-contributor-thanks section from Step 5 if non-empty.
+publish.
+
+Structure the notes body as:
+
+1. **One-sentence headline** stating the practical upshot of this release --
+   not marketing copy, just what a user can now do that they couldn't
+   before (e.g. "Findings are now structured and land as inline PR comments
+   instead of one flat summary."). Skip it if nothing in the release is
+   user-visible (e.g. a pure tooling/docs release).
+2. **Per-category bullets** condensed from the CHANGELOG entries for this
+   version (not a copy of the whole CHANGELOG, just this release's section
+   -- one line per entry, not the full multi-sentence writeup), still
+   carrying the `ISSUE`/`PR` links.
+3. **Contributor thanks**, from Step 5, if non-empty:
+   - A first-time external contributor: `### New Contributors` with
+     `- @username made their first contribution in [PR-N](...)` per person.
+   - A returning external contributor (has an earlier merged PR in this
+     repo): `### Contributors` with a plain `Thanks to @user1, @user2 for
+     contributing to this release!` line naming everyone in the set.
+4. A closing link to the full `CHANGELOG.md` for anyone who wants the
+   complete writeup.
 
 ## Step 7 — Confirm before publishing
 
