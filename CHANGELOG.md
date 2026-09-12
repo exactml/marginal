@@ -79,6 +79,18 @@
   ([ISSUE-63](https://github.com/exactml/marginal/issues/63),
   [PR-68](https://github.com/exactml/marginal/pull/68))
 
+- Added two Claude Code skills under `.claude/skills/`: `dev-setup` wraps
+  CONTRIBUTING.md's manual venv/`pip install -e ".[dev]"`/pre-commit steps
+  into a single guided flow that verifies each step instead of assuming it
+  worked, and `cut-release` codifies the mechanical `CHANGELOG.md`
+  UNDER-DEVELOPMENT-to-dated-version split, the version-bump/tag/branch
+  naming this repo already uses, and drafting GitHub release notes with a
+  contributor-thanks section -- gated behind an explicit confirmation before
+  actually publishing, since publishing fires the PyPI trusted-publish
+  workflow immediately and irreversibly
+
+  ([ISSUE-66](https://github.com/exactml/marginal/issues/66))
+
 ### Fixes
 
 ### Warnings
