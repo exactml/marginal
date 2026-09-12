@@ -12,7 +12,8 @@
   secrets GitHub never forwarded" and react differently instead of failing
   both alike
 
-  ([ISSUE-60](https://github.com/exactml/marginal/issues/60))
+  ([ISSUE-60](https://github.com/exactml/marginal/issues/60),
+  [PR-61](https://github.com/exactml/marginal/pull/61))
 
 ### New Features
 
