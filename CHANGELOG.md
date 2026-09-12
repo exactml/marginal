@@ -6,6 +6,20 @@
 
 ### New Features
 
+- `marginal review` now checks whether it actually saw everything that
+  changed in the PR. `GitHubClient.get_pull_request_files` previously made
+  one unpaginated call to GitHub's files endpoint, so a PR with more files
+  than fit on a single page was silently truncated -- it now follows every
+  page GitHub returns (up to GitHub's own 3000-file-per-PR cap). Separately,
+  a file whose `patch` GitHub omits (large diff or binary) is now detected
+  and named. Either gap -- a file count short of `changed_files`, or a
+  present-but-patchless file -- surfaces as a `⚠️ **Incomplete review
+  coverage**` / `⚠️ **No diff available**` line in the same summary/review
+  body as the existing redaction warning, so a review with no findings
+  can't be mistaken for one that looked at everything and found nothing
+
+  ([ISSUE-71](https://github.com/exactml/marginal/issues/71))
+
 ### Improvements
 
 ### Fixes
