@@ -169,7 +169,10 @@ Structure the notes body as:
    not marketing copy, just what a user can now do that they couldn't
    before (e.g. "Findings are now structured and land as inline PR comments
    instead of one flat summary."). Skip it if nothing in the release is
-   user-visible (e.g. a pure tooling/docs release).
+   user-visible (e.g. a pure tooling/docs release). Lead it with one emoji
+   loosely fitting the release's theme (🎉 for a first release, 🤖 for a
+   model/LLM-facing change, 🐛 for a fixes-only release, etc.) -- light
+   touch only, this is the one emoji in the whole note.
 2. **Per-category bullets** condensed from the CHANGELOG entries for this
    version (not a copy of the whole CHANGELOG, just this release's section
    -- one line per entry, not the full multi-sentence writeup), still
@@ -180,8 +183,11 @@ Structure the notes body as:
    - A returning external contributor (has an earlier merged PR in this
      repo): `### Contributors` with a plain `Thanks to @user1, @user2 for
      contributing to this release!` line naming everyone in the set.
-4. A closing link to the full `CHANGELOG.md` for anyone who wants the
-   complete writeup.
+4. A closing `📖 Full details: [CHANGELOG.md](...)` link for anyone who
+   wants the complete writeup -- the only other emoji in the note. Section
+   headers and bullets themselves stay plain; two light touches (headline +
+   closing link) reads as considered, a decorated emoji on every header or
+   bullet reads as noise.
 
 ## Step 7 — Confirm before publishing
 
