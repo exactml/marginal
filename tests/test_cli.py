@@ -7,7 +7,9 @@ from marginal.cli.review import (
     _base_lines,
     _build_finding_prompt,
     _build_inline_comments,
+    _coverage_warning_lines,
     _finding_badge,
+    _missing_patch_filenames,
     _redacted_filenames,
     _redaction_warning_lines,
 )
@@ -352,6 +354,62 @@ def test_redaction_warning_lines_names_every_redacted_file():
     assert "⚠️ **Redacted a likely secret**" in rendered
     assert "`config.py`" in rendered
     assert "`settings.py`" in rendered
+
+
+# -- review: coverage warnings --------------------------------------------
+
+
+def test_missing_patch_filenames_returns_only_files_without_a_patch():
+    files = [
+        {"filename": "has_patch.py", "patch": "+x = 1"},
+        {"filename": "no_patch.py"},
+        {"filename": "empty_patch.py", "patch": ""},
+    ]
+
+    assert _missing_patch_filenames(files) == ["no_patch.py", "empty_patch.py"]
+
+
+def test_coverage_warning_lines_empty_when_fully_covered():
+    pull_request = {"changed_files": 1}
+    files = [{"filename": "a.py", "patch": "+x = 1"}]
+
+    assert _coverage_warning_lines(pull_request, files) == []
+
+
+def test_coverage_warning_lines_empty_when_changed_files_is_absent():
+    files = [{"filename": "a.py", "patch": "+x = 1"}]
+
+    assert _coverage_warning_lines({}, files) == []
+
+
+def test_coverage_warning_lines_warns_on_file_count_mismatch():
+    pull_request = {"changed_files": 3}
+    files = [{"filename": "a.py", "patch": "+x = 1"}]
+
+    rendered = "\n".join(_coverage_warning_lines(pull_request, files))
+
+    assert "⚠️ **Incomplete review coverage**" in rendered
+    assert "reviewed 1 of 3 changed files" in rendered
+
+
+def test_coverage_warning_lines_warns_on_missing_patch():
+    pull_request = {"changed_files": 1}
+    files = [{"filename": "huge.bin"}]
+
+    rendered = "\n".join(_coverage_warning_lines(pull_request, files))
+
+    assert "⚠️ **No diff available**" in rendered
+    assert "`huge.bin`" in rendered
+
+
+def test_coverage_warning_lines_can_report_both_gaps_at_once():
+    pull_request = {"changed_files": 2}
+    files = [{"filename": "huge.bin"}]
+
+    rendered = "\n".join(_coverage_warning_lines(pull_request, files))
+
+    assert "⚠️ **Incomplete review coverage**" in rendered
+    assert "⚠️ **No diff available**" in rendered
 
 
 # -- review: LLM finding -------------------------------------------------
@@ -740,3 +798,100 @@ def test_review_without_reviewer_model_does_not_scan_for_secrets(
     mock_provider.assert_not_called()
     out = capsys.readouterr().out
     assert "Redacted" not in out
+
+
+# -- review: coverage warning ---------------------------------------------
+
+
+def test_review_warns_in_the_summary_on_a_missing_patch(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [{"filename": "huge.bin"}]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(return_value=_finding(file="huge.bin"))
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "⚠️ **No diff available** for `huge.bin`" in out
+
+
+def test_review_warns_in_the_summary_on_a_file_count_mismatch(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = {**_pull_request(), "changed_files": 3}
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py", "patch": "+time.sleep(1)"}
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(return_value=_finding(file="marginal/retry.py"))
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "⚠️ **Incomplete review coverage** -- reviewed 1 of 3 changed files" in out
+
+
+def test_review_with_comment_flag_posts_the_coverage_warning_in_the_body(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [{"filename": "huge.bin"}]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(return_value=_finding(file="huge.bin"))
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+
+    assert exit_code == 0
+    body = client.create_review.call_args.args[1]
+    assert "⚠️ **No diff available** for `huge.bin`" in body
+
+
+def test_review_omits_the_coverage_warning_when_fully_covered(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = {**_pull_request(), "changed_files": 1}
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py", "patch": "+time.sleep(1)"}
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(return_value=_finding(file="marginal/retry.py"))
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "coverage" not in out.lower()
+    assert "No diff available" not in out
+
+
+def test_review_without_reviewer_model_does_not_compute_coverage(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = {**_pull_request(), "changed_files": 3}
+    client.get_pull_request_files.return_value = [{"filename": "huge.bin"}]
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    mock_provider.assert_not_called()
+    out = capsys.readouterr().out
+    assert "coverage" not in out.lower()
+    assert "No diff available" not in out

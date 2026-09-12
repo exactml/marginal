@@ -65,6 +65,13 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     second comment, so the client learns about it without a new
     `create_review` call.
 
+    Similarly, if the reviewed file list doesn't fully cover what changed --
+    GitHub's own 3000-file-per-PR cap left files out, or a file's patch was
+    omitted for being too large or binary -- the summary gets a
+    `⚠️ **Incomplete review coverage**` and/or `⚠️ **No diff available**`
+    line naming the gap, so a review with no findings can't be mistaken for
+    one that looked at everything and found nothing.
+
     If `comment` is set, also posts a PR review via
     `GitHubClient.create_review(..., event="COMMENT", comments=...)`. A
     finding anchored to a `line` is posted as an inline `comments` entry
@@ -98,9 +105,11 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     reviewer_model = config.models.get("reviewer")
     finding: Finding | None = None
     redacted_files: list[str] = []
+    coverage_lines: list[str] = []
     if reviewer_model is not None:
         policies = load_policies(path, config.policies)
         redacted_files = _redacted_filenames(files)
+        coverage_lines = _coverage_warning_lines(pull_request, files)
         try:
             finding = asyncio.run(_generate_finding(reviewer_model, files, policies))
         except MissingCredentialsError as exc:
@@ -119,7 +128,7 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     inline_comments = _build_inline_comments(findings)
 
     base_lines = _base_lines(pr_number, pull_request, filenames)
-    warning_lines = _redaction_warning_lines(redacted_files)
+    warning_lines = _redaction_warning_lines(redacted_files) + coverage_lines
     summary = "\n".join(
         base_lines + warning_lines + [line for f in findings for line in _finding_lines(f)]
     )
@@ -238,6 +247,48 @@ async def _generate_finding(
             f"expected a Finding from generate_structured, got {type(result).__name__}"
         )
     return result
+
+
+def _missing_patch_filenames(files: list[dict[str, object]]) -> list[str]:
+    """Filenames GitHub returned with no patch content.
+
+    GitHub omits a file's `patch` entirely once its diff is too large or
+    it's binary -- the file still appears in the files list, but there's no
+    diff for `_build_finding_prompt` to include, so it was never reviewed.
+    """
+    return [str(file["filename"]) for file in files if not file.get("patch")]
+
+
+def _coverage_warning_lines(
+    pull_request: dict[str, object], files: list[dict[str, object]]
+) -> list[str]:
+    """Warn about any gap between what changed in `pull_request` and what
+    `files` actually gave the reviewer model something to look at.
+
+    Two independent gaps, each optional: `pull_request["changed_files"]`
+    (when GitHub reports it) exceeding `len(files)` means GitHub's own
+    3000-file-per-PR cap truncated the file list; a file present in `files`
+    but missing its `patch` means that file's diff never reached the model.
+    Neither is fatal -- both just get named so a review's silence about a
+    file isn't mistaken for "nothing to flag there."
+    """
+    lines: list[str] = []
+    changed_files = pull_request.get("changed_files")
+    if isinstance(changed_files, int) and changed_files > len(files):
+        lines += [
+            "",
+            f"⚠️ **Incomplete review coverage** -- reviewed {len(files)} of "
+            f"{changed_files} changed files; GitHub did not return the rest.",
+        ]
+    missing_patch = _missing_patch_filenames(files)
+    if missing_patch:
+        files_list = ", ".join(f"`{filename}`" for filename in missing_patch)
+        lines += [
+            "",
+            f"⚠️ **No diff available** for {files_list} -- GitHub omitted the patch "
+            "(large diff or binary file), so this file wasn't reviewed.",
+        ]
+    return lines
 
 
 def _redacted_filenames(files: list[dict[str, object]]) -> list[str]:
