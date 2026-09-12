@@ -4,6 +4,16 @@
 
 ### Breaking Changes
 
+- `marginal review`'s exit code for a configured `models.reviewer` missing
+  its required credentials (`MissingCredentialsError`) changes from `1` to
+  `3`, distinct from the `1` still returned for every other provider/GitHub
+  error. Lets a caller -- `marginal-action`, specifically -- tell "this is
+  misconfigured, go fix it" apart from "expected, e.g. a forked PR whose
+  secrets GitHub never forwarded" and react differently instead of failing
+  both alike
+
+  ([ISSUE-60](https://github.com/exactml/marginal/issues/60))
+
 ### New Features
 
 - `marginal review` now folds the content of any `config.policies` files into
