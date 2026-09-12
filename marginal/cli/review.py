@@ -10,7 +10,7 @@ from marginal.config.schema import ModelSpec
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubAPIError, GitHubAuthenticationError, PermissionDeniedError
 from marginal.policy import load_policies
-from marginal.providers.errors import ProviderError, ProviderResponseError
+from marginal.providers.errors import MissingCredentialsError, ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
 from marginal.review import Finding, Severity, filter_findings
 
@@ -67,7 +67,11 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     GitHub API error, or `ProviderError` — whether raised while fetching,
     generating a finding, or (with `comment` set) posting — is caught here,
     printed as a single line to stderr, and turned into exit code 1 instead
-    of propagating as a raw traceback.
+    of propagating as a raw traceback. The one exception is a configured
+    reviewer missing its required credentials (`MissingCredentialsError`),
+    which exits 3 instead of 1 -- distinct enough for a caller (like
+    `marginal-action`) to tell "needs fixing" apart from "expected, e.g. a
+    forked PR that never got the secret" and react differently.
     """
     config = load_config(path)
     client = GitHubClient(repo, config.permissions)
@@ -87,6 +91,9 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
         policies = load_policies(path, config.policies)
         try:
             finding = asyncio.run(_generate_finding(reviewer_model, files, policies))
+        except MissingCredentialsError as exc:
+            print(f"marginal review: {exc}", file=sys.stderr)
+            return 3
         except ProviderError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
             return 1
