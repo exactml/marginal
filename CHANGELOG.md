@@ -4,6 +4,18 @@
 
 ### Breaking Changes
 
+### New Features
+
+### Improvements
+
+### Fixes
+
+### Warnings
+
+## marginal v0.2.0, 2026-09-12
+
+### Breaking Changes
+
 - `marginal review`'s exit code for a configured `models.reviewer` missing
   its required credentials (`MissingCredentialsError`) changes from `1` to
   `3`, distinct from the `1` still returned for every other provider/GitHub
