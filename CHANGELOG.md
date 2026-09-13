@@ -6,6 +6,11 @@
 
 ### New Features
 
+- `marginal init` now seeds `.marginal/policies/README.md` with guidance and
+  distinguishes forced reruns with `↻ Overwrote` status lines, so the policy
+  directory survives the first commit and scaffold changes are visible
+  ([ISSUE-75](https://github.com/exactml/marginal/issues/75))
+
 - `marginal review` now checks whether it actually saw everything that
   changed in the PR. `GitHubClient.get_pull_request_files` previously made
   one unpaginated call to GitHub's files endpoint, so a PR with more files

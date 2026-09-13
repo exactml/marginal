@@ -1,3 +1,4 @@
+import subprocess
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -30,11 +31,17 @@ def test_init_creates_all_artifacts(tmp_path, capsys):
     assert exit_code == 0
     assert (tmp_path / ".marginal" / "config.yaml").is_file()
     assert (tmp_path / ".marginal" / "policies").is_dir()
+    policy_readme = tmp_path / ".marginal" / "policies" / "README.md"
+    assert policy_readme.is_file()
+    assert "security.md" in policy_readme.read_text()
+    assert "testing.md" in policy_readme.read_text()
+    assert "architecture.md" in policy_readme.read_text()
     assert (tmp_path / ".github" / "workflows" / "marginal.yml").is_file()
 
     out = capsys.readouterr().out
     assert "✓ Created .marginal/config.yaml" in out
     assert "✓ Created .marginal/policies/" in out
+    assert "✓ Created .marginal/policies/README.md" in out
     assert "✓ Created .github/workflows/marginal.yml" in out
     assert "marginal is ready." in out
 
@@ -58,6 +65,7 @@ def test_rerun_skips_existing_artifacts(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "- Skipped .marginal/config.yaml (already exists)" in out
     assert "- Skipped .marginal/policies/ (already exists)" in out
+    assert "- Skipped .marginal/policies/README.md (already exists)" in out
     assert "- Skipped .github/workflows/marginal.yml (already exists)" in out
 
 
@@ -73,6 +81,7 @@ def test_rerun_does_not_clobber_a_customized_config(tmp_path):
 
 def test_force_overwrites_existing_artifacts(tmp_path, capsys):
     main(["init", str(tmp_path)])
+    capsys.readouterr()
     config_path = tmp_path / ".marginal" / "config.yaml"
     config_path.write_text("version: 1\nreview:\n  tone: strict\n")
 
@@ -81,9 +90,41 @@ def test_force_overwrites_existing_artifacts(tmp_path, capsys):
     assert exit_code == 0
     assert config_path.read_text() != "version: 1\nreview:\n  tone: strict\n"
     out = capsys.readouterr().out
-    assert "✓ Created .marginal/config.yaml" in out
-    assert "✓ Created .marginal/policies/" in out
-    assert "✓ Created .github/workflows/marginal.yml" in out
+    assert "↻ Overwrote .marginal/config.yaml" in out
+    assert "↻ Overwrote .marginal/policies/" in out
+    assert "↻ Overwrote .marginal/policies/README.md" in out
+    assert "↻ Overwrote .github/workflows/marginal.yml" in out
+    assert "✓ Created" not in out
+
+
+def test_init_policies_survive_git_commit(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+
+    main(["init", str(tmp_path)])
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=marginal-test",
+            "-c",
+            "user.email=marginal-test@example.invalid",
+            "commit",
+            "-qm",
+            "scaffold",
+        ],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    tracked = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", "HEAD"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    assert ".marginal/policies/README.md" in tracked
 
 
 def test_generated_config_round_trips_through_load_config(tmp_path):
