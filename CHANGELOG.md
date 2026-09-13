@@ -11,6 +11,18 @@
   directory survives the first commit and scaffold changes are visible
   ([ISSUE-75](https://github.com/exactml/marginal/issues/75))
 
+- `marginal review` can now return more than one finding per run. The
+  reviewer model is asked for a bounded list of the most important,
+  actionable issues in the diff (up to 20) instead of a single one, so
+  `config.review.confidence_threshold` and `config.review.max_comments` --
+  already built to filter and cap a *list* of findings -- finally have more
+  than one item to work with. A diff with several real issues can now
+  produce several posted findings in one review, capped at `max_comments`
+  (highest-confidence first); a diff with nothing worth flagging still
+  produces the same metadata-only summary as before
+
+  ([ISSUE-57](https://github.com/exactml/marginal/issues/57))
+
 - `marginal review` now checks whether it actually saw everything that
   changed in the PR. `GitHubClient.get_pull_request_files` previously made
   one unpaginated call to GitHub's files endpoint, so a PR with more files
