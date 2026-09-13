@@ -135,7 +135,6 @@ async def test_anthropic_generate_structured_validates_tool_input():
     assert result == Verdict(approved=True, reason="looks good")
 
 
-
 async def test_anthropic_generate_structured_wraps_validation_error():
     client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
     client.messages.create.return_value = SimpleNamespace(
@@ -274,14 +273,11 @@ async def test_openai_generate_structured_parses_json_content():
     assert result == Verdict(approved=False, reason="missing tests")
 
 
-
 async def test_openai_generate_structured_wraps_validation_error():
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock())))
     client.chat.completions.create.return_value = SimpleNamespace(
         choices=[
-            SimpleNamespace(
-                message=SimpleNamespace(content='{"parameter name": "CHANGELOG.md"}')
-            )
+            SimpleNamespace(message=SimpleNamespace(content='{"parameter name": "CHANGELOG.md"}'))
         ]
     )
     provider = _openai_provider(client)
