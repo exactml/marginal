@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import sys
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from marginal.config.loader import load_config
 from marginal.config.schema import ModelSpec
 from marginal.github.client import GitHubClient
@@ -22,15 +24,30 @@ SEVERITY_EMOJI = {
     Severity.LOW: "⚪",
 }
 
+# A model can return at most this many findings from one review -- well above
+# `config.review.max_comments`'s default, so that setting has real findings
+# left to cap rather than just passing everything through.
+MAX_FINDINGS_PER_REVIEW = 20
+
 FINDING_PROMPT_INSTRUCTIONS = (
-    "You are reviewing a pull request. Identify the single most important, "
-    "actionable issue in the diff below. Report the file it's in, the line "
-    "number in the new version of the file if you can identify one (omit it "
-    "if you can't), a severity, a confidence between 0.0 and 1.0 for how "
-    "likely this is a real, actionable issue (not a false positive or a "
-    "stylistic nitpick), and a concise 2-3 sentence explanation of the "
-    "problem."
+    "You are reviewing a pull request. Identify the most important, "
+    "actionable issues in the diff below -- as many as are genuinely "
+    f"warranted, up to {MAX_FINDINGS_PER_REVIEW}. Return an empty list if "
+    "nothing in the diff is worth flagging. For each issue, report the file "
+    "it's in, the line number in the new version of the file if you can "
+    "identify one (omit it if you can't), a severity, a confidence between "
+    "0.0 and 1.0 for how likely this is a real, actionable issue (not a "
+    "false positive or a stylistic nitpick), and a concise 2-3 sentence "
+    "explanation of the problem."
 )
+
+
+class _FindingsResponse(BaseModel):
+    """Structured-output wrapper: the bounded list of findings for one review."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    findings: list[Finding] = Field(max_length=MAX_FINDINGS_PER_REVIEW)
 
 
 def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = False) -> int:
@@ -42,22 +59,22 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     changed file list (collapsed behind a Markdown `<details>` block so it
     doesn't dominate the output on larger PRs).
 
-    If `models.reviewer` is configured, also generates one unvalidated,
-    structured `Finding` from that model over the changed files' diffs --
-    each file's patch run through `marginal.review.redact_secrets` first,
-    so a diff containing a recognizable secret shape never reaches the
-    model with that value intact -- plus the content of any
-    `config.policies` files (loaded via `marginal.policy.load_policies`,
-    relative to `path`; a missing file is skipped with a warning rather
-    than failing the review), then runs it
-    through `marginal.review.filter_findings`: dropped outright if its
-    self-reported `confidence` is below `config.review.confidence_threshold`,
-    otherwise capped alongside any others at `config.review.max_comments`
-    (highest-confidence first). A finding that survives appends to the
-    printed summary as a severity+confidence badge (e.g. `🔴 **Critical** ·
-    92% confidence`) followed by its message. Without `models.reviewer`, or
-    if the finding gets filtered out, the summary stays metadata-only, same
-    as if nothing was generated.
+    If `models.reviewer` is configured, also generates a bounded list of
+    unvalidated, structured `Finding`s (up to `MAX_FINDINGS_PER_REVIEW`) from
+    that model over the changed files' diffs -- each file's patch run
+    through `marginal.review.redact_secrets` first, so a diff containing a
+    recognizable secret shape never reaches the model with that value intact
+    -- plus the content of any `config.policies` files (loaded via
+    `marginal.policy.load_policies`, relative to `path`; a missing file is
+    skipped with a warning rather than failing the review), then runs the
+    list through `marginal.review.filter_findings`: each finding is dropped
+    outright if its self-reported `confidence` is below
+    `config.review.confidence_threshold`, and the survivors are capped at
+    `config.review.max_comments` (highest-confidence first). Each finding
+    that survives appends to the printed summary as a severity+confidence
+    badge (e.g. `🔴 **Critical** · 92% confidence`) followed by its message.
+    Without `models.reviewer`, or if every finding gets filtered out, the
+    summary stays metadata-only, same as if nothing was generated.
 
     If redaction actually masked something, the summary also gets a
     `⚠️ **Redacted a likely secret**` line naming the affected file(s) --
@@ -73,7 +90,7 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     one that looked at everything and found nothing.
 
     If `comment` is set, also posts a PR review via
-    `GitHubClient.create_review(..., event="COMMENT", comments=...)`. A
+    `GitHubClient.create_review(..., event="COMMENT", comments=...)`. Each
     finding anchored to a `line` is posted as an inline `comments` entry
     instead of being folded into the review's overall body -- it still shows
     up in the printed summary above, just not duplicated into the body too.
@@ -103,7 +120,7 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     filenames = [str(file["filename"]) for file in files]
 
     reviewer_model = config.models.get("reviewer")
-    finding: Finding | None = None
+    findings: list[Finding] = []
     redacted_files: list[str] = []
     coverage_lines: list[str] = []
     if reviewer_model is not None:
@@ -111,7 +128,7 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
         redacted_files = _redacted_filenames(files)
         coverage_lines = _coverage_warning_lines(pull_request, files)
         try:
-            finding = asyncio.run(_generate_finding(reviewer_model, files, policies))
+            findings = asyncio.run(_generate_findings(reviewer_model, files, policies))
         except MissingCredentialsError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
             return 3
@@ -119,7 +136,6 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
             print(f"marginal review: {exc}", file=sys.stderr)
             return 1
 
-    findings = [finding] if finding is not None else []
     findings = filter_findings(
         findings,
         confidence_threshold=config.review.confidence_threshold,
@@ -235,18 +251,19 @@ def _build_inline_comments(findings: list[Finding]) -> list[dict[str, object]]:
     ]
 
 
-async def _generate_finding(
+async def _generate_findings(
     model_spec: ModelSpec, files: list[dict[str, object]], policies: list[tuple[str, str]]
-) -> Finding:
-    """Generate one unvalidated `Finding` from `model_spec` over `files`' diffs and `policies`."""
+) -> list[Finding]:
+    """Generate a bounded list of unvalidated `Finding`s from `model_spec` over
+    `files`' diffs and `policies`."""
     provider = get_provider(model_spec)
     prompt = _build_finding_prompt(files, policies)
-    result = await provider.generate_structured(prompt, schema=Finding)
-    if not isinstance(result, Finding):
+    result = await provider.generate_structured(prompt, schema=_FindingsResponse)
+    if not isinstance(result, _FindingsResponse):
         raise ProviderResponseError(
-            f"expected a Finding from generate_structured, got {type(result).__name__}"
+            f"expected a _FindingsResponse from generate_structured, got {type(result).__name__}"
         )
-    return result
+    return result.findings
 
 
 def _missing_patch_filenames(files: list[dict[str, object]]) -> list[str]:

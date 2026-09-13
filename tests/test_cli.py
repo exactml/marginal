@@ -2,14 +2,17 @@ import subprocess
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from marginal.cli import main
 from marginal.cli.review import (
+    MAX_FINDINGS_PER_REVIEW,
     _base_lines,
     _build_finding_prompt,
     _build_inline_comments,
     _coverage_warning_lines,
     _finding_badge,
+    _FindingsResponse,
     _missing_patch_filenames,
     _redacted_filenames,
     _redaction_warning_lines,
@@ -492,12 +495,16 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=Finding(
-            file="marginal/retry.py",
-            line=2,
-            severity=Severity.HIGH,
-            confidence=0.9,
-            message="This introduces a blocking sleep in an async retry loop.",
+        return_value=_FindingsResponse(
+            findings=[
+                Finding(
+                    file="marginal/retry.py",
+                    line=2,
+                    severity=Severity.HIGH,
+                    confidence=0.9,
+                    message="This introduces a blocking sleep in an async retry loop.",
+                )
+            ]
         )
     )
 
@@ -509,7 +516,7 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(
     assert "This introduces a blocking sleep in an async retry loop." in out
 
     call = provider.generate_structured.call_args
-    assert call.kwargs["schema"] is Finding
+    assert call.kwargs["schema"] is _FindingsResponse
     prompt = call.args[0]
     assert "marginal/retry.py" in prompt
     assert "time.sleep(1)" in prompt
@@ -558,12 +565,16 @@ def test_review_with_finding_missing_line_falls_back_to_filename(
     client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=Finding(
-            file="marginal/retry.py",
-            line=None,
-            severity=Severity.MEDIUM,
-            confidence=0.9,
-            message="Consider adding a backoff cap.",
+        return_value=_FindingsResponse(
+            findings=[
+                Finding(
+                    file="marginal/retry.py",
+                    line=None,
+                    severity=Severity.MEDIUM,
+                    confidence=0.9,
+                    message="Consider adding a backoff cap.",
+                )
+            ]
         )
     )
 
@@ -585,12 +596,16 @@ def test_review_with_unanchored_finding_posts_it_in_the_summary_body_not_inline(
     client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=Finding(
-            file="marginal/retry.py",
-            line=None,
-            severity=Severity.MEDIUM,
-            confidence=0.9,
-            message="Consider adding a backoff cap.",
+        return_value=_FindingsResponse(
+            findings=[
+                Finding(
+                    file="marginal/retry.py",
+                    line=None,
+                    severity=Severity.MEDIUM,
+                    confidence=0.9,
+                    message="Consider adding a backoff cap.",
+                )
+            ]
         )
     )
 
@@ -615,12 +630,16 @@ def test_review_drops_a_finding_below_the_confidence_threshold(
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=Finding(
-            file="marginal/retry.py",
-            line=2,
-            severity=Severity.LOW,
-            confidence=0.5,
-            message="Might be worth a second look, but not sure.",
+        return_value=_FindingsResponse(
+            findings=[
+                Finding(
+                    file="marginal/retry.py",
+                    line=2,
+                    severity=Severity.LOW,
+                    confidence=0.5,
+                    message="Might be worth a second look, but not sure.",
+                )
+            ]
         )
     )
 
@@ -633,6 +652,135 @@ def test_review_drops_a_finding_below_the_confidence_threshold(
     # Below the default confidence_threshold (0.85) -- filtered out entirely,
     # same as if no finding had been generated at all.
     client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT", comments=[])
+
+
+# -- review: multiple findings ---------------------------------------------
+
+
+def test_review_with_zero_findings_stays_metadata_only(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py", "patch": "+x = 1"}
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(return_value=_findings_response())
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "confidence" not in out
+    client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT", comments=[])
+
+
+def test_review_with_multiple_findings_posts_all_of_them(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"},
+        {"filename": "marginal/backoff.py", "patch": "@@ -1,2 +1,3 @@\n+delay = 1"},
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(
+        return_value=_findings_response(
+            Finding(
+                file="marginal/retry.py",
+                line=2,
+                severity=Severity.HIGH,
+                confidence=0.95,
+                message="This introduces a blocking sleep in an async retry loop.",
+            ),
+            Finding(
+                file="marginal/backoff.py",
+                line=1,
+                severity=Severity.MEDIUM,
+                confidence=0.9,
+                message="Consider adding a backoff cap.",
+            ),
+        )
+    )
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "🟠 **High** · 95% confidence — `marginal/retry.py:2`" in out
+    assert "🟡 **Medium** · 90% confidence — `marginal/backoff.py:1`" in out
+
+    comments = client.create_review.call_args.kwargs["comments"]
+    assert {(c["path"], c["line"]) for c in comments} == {
+        ("marginal/retry.py", 2),
+        ("marginal/backoff.py", 1),
+    }
+
+
+def _write_reviewer_config_with_max_comments(tmp_path, max_comments):
+    config_dir = tmp_path / ".marginal"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text(
+        "version: 1\n"
+        "models:\n"
+        "  reviewer:\n"
+        "    provider: anthropic\n"
+        "    model: claude-3-5-sonnet\n"
+        "review:\n"
+        f"  max_comments: {max_comments}\n"
+        "  confidence_threshold: 0.0\n"
+    )
+
+
+def test_review_caps_multiple_findings_at_max_comments(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config_with_max_comments(tmp_path, max_comments=2)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": f"file{i}.py", "patch": "+x = 1"} for i in range(3)
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(
+        return_value=_findings_response(
+            Finding(file="file0.py", line=1, severity=Severity.LOW, confidence=0.7, message="low"),
+            Finding(
+                file="file1.py", line=1, severity=Severity.MEDIUM, confidence=0.9, message="mid"
+            ),
+            Finding(
+                file="file2.py", line=1, severity=Severity.HIGH, confidence=0.99, message="high"
+            ),
+        )
+    )
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    # Three findings came back, but max_comments=2 caps the survivors at the
+    # two highest-confidence ones -- the lowest-confidence finding is dropped.
+    assert out.count("confidence") == 2
+    assert "— `file2.py:1`" in out
+    assert "— `file1.py:1`" in out
+    assert "— `file0.py:1`" not in out
+
+
+def test_findings_response_rejects_more_than_the_schema_bound():
+    findings = [
+        Finding(file=f"f{i}.py", severity=Severity.LOW, confidence=0.9, message="x")
+        for i in range(MAX_FINDINGS_PER_REVIEW + 1)
+    ]
+
+    with pytest.raises(ValidationError):
+        _FindingsResponse(findings=findings)
 
 
 def test_review_with_malformed_structured_output_maps_to_clean_message(
@@ -705,12 +853,16 @@ def test_review_folds_a_configured_policy_file_into_the_prompt(
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=Finding(
-            file="marginal/retry.py",
-            line=2,
-            severity=Severity.HIGH,
-            confidence=0.9,
-            message="This introduces a blocking sleep in an async retry loop.",
+        return_value=_FindingsResponse(
+            findings=[
+                Finding(
+                    file="marginal/retry.py",
+                    line=2,
+                    severity=Severity.HIGH,
+                    confidence=0.9,
+                    message="This introduces a blocking sleep in an async retry loop.",
+                )
+            ]
         )
     )
 
@@ -732,12 +884,16 @@ def test_review_with_a_missing_policy_file_does_not_crash(
     client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=Finding(
-            file="marginal/retry.py",
-            line=None,
-            severity=Severity.LOW,
-            confidence=0.9,
-            message="Minor nit.",
+        return_value=_FindingsResponse(
+            findings=[
+                Finding(
+                    file="marginal/retry.py",
+                    line=None,
+                    severity=Severity.LOW,
+                    confidence=0.9,
+                    message="Minor nit.",
+                )
+            ]
         )
     )
 
@@ -760,6 +916,10 @@ def _finding(file="marginal/config.py", confidence=0.5, message="not important")
     )
 
 
+def _findings_response(*findings):
+    return _FindingsResponse(findings=list(findings))
+
+
 def test_review_warns_in_the_summary_when_a_secret_is_redacted(
     tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
 ):
@@ -771,7 +931,7 @@ def test_review_warns_in_the_summary_when_a_secret_is_redacted(
         {"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"}
     ]
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_finding())
+    provider.generate_structured = AsyncMock(return_value=_findings_response(_finding()))
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
@@ -794,7 +954,7 @@ def test_review_with_comment_flag_posts_the_redaction_warning_in_the_body(
         {"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"}
     ]
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_finding())
+    provider.generate_structured = AsyncMock(return_value=_findings_response(_finding()))
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
 
@@ -814,7 +974,9 @@ def test_review_omits_the_redaction_warning_when_nothing_is_redacted(
         {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
     ]
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_finding(file="marginal/retry.py"))
+    provider.generate_structured = AsyncMock(
+        return_value=_findings_response(_finding(file="marginal/retry.py"))
+    )
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
@@ -853,7 +1015,9 @@ def test_review_warns_in_the_summary_on_a_missing_patch(
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = [{"filename": "huge.bin"}]
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_finding(file="huge.bin"))
+    provider.generate_structured = AsyncMock(
+        return_value=_findings_response(_finding(file="huge.bin"))
+    )
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
@@ -873,7 +1037,9 @@ def test_review_warns_in_the_summary_on_a_file_count_mismatch(
         {"filename": "marginal/retry.py", "patch": "+time.sleep(1)"}
     ]
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_finding(file="marginal/retry.py"))
+    provider.generate_structured = AsyncMock(
+        return_value=_findings_response(_finding(file="marginal/retry.py"))
+    )
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
@@ -891,7 +1057,9 @@ def test_review_with_comment_flag_posts_the_coverage_warning_in_the_body(
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = [{"filename": "huge.bin"}]
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_finding(file="huge.bin"))
+    provider.generate_structured = AsyncMock(
+        return_value=_findings_response(_finding(file="huge.bin"))
+    )
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
 
@@ -911,7 +1079,9 @@ def test_review_omits_the_coverage_warning_when_fully_covered(
         {"filename": "marginal/retry.py", "patch": "+time.sleep(1)"}
     ]
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_finding(file="marginal/retry.py"))
+    provider.generate_structured = AsyncMock(
+        return_value=_findings_response(_finding(file="marginal/retry.py"))
+    )
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
