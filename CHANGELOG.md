@@ -29,6 +29,15 @@
 
 ### Fixes
 
+- `AnthropicProvider.generate_structured` and `OpenAIProvider.generate_structured`
+  now catch `pydantic.ValidationError` when the model returns content that does
+  not match the requested schema and re-raise it as `ProviderResponseError`.
+  Previously a malformed tool-call or JSON payload crashed the review job with
+  a raw traceback instead of the one-line provider error `run_review` already
+  handles
+
+  ([ISSUE-39](https://github.com/exactml/marginal/issues/39))
+
 ### Warnings
 
 ## marginal v0.2.0, 2026-09-12
@@ -135,15 +144,6 @@
   [PR-69](https://github.com/exactml/marginal/pull/69) by [@exactml](https://github.com/exactml))
 
 ### Fixes
-
-- `AnthropicProvider.generate_structured` and `OpenAIProvider.generate_structured`
-  now catch `pydantic.ValidationError` when the model returns content that does
-  not match the requested schema and re-raise it as `ProviderResponseError`.
-  Previously a malformed tool-call or JSON payload crashed the review job with
-  a raw traceback instead of the one-line provider error `run_review` already
-  handles
-
-  ([ISSUE-39](https://github.com/exactml/marginal/issues/39))
 
 ### Warnings
 
