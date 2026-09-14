@@ -103,6 +103,7 @@ class MarginalConfig(BaseModel):
     ownership: OwnershipConfig = Field(default_factory=OwnershipConfig)
     models: dict[str, ModelSpec] = Field(default_factory=dict)
     policies: list[str] = Field(default_factory=list)
+    anti_policies: list[str] = Field(default_factory=list)
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
 
     @field_validator("version")

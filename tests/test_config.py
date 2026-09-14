@@ -74,12 +74,21 @@ def test_missing_config_returns_defaults(tmp_path):
     assert config.ownership.notify_responsible is False
     assert config.models == {}
     assert config.policies == []
+    assert config.anti_policies == []
     assert config.permissions.read.repository is True
     assert config.permissions.write.comments is True
     assert config.permissions.write.labels is False
     assert config.permissions.write.approve is False
     assert config.permissions.write.push is False
     assert config.permissions.write.merge is False
+
+
+def test_anti_policies_config_parses(tmp_path):
+    write_config(tmp_path, "anti_policies:\n  - .marginal/anti-policies/ignored.md\n")
+
+    config = load_config(tmp_path)
+
+    assert config.anti_policies == [".marginal/anti-policies/ignored.md"]
 
 
 def test_empty_config_file_returns_defaults(tmp_path):
