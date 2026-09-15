@@ -25,6 +25,26 @@
 
   ([ISSUE-71](https://github.com/exactml/marginal/issues/71))
 
+- `marginal review` gains a `--format {text,json}` flag. With `--format json`
+  it prints a single JSON object to stdout -- repo, PR number, title, state,
+  base/head SHAs, the changed-file list, the surviving findings (each
+  `Finding` dumped in full, severity as a plain string), any files whose diff
+  had a secret redacted, and whether a comment was posted -- instead of the
+  human-readable Markdown summary, so `marginal review` can feed a dashboard,
+  a notifier, or another CI step without anyone scraping printed text. The
+  default (`--format text`) output is unchanged byte-for-byte, and `--comment`
+  posts the identical Markdown body and inline comments under either format:
+  the flag changes what goes to stdout, never what goes to GitHub. Errors keep
+  their existing exit codes (1, or 3 for missing reviewer credentials) and
+  stay plain text on stderr -- an invalid `.marginal/config.yaml` now follows
+  that same contract instead of escaping as a traceback -- so stdout under
+  `--format json` is either exactly one complete object or nothing at all.
+  The shape is best-effort for v1 -- there's no versioned schema contract
+  yet, and formalizing one is left until there's real external consumption
+
+  ([ISSUE-50](https://github.com/exactml/marginal/issues/50),
+  [PR-XX](https://github.com/exactml/marginal/pull/XX) by [@rishcx](https://github.com/rishcx))
+
 ### Improvements
 
 ### Fixes

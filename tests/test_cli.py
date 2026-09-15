@@ -1,3 +1,4 @@
+import json
 import subprocess
 from unittest.mock import AsyncMock, patch
 
@@ -8,11 +9,13 @@ from marginal.cli.review import (
     _base_lines,
     _build_finding_prompt,
     _build_inline_comments,
+    _build_json_result,
     _coverage_warning_lines,
     _finding_badge,
     _missing_patch_filenames,
     _redacted_filenames,
     _redaction_warning_lines,
+    run_review,
 )
 from marginal.config import MarginalConfig, load_config
 from marginal.github.errors import (
@@ -181,6 +184,43 @@ def test_review_prints_pr_summary_and_posts_nothing(
     assert "- `marginal/retry.py`" in out
     assert "- `tests/test_retry.py`" in out
     client.create_review.assert_not_called()
+
+
+def test_review_default_output_is_byte_for_byte_markdown(
+    tmp_path, capsys, monkeypatch, mock_github_client
+):
+    """Locks down the `--format text` (default) output exactly, so a future
+    change to the `--format json` path can't silently drift the default."""
+    monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py"},
+        {"filename": "tests/test_retry.py"},
+    ]
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert out == (
+        "\n".join(
+            [
+                "### 🤖 marginal review",
+                "",
+                "**PR #42: Fix flaky retry logic** · open · `abc123` → `def456` · 2 files changed",
+                "",
+                "<details>",
+                "<summary>Changed files (2)</summary>",
+                "",
+                "- `marginal/retry.py`",
+                "- `tests/test_retry.py`",
+                "",
+                "</details>",
+            ]
+        )
+        + "\n"
+    )
 
 
 @pytest.mark.parametrize(
@@ -936,3 +976,316 @@ def test_review_without_reviewer_model_does_not_compute_coverage(
     out = capsys.readouterr().out
     assert "coverage" not in out.lower()
     assert "No diff available" not in out
+
+
+# -- review: json output ---------------------------------------------------
+
+
+def test_review_format_json_prints_parseable_json_with_pr_metadata(
+    tmp_path, capsys, monkeypatch, mock_github_client
+):
+    monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py"},
+        {"filename": "tests/test_retry.py"},
+    ]
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--format", "json"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    result = json.loads(out)
+    assert result == {
+        "repo": "acme/widgets",
+        "pr_number": 42,
+        "title": "Fix flaky retry logic",
+        "state": "open",
+        "base_sha": "abc123",
+        "head_sha": "def456",
+        "changed_files": ["marginal/retry.py", "tests/test_retry.py"],
+        "findings": [],
+        "redacted_files": [],
+        "comment_posted": False,
+    }
+    # The markdown summary is replaced, not appended to, under --format json.
+    assert "### 🤖 marginal review" not in out
+
+
+def test_review_format_json_includes_surviving_findings(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(
+        return_value=Finding(
+            file="marginal/retry.py",
+            line=2,
+            severity=Severity.HIGH,
+            confidence=0.9,
+            message="This introduces a blocking sleep in an async retry loop.",
+        )
+    )
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--format", "json"])
+
+    assert exit_code == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["findings"] == [
+        {
+            "file": "marginal/retry.py",
+            "line": 2,
+            "severity": "high",
+            "confidence": 0.9,
+            "message": "This introduces a blocking sleep in an async retry loop.",
+        }
+    ]
+
+
+def test_review_format_json_omits_a_finding_below_the_confidence_threshold(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(
+        return_value=Finding(
+            file="marginal/retry.py",
+            line=2,
+            severity=Severity.LOW,
+            confidence=0.5,
+            message="Might be worth a second look, but not sure.",
+        )
+    )
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--format", "json"])
+
+    assert exit_code == 0
+    result = json.loads(capsys.readouterr().out)
+    # Below the default confidence_threshold (0.85) -- filtered out entirely,
+    # so the json path sees post-filter_findings data, not the raw output.
+    assert result["findings"] == []
+
+
+def test_review_format_json_reports_redacted_files(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"}
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(return_value=_finding())
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--format", "json"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    result = json.loads(out)
+    assert result["redacted_files"] == ["marginal/config.py"]
+    # What the markdown redacted must not leak into the json either.
+    assert "AKIAIOSFODNN7EXAMPLE" not in out
+
+
+def test_review_format_json_reports_that_a_comment_was_posted(
+    tmp_path, capsys, monkeypatch, mock_github_client
+):
+    monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = []
+
+    exit_code = main(
+        ["review", "--repo", "acme/widgets", "--pr", "42", "--format", "json", "--comment"]
+    )
+
+    assert exit_code == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["comment_posted"] is True
+
+
+def test_review_format_json_reports_no_comment_without_the_flag(
+    tmp_path, capsys, monkeypatch, mock_github_client
+):
+    monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = []
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--format", "json"])
+
+    assert exit_code == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["comment_posted"] is False
+    client.create_review.assert_not_called()
+
+
+def test_review_posts_the_same_review_under_both_formats(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    """`--format` changes stdout only -- the posted review body and inline
+    comments must be identical whether it's `text` or `json`."""
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"}
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(
+        return_value=Finding(
+            file="marginal/config.py",
+            line=1,
+            severity=Severity.HIGH,
+            confidence=0.9,
+            message="Hardcoded credential.",
+        )
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"]) == 0
+    client.create_review.assert_called_once()
+    text_call = client.create_review.call_args
+    client.create_review.reset_mock()
+    capsys.readouterr()
+
+    assert (
+        main(["review", "--repo", "acme/widgets", "--pr", "42", "--format", "json", "--comment"])
+        == 0
+    )
+    client.create_review.assert_called_once()
+    json_call = client.create_review.call_args
+
+    assert text_call == json_call
+
+
+def test_review_format_json_prints_nothing_on_a_github_error(
+    tmp_path, capsys, monkeypatch, mock_github_client
+):
+    monkeypatch.chdir(tmp_path)
+    mock_github_client.return_value.get_pull_request.side_effect = GitHubAPIError(
+        500, "Internal Server Error"
+    )
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--format", "json"])
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "marginal review:" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_review_format_json_prints_nothing_when_posting_the_comment_fails(
+    tmp_path, capsys, monkeypatch, mock_github_client
+):
+    monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = []
+    client.create_review.side_effect = PermissionDeniedError(
+        "this operation requires permissions.write.comments"
+    )
+
+    exit_code = main(
+        ["review", "--repo", "acme/widgets", "--pr", "42", "--format", "json", "--comment"]
+    )
+
+    assert exit_code == 1
+    # The "one complete object or nothing" invariant: json mode differs from
+    # text mode here, since text mode has already printed its summary by the
+    # time the comment post fails.
+    captured = capsys.readouterr()
+    assert captured.out == ""
+
+
+def test_review_format_json_with_missing_credentials_maps_to_exit_code_3(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
+    mock_provider.side_effect = MissingCredentialsError(
+        "the anthropic provider requires the ANTHROPIC_API_KEY environment variable"
+    )
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--format", "json"])
+
+    assert exit_code == 3
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "marginal review:" in captured.err
+
+
+def test_review_rejects_an_unknown_format():
+    with pytest.raises(SystemExit) as exc_info:
+        main(["review", "--repo", "acme/widgets", "--pr", "42", "--format", "yaml"])
+
+    assert exc_info.value.code == 2
+
+
+def test_run_review_rejects_an_unknown_format_before_any_network_call(
+    tmp_path, monkeypatch, mock_github_client
+):
+    """`run_review` is importable directly, so the argparse `choices` guard
+    isn't the only line of defence -- an out-of-set value must fail loudly
+    rather than fall through both `if output_format == ...` branches, print
+    nothing, and exit 0."""
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValueError, match="unknown output format: 'yaml'"):
+        run_review("acme/widgets", 42, output_format="yaml")  # type: ignore[arg-type]
+
+    mock_github_client.return_value.get_pull_request.assert_not_called()
+
+
+def test_review_format_json_prints_nothing_on_an_invalid_config(
+    tmp_path, capsys, monkeypatch, mock_github_client
+):
+    """A malformed `.marginal/config.yaml` must follow the same single-line
+    stderr + exit 1 contract as every other error, not escape as a traceback."""
+    monkeypatch.chdir(tmp_path)
+    config_dir = tmp_path / ".marginal"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text("review:\n  confidence_threshold: high\n")
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--format", "json"])
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("marginal review: ")
+    assert "Traceback" not in captured.err
+    mock_github_client.return_value.get_pull_request.assert_not_called()
+
+
+def test_build_json_result_serializes_a_finding_as_plain_json():
+    finding = Finding(
+        file="a.py", line=None, severity=Severity.HIGH, confidence=0.9, message="issue"
+    )
+
+    result = _build_json_result(
+        "acme/widgets", 42, _pull_request(), ["a.py"], [finding], [], comment_posted=True
+    )
+
+    # Round-trips cleanly -- severity is a plain string, not an enum repr.
+    assert json.loads(json.dumps(result)) == result
+    assert result["findings"][0]["severity"] == "high"
+    assert result["findings"][0]["line"] is None
