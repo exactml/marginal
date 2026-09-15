@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
+from typing import Literal, get_args
 
+from marginal.config.errors import ConfigError
 from marginal.config.loader import load_config
 from marginal.config.schema import ModelSpec
 from marginal.github.client import GitHubClient
@@ -22,6 +25,8 @@ SEVERITY_EMOJI = {
     Severity.LOW: "⚪",
 }
 
+OutputFormat = Literal["text", "json"]
+
 FINDING_PROMPT_INSTRUCTIONS = (
     "You are reviewing a pull request. Identify the single most important, "
     "actionable issue in the diff below. Report the file it's in, the line "
@@ -33,14 +38,32 @@ FINDING_PROMPT_INSTRUCTIONS = (
 )
 
 
-def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = False) -> int:
-    """Fetch `pr_number` from `repo` and print a plain-text summary.
+def run_review(
+    repo: str,
+    pr_number: int,
+    path: str = ".",
+    *,
+    comment: bool = False,
+    output_format: OutputFormat = "text",
+) -> int:
+    """Fetch `pr_number` from `repo` and print a summary in `output_format`.
 
     Loads `.marginal/config.yaml` under `path` and builds a `GitHubClient`
     gated by its `permissions`, then fetches the pull request's metadata and
-    changed files and prints its title, state, base/head SHA, and the
-    changed file list (collapsed behind a Markdown `<details>` block so it
-    doesn't dominate the output on larger PRs).
+    changed files. With the default `output_format="text"`, prints its
+    title, state, base/head SHA, and the changed file list (collapsed behind
+    a Markdown `<details>` block so it doesn't dominate the output on larger
+    PRs).
+
+    With `output_format="json"`, prints the object built by
+    `_build_json_result` instead. `--format` only changes what reaches
+    stdout: it never changes what (if anything) gets posted to GitHub, and
+    JSON mode prints nothing until the run has fully succeeded, so stdout is
+    always either one complete JSON object or nothing at all -- never a
+    partial one. Errors keep printing as a single plain-text line to stderr
+    in both formats, so a JSON consumer distinguishes success from failure
+    by exit code rather than by parsing stderr. Any other `output_format`
+    raises `ValueError` before any network call is made.
 
     If `models.reviewer` is configured, also generates one unvalidated,
     structured `Finding` from that model over the changed files' diffs --
@@ -80,8 +103,9 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     One with no identifiable line still falls back to the body, so it isn't
     silently dropped. Omitting `--comment` posts nothing back to GitHub.
 
-    Returns 0 on success. A denied permission, missing/invalid token,
-    GitHub API error, or `ProviderError` — whether raised while fetching,
+    Returns 0 on success. An invalid `.marginal/config.yaml` (`ConfigError`),
+    a denied permission, missing/invalid token, GitHub API error, or
+    `ProviderError` — whether raised while loading config, fetching,
     generating a finding, or (with `comment` set) posting — is caught here,
     printed as a single line to stderr, and turned into exit code 1 instead
     of propagating as a raw traceback. The one exception is a configured
@@ -90,7 +114,14 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     `marginal-action`) to tell "needs fixing" apart from "expected, e.g. a
     forked PR that never got the secret" and react differently.
     """
-    config = load_config(path)
+    if output_format not in get_args(OutputFormat):
+        raise ValueError(f"unknown output format: {output_format!r}")
+
+    try:
+        config = load_config(path)
+    except ConfigError as exc:
+        print(f"marginal review: {exc}", file=sys.stderr)
+        return 1
     client = GitHubClient(repo, config.permissions)
 
     try:
@@ -129,10 +160,12 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
 
     base_lines = _base_lines(pr_number, pull_request, filenames)
     warning_lines = _redaction_warning_lines(redacted_files) + coverage_lines
-    summary = "\n".join(
-        base_lines + warning_lines + [line for f in findings for line in _finding_lines(f)]
-    )
-    print(summary)
+    if output_format == "text":
+        print(
+            "\n".join(
+                base_lines + warning_lines + [line for f in findings for line in _finding_lines(f)]
+            )
+        )
 
     if comment:
         body = "\n".join(
@@ -145,6 +178,20 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
         except (PermissionDeniedError, GitHubAuthenticationError, GitHubAPIError) as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
             return 1
+
+    if output_format == "json":
+        # A failed post returned 1 above, so reaching here with `comment` set
+        # means the review was posted.
+        result = _build_json_result(
+            repo,
+            pr_number,
+            pull_request,
+            filenames,
+            findings,
+            redacted_files,
+            comment_posted=comment,
+        )
+        print(json.dumps(result, indent=2))
 
     return 0
 
@@ -233,6 +280,40 @@ def _build_inline_comments(findings: list[Finding]) -> list[dict[str, object]]:
         for finding in findings
         if finding.line is not None
     ]
+
+
+def _build_json_result(
+    repo: str,
+    pr_number: int,
+    pull_request: dict[str, object],
+    filenames: list[str],
+    findings: list[Finding],
+    redacted_files: list[str],
+    *,
+    comment_posted: bool,
+) -> dict[str, object]:
+    """Build the `--format json` payload for one review run.
+
+    Carries the same information the text summary surfaces -- PR metadata,
+    the changed-file list, the surviving `findings` (each dumped via
+    `Finding.model_dump(mode="json")`, so `severity` comes out as its plain
+    string value rather than the `Severity` enum member) and `redacted_files`
+    -- plus `comment_posted`, which the text summary never states explicitly.
+    A finding's `line` being `None` means what it does for
+    `_build_inline_comments`.
+    """
+    return {
+        "repo": repo,
+        "pr_number": pr_number,
+        "title": str(pull_request["title"]),
+        "state": str(pull_request["state"]),
+        "base_sha": str(pull_request["base"]["sha"]),
+        "head_sha": str(pull_request["head"]["sha"]),
+        "changed_files": filenames,
+        "findings": [finding.model_dump(mode="json") for finding in findings],
+        "redacted_files": redacted_files,
+        "comment_posted": comment_posted,
+    }
 
 
 async def _generate_finding(
