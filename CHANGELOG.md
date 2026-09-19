@@ -37,6 +37,19 @@
 
   ([ISSUE-71](https://github.com/exactml/marginal/issues/71))
 
+- Added `marginal.graph.build_symbol_graph`, a same-repo Python symbol graph
+  built by `ast`-parsing every tracked file: every module- and class-level
+  function/class definition, plus every call site resolved to its
+  definition on a best-effort basis (a same-module match first, otherwise
+  the one definition repo-wide whose name matches uniquely). A call to
+  `Widget().render()` in one file now resolves to `Widget.render`'s
+  definition in another; an ambiguous or dynamic call site is left
+  unresolved rather than guessed. Nothing consumes the graph in a review
+  yet -- this is the indexer the diff-to-caller lookup and prompt wiring in
+  upcoming work build on
+
+  ([ISSUE-82](https://github.com/exactml/marginal/issues/82))
+
 ### Improvements
 
 ### Fixes
