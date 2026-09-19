@@ -189,3 +189,6 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python,git
+
+# graphify skill output
+graphify-out/
