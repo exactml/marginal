@@ -9,7 +9,9 @@
 - `marginal init` now seeds `.marginal/policies/README.md` with guidance and
   distinguishes forced reruns with `↻ Overwrote` status lines, so the policy
   directory survives the first commit and scaffold changes are visible
-  ([ISSUE-75](https://github.com/exactml/marginal/issues/75))
+
+  ([ISSUE-75](https://github.com/exactml/marginal/issues/75),
+  [PR-80](https://github.com/exactml/marginal/pull/80) by [@dvd233](https://github.com/dvd233))
 
 - `marginal review` can now return more than one finding per run. The
   reviewer model is asked for a bounded list of the most important,
@@ -21,7 +23,8 @@
   (highest-confidence first); a diff with nothing worth flagging still
   produces the same metadata-only summary as before
 
-  ([ISSUE-57](https://github.com/exactml/marginal/issues/57))
+  ([ISSUE-57](https://github.com/exactml/marginal/issues/57),
+  [PR-79](https://github.com/exactml/marginal/pull/79) by [@exactml](https://github.com/exactml))
 
 - `marginal review` now checks whether it actually saw everything that
   changed in the PR. `GitHubClient.get_pull_request_files` previously made
@@ -35,7 +38,8 @@
   body as the existing redaction warning, so a review with no findings
   can't be mistaken for one that looked at everything and found nothing
 
-  ([ISSUE-71](https://github.com/exactml/marginal/issues/71))
+  ([ISSUE-71](https://github.com/exactml/marginal/issues/71),
+  [PR-73](https://github.com/exactml/marginal/pull/73) by [@exactml](https://github.com/exactml))
 
 - Added `marginal.graph.build_symbol_graph`, a same-repo Python symbol graph
   built by `ast`-parsing every tracked file: every module- and class-level
@@ -48,7 +52,8 @@
   yet -- this is the indexer the diff-to-caller lookup and prompt wiring in
   upcoming work build on
 
-  ([ISSUE-82](https://github.com/exactml/marginal/issues/82))
+  ([ISSUE-82](https://github.com/exactml/marginal/issues/82),
+  [PR-89](https://github.com/exactml/marginal/pull/89) by [@exactml](https://github.com/exactml))
 
 ### Improvements
 
@@ -61,7 +66,8 @@
   a raw traceback instead of the one-line provider error `run_review` already
   handles
 
-  ([ISSUE-39](https://github.com/exactml/marginal/issues/39))
+  ([ISSUE-39](https://github.com/exactml/marginal/issues/39),
+  [PR-42](https://github.com/exactml/marginal/pull/42) by [@HarshRajSinghania](https://github.com/HarshRajSinghania))
 
 ### Warnings
 
@@ -273,7 +279,8 @@
   one-line/non-zero-exit handling as a GitHub error. Still no validation,
   deduplication, or confidence scoring — one raw, unvalidated finding
 
-  ([ISSUE-21](https://github.com/exactml/marginal/issues/21) by [@exactml](https://github.com/exactml))
+  ([ISSUE-21](https://github.com/exactml/marginal/issues/21),
+  [PR-22](https://github.com/exactml/marginal/pull/22) by [@exactml](https://github.com/exactml))
 
 ### Improvements
 
@@ -285,7 +292,8 @@
   `ANTHROPIC_API_KEY` repository secret added manually before this repo's
   own PRs get a real generated finding instead of a `MissingCredentialsError`
 
-  ([ISSUE-23](https://github.com/exactml/marginal/issues/23) by [@exactml](https://github.com/exactml))
+  ([ISSUE-23](https://github.com/exactml/marginal/issues/23),
+  [PR-24](https://github.com/exactml/marginal/pull/24) by [@exactml](https://github.com/exactml))
 
 ### Fixes
 
@@ -297,7 +305,8 @@
   as required. Also adds this same corrected workflow to `marginal`'s own
   repo, so it reviews its own PRs via `exactml/marginal-action@v1`
 
-  ([ISSUE-19](https://github.com/exactml/marginal/issues/19) by [@exactml](https://github.com/exactml))
+  ([ISSUE-19](https://github.com/exactml/marginal/issues/19),
+  [PR-20](https://github.com/exactml/marginal/pull/20) by [@exactml](https://github.com/exactml))
 
 ### Warnings
 
