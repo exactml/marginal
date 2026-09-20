@@ -19,6 +19,20 @@
   ([ISSUE-83](https://github.com/exactml/marginal/issues/83),
   [PR-94](https://github.com/exactml/marginal/pull/94) by [@exactml](https://github.com/exactml))
 
+- `config.context.code_graph` (on by default) now does something: `marginal
+  review`'s prompt names any definition a diff changes that's called from a
+  file outside the diff, with a short source snippet at each call site --
+  #82's indexer and #83's diff-to-caller lookup feed straight into it. A
+  change to `Widget.render()` in one file now shows the reviewer model the
+  caller in another file it would otherwise never see, capped at 10 caller
+  snippets total so a large fan-out can't blow up the prompt. Best-effort
+  throughout: a definition with only in-diff callers, `code_graph` turned
+  off, or the graph failing to build at all (no git checkout, `git`
+  missing, a tracked file with invalid syntax) all leave the prompt exactly
+  as before -- this never fails the review itself
+
+  ([ISSUE-84](https://github.com/exactml/marginal/issues/84))
+
 ### Improvements
 
 ### Fixes
