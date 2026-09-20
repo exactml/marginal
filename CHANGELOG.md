@@ -10,6 +10,18 @@
 
 ### Fixes
 
+### Warnings
+
+## marginal v0.2.3, 2026-09-20
+
+### Breaking Changes
+
+### New Features
+
+### Improvements
+
+### Fixes
+
 - `AnthropicProvider.generate_structured` now sets `strict: true` on its tool
   definition, so Claude's response is generated via grammar-constrained decoding
   instead of free-form generation that merely tries to follow the schema. The
@@ -19,7 +31,8 @@
   ISSUE-96 was built to recover from should no longer occur in the first place --
   the server can no longer emit a token that violates `_FindingsResponse`'s shape
 
-  ([ISSUE-96](https://github.com/exactml/marginal/issues/96))
+  ([ISSUE-96](https://github.com/exactml/marginal/issues/96),
+  [PR-99](https://github.com/exactml/marginal/pull/99) by [@exactml](https://github.com/exactml))
 
 ### Warnings
 
