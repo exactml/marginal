@@ -30,8 +30,15 @@ def main(argv: list[str] | None = None) -> int:
         "--comment", action="store_true", help="Post the summary as a PR comment"
     )
 
+    help_parser = subparsers.add_parser("help", help="Show help for a command")
+    help_parser.add_argument(
+        "topic", nargs="?", help="Command to show help for (default: top-level usage)"
+    )
+
     args = parser.parse_args(argv)
 
+    if args.command == "help":
+        return _run_help(parser, subparsers, args.topic)
     if args.command == "init":
         return run_init(args.path, force=args.force)
     if args.command == "review":
@@ -39,6 +46,22 @@ def main(argv: list[str] | None = None) -> int:
 
     parser.error(f"unknown command: {args.command}")
     return 2
+
+
+def _run_help(
+    parser: argparse.ArgumentParser,
+    subparsers: argparse._SubParsersAction,
+    topic: str | None,
+) -> int:
+    if topic is None:
+        parser.print_help()
+        return 0
+    command_parser = subparsers.choices.get(topic)
+    if command_parser is None:
+        parser.error(f"unknown command: {topic}")
+        return 2
+    command_parser.print_help()
+    return 0
 
 
 if __name__ == "__main__":
