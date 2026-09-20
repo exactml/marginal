@@ -6,6 +6,19 @@
 
 ### New Features
 
+- Added `marginal.graph.find_out_of_diff_callers`, which maps a PR's changed
+  definitions (from #82's symbol graph) to the callers of each that sit
+  outside the diff's own changed files -- a caller already visible in the
+  diff is dropped, since the diff already shows it directly. Determines
+  "changed" by overlapping each file's diff hunks (parsed from the unified
+  diff's `@@ ... @@` headers) against a definition's line span; an unchanged
+  definition is skipped, and one touched by several hunks is reported once.
+  Nothing consumes this yet -- it's the input the review prompt in upcoming
+  work will use to show a reviewer what its own diff doesn't
+
+  ([ISSUE-83](https://github.com/exactml/marginal/issues/83),
+  [PR-94](https://github.com/exactml/marginal/pull/94) by [@exactml](https://github.com/exactml))
+
 ### Improvements
 
 ### Fixes
@@ -146,18 +159,6 @@
 
   ([ISSUE-82](https://github.com/exactml/marginal/issues/82),
   [PR-89](https://github.com/exactml/marginal/pull/89) by [@exactml](https://github.com/exactml))
-
-- Added `marginal.graph.find_out_of_diff_callers`, which maps a PR's changed
-  definitions (from #82's symbol graph) to the callers of each that sit
-  outside the diff's own changed files -- a caller already visible in the
-  diff is dropped, since the diff already shows it directly. Determines
-  "changed" by overlapping each file's diff hunks (parsed from the unified
-  diff's `@@ ... @@` headers) against a definition's line span; an unchanged
-  definition is skipped, and one touched by several hunks is reported once.
-  Nothing consumes this yet -- it's the input the review prompt in upcoming
-  work will use to show a reviewer what its own diff doesn't
-
-  ([ISSUE-83](https://github.com/exactml/marginal/issues/83))
 
 ### Improvements
 
