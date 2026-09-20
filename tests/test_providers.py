@@ -1,11 +1,13 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import anthropic
 import openai
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from marginal.cli.review import _FindingsResponse
 from marginal.config import ModelSpec
 from marginal.providers import (
     MissingCredentialsError,
@@ -152,6 +154,80 @@ async def test_anthropic_generate_structured_requests_strict_tool_use():
 
     _, kwargs = client.messages.create.call_args
     assert kwargs["tools"][0]["strict"] is True
+
+
+class Scored(BaseModel):
+    score: float = Field(ge=0.0, le=1.0)
+    tags: list[str] = Field(max_length=3)
+    note: int | None = None
+
+
+async def test_anthropic_generate_structured_strips_keywords_strict_mode_rejects():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.return_value = SimpleNamespace(
+        content=[
+            SimpleNamespace(
+                type="tool_use",
+                name="emit_structured_output",
+                input={"score": 0.9, "tags": ["a"], "note": None},
+            )
+        ]
+    )
+    provider = _anthropic_provider(client)
+
+    await provider.generate_structured("review this", Scored)
+
+    _, kwargs = client.messages.create.call_args
+    sent_schema = json.dumps(kwargs["tools"][0]["input_schema"])
+    # Strict tool use rejects a request outright (400, before any generation)
+    # if the schema uses any of these -- confirmed live in production.
+    for forbidden in ("minimum", "maximum", "maxItems", "anyOf"):
+        assert forbidden not in sent_schema, f"{forbidden!r} leaked into the strict schema"
+
+
+async def test_anthropic_generate_structured_still_enforces_stripped_bounds_locally():
+    """Stripping `minimum`/`maximum` from the wire schema must not stop
+    pydantic from rejecting an out-of-bounds value in the response -- the
+    server-side guarantee is gone, but the client-side check must stay."""
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.return_value = SimpleNamespace(
+        content=[
+            SimpleNamespace(
+                type="tool_use",
+                name="emit_structured_output",
+                input={"score": 1.5, "tags": ["a"], "note": None},
+            )
+        ]
+    )
+    provider = _anthropic_provider(client)
+
+    with pytest.raises(ProviderResponseError, match="failed schema validation"):
+        await provider.generate_structured("review this", Scored)
+
+
+async def test_anthropic_generate_structured_findings_response_schema_is_strict_compatible():
+    """Regression test for the exact schema that broke production: strict
+    tool use rejected `_FindingsResponse` outright because `Finding.confidence`
+    carries `ge=0.0, le=1.0` and `_FindingsResponse.findings` carries a
+    `max_length` -- both render as keywords strict mode doesn't support."""
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.return_value = SimpleNamespace(
+        content=[
+            SimpleNamespace(
+                type="tool_use",
+                name="emit_structured_output",
+                input={"findings": []},
+            )
+        ]
+    )
+    provider = _anthropic_provider(client)
+
+    await provider.generate_structured("review this", _FindingsResponse)
+
+    _, kwargs = client.messages.create.call_args
+    sent_schema = json.dumps(kwargs["tools"][0]["input_schema"])
+    for forbidden in ("minimum", "maximum", "maxItems", "anyOf"):
+        assert forbidden not in sent_schema, f"{forbidden!r} leaked into the strict schema"
 
 
 async def test_anthropic_generate_structured_wraps_validation_error():
