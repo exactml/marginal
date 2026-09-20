@@ -6,6 +6,18 @@
 
 ### New Features
 
+### Improvements
+
+### Fixes
+
+### Warnings
+
+## marginal v0.2.1, 2026-09-20
+
+### Breaking Changes
+
+### New Features
+
 - `marginal init` now seeds `.marginal/policies/README.md` with guidance and
   distinguishes forced reruns with `↻ Overwrote` status lines, so the policy
   directory survives the first commit and scaffold changes are visible
