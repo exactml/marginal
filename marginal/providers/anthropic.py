@@ -60,6 +60,7 @@ class AnthropicProvider:
                             "name": _STRUCTURED_OUTPUT_TOOL,
                             "description": "Return the requested structured output.",
                             "input_schema": schema.model_json_schema(),
+                            "strict": True,
                         }
                     ],
                     tool_choice={"type": "tool", "name": _STRUCTURED_OUTPUT_TOOL},

@@ -135,6 +135,25 @@ async def test_anthropic_generate_structured_validates_tool_input():
     assert result == Verdict(approved=True, reason="looks good")
 
 
+async def test_anthropic_generate_structured_requests_strict_tool_use():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.return_value = SimpleNamespace(
+        content=[
+            SimpleNamespace(
+                type="tool_use",
+                name="emit_structured_output",
+                input={"approved": True, "reason": "looks good"},
+            )
+        ]
+    )
+    provider = _anthropic_provider(client)
+
+    await provider.generate_structured("review this", Verdict)
+
+    _, kwargs = client.messages.create.call_args
+    assert kwargs["tools"][0]["strict"] is True
+
+
 async def test_anthropic_generate_structured_wraps_validation_error():
     client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
     client.messages.create.return_value = SimpleNamespace(
