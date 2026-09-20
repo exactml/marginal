@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -11,6 +12,7 @@ from marginal.config.loader import load_config
 from marginal.config.schema import ModelSpec
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubAPIError, GitHubAuthenticationError, PermissionDeniedError
+from marginal.graph import ChangedDefinition, build_symbol_graph, find_out_of_diff_callers
 from marginal.policy import load_policies
 from marginal.providers.errors import MissingCredentialsError, ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
@@ -28,6 +30,14 @@ SEVERITY_EMOJI = {
 # `config.review.max_comments`'s default, so that setting has real findings
 # left to cap rather than just passing everything through.
 MAX_FINDINGS_PER_REVIEW = 20
+
+# Total out-of-diff caller snippets folded into the prompt across every
+# changed definition -- bounds the prompt against a definition with a huge
+# fan-out, independent of repo size.
+MAX_GRAPH_CONTEXT_CALLERS = 10
+
+# Lines of source shown above and below a caller's own line.
+_GRAPH_CONTEXT_SNIPPET_RADIUS = 2
 
 FINDING_PROMPT_INSTRUCTIONS = (
     "You are reviewing a pull request. Identify the most important, "
@@ -75,6 +85,18 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     badge (e.g. `🔴 **Critical** · 92% confidence`) followed by its message.
     Without `models.reviewer`, or if every finding gets filtered out, the
     summary stays metadata-only, same as if nothing was generated.
+
+    With `config.context.code_graph` (on by default), the prompt also names
+    any definition this diff changes that's called from a file outside the
+    diff -- `marginal.graph.build_symbol_graph` indexes the repo, and
+    `marginal.graph.find_out_of_diff_callers` maps the diff's changed
+    definitions to those out-of-diff call sites, each folded in as a short
+    source snippet (bounded to `MAX_GRAPH_CONTEXT_CALLERS` total). This is
+    best-effort: a definition with no out-of-diff callers, `code_graph`
+    turned off, or the graph failing to build at all (not a git checkout,
+    `git` missing, a tracked file with invalid syntax) all leave the prompt
+    exactly as it would be without this section -- never something that
+    fails the review itself.
 
     If redaction actually masked something, the summary also gets a
     `⚠️ **Redacted a likely secret**` line naming the affected file(s) --
@@ -127,8 +149,11 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
         policies = load_policies(path, config.policies)
         redacted_files = _redacted_filenames(files)
         coverage_lines = _coverage_warning_lines(pull_request, files)
+        graph_context = _build_graph_context(path, files, enabled=config.context.code_graph)
         try:
-            findings = asyncio.run(_generate_findings(reviewer_model, files, policies))
+            findings = asyncio.run(
+                _generate_findings(reviewer_model, files, policies, graph_context, path)
+            )
         except MissingCredentialsError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
             return 3
@@ -252,18 +277,47 @@ def _build_inline_comments(findings: list[Finding]) -> list[dict[str, object]]:
 
 
 async def _generate_findings(
-    model_spec: ModelSpec, files: list[dict[str, object]], policies: list[tuple[str, str]]
+    model_spec: ModelSpec,
+    files: list[dict[str, object]],
+    policies: list[tuple[str, str]],
+    graph_context: list[ChangedDefinition],
+    repo_root: str,
 ) -> list[Finding]:
     """Generate a bounded list of unvalidated `Finding`s from `model_spec` over
-    `files`' diffs and `policies`."""
+    `files`' diffs, `policies`, and `graph_context`."""
     provider = get_provider(model_spec)
-    prompt = _build_finding_prompt(files, policies)
+    prompt = _build_finding_prompt(files, policies, graph_context, repo_root)
     result = await provider.generate_structured(prompt, schema=_FindingsResponse)
     if not isinstance(result, _FindingsResponse):
         raise ProviderResponseError(
             f"expected a _FindingsResponse from generate_structured, got {type(result).__name__}"
         )
     return result.findings
+
+
+def _build_graph_context(
+    repo_root: str, files: list[dict[str, object]], *, enabled: bool
+) -> list[ChangedDefinition]:
+    """The PR's changed definitions and their out-of-diff callers, or `[]`.
+
+    `[]` both when `enabled` is `False` and when building the graph fails for
+    any reason (`repo_root` isn't a git working tree, `git` isn't installed,
+    a tracked file has invalid syntax) -- this context is a best-effort
+    addition to the prompt, never something that should fail the review
+    itself, the same way a missing policy file only warns rather than
+    aborting.
+    """
+    if not enabled:
+        return []
+    try:
+        graph = build_symbol_graph(repo_root)
+        return find_out_of_diff_callers(graph, files)
+    except Exception as exc:
+        print(
+            f"marginal review: warning: couldn't build code-graph context, skipping: {exc}",
+            file=sys.stderr,
+        )
+        return []
 
 
 def _missing_patch_filenames(files: list[dict[str, object]]) -> list[str]:
@@ -317,7 +371,12 @@ def _redacted_filenames(files: list[dict[str, object]]) -> list[str]:
     ]
 
 
-def _build_finding_prompt(files: list[dict[str, object]], policies: list[tuple[str, str]]) -> str:
+def _build_finding_prompt(
+    files: list[dict[str, object]],
+    policies: list[tuple[str, str]],
+    graph_context: list[ChangedDefinition],
+    repo_root: str,
+) -> str:
     diff = "\n\n".join(
         f"--- {file['filename']} ---\n{redact_secrets(str(file.get('patch', '')))}"
         for file in files
@@ -330,5 +389,56 @@ def _build_finding_prompt(files: list[dict[str, object]], policies: list[tuple[s
             "below -- a violation of one of these is at least as important as a "
             f"general code-quality issue:\n\n{policy_text}"
         )
+    graph_section = _build_graph_context_section(graph_context, repo_root)
+    if graph_section:
+        sections.append(graph_section)
     sections.append(diff)
     return "\n\n".join(sections)
+
+
+def _build_graph_context_section(
+    graph_context: list[ChangedDefinition], repo_root: str
+) -> str | None:
+    """A prompt section naming out-of-diff callers of what this diff changes.
+
+    `None` if there's nothing to show -- `graph_context` is empty, every
+    changed definition's callers are all inside the diff already, or none of
+    the caller files could be read for a snippet. Bounded to
+    `MAX_GRAPH_CONTEXT_CALLERS` caller snippets total, across every changed
+    definition, so a definition with a huge fan-out can't blow up the prompt.
+    """
+    blocks: list[str] = []
+    remaining = MAX_GRAPH_CONTEXT_CALLERS
+    for changed in graph_context:
+        if remaining <= 0:
+            break
+        caller_blocks = []
+        for site in changed.callers[:remaining]:
+            snippet = _read_snippet(repo_root, site.file, site.line)
+            if snippet is not None:
+                caller_blocks.append(f"{site.file}:{site.line}\n{snippet}")
+        if not caller_blocks:
+            continue
+        remaining -= len(caller_blocks)
+        blocks.append(
+            f"`{changed.definition.qualified_name}` (defined in "
+            f"{changed.definition.file}) is called from:\n\n" + "\n\n".join(caller_blocks)
+        )
+    if not blocks:
+        return None
+    return (
+        "This diff changes definitions that other, unchanged files in the repo call -- "
+        "check whether the change is compatible with how they're used there:\n\n"
+        + "\n\n".join(blocks)
+    )
+
+
+def _read_snippet(repo_root: str, file: str, line: int) -> str | None:
+    """A few lines of `file` around `line` (1-indexed), or `None` if unreadable."""
+    try:
+        lines = Path(repo_root, file).read_text().splitlines()
+    except OSError:
+        return None
+    start = max(line - _GRAPH_CONTEXT_SNIPPET_RADIUS, 1)
+    end = min(line + _GRAPH_CONTEXT_SNIPPET_RADIUS, len(lines))
+    return "\n".join(f"{n}: {lines[n - 1]}" for n in range(start, end + 1))
