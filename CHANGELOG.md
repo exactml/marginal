@@ -10,6 +10,18 @@
 
 ### Fixes
 
+### Warnings
+
+## marginal v0.2.4, 2026-09-20
+
+### Breaking Changes
+
+### New Features
+
+### Improvements
+
+### Fixes
+
 - Fixes a regression introduced in v0.2.3: `AnthropicProvider.generate_structured`'s
   `strict: true` tool definition was rejected outright by the API (`400
   invalid_request_error`) for every request, because `Finding.confidence`'s
@@ -26,7 +38,8 @@
   now breaks a test the next time a constrained field is added, instead of
   breaking production the way this regression did
 
-  ([ISSUE-96](https://github.com/exactml/marginal/issues/96))
+  ([ISSUE-96](https://github.com/exactml/marginal/issues/96),
+  [PR-101](https://github.com/exactml/marginal/pull/101) by [@exactml](https://github.com/exactml))
 
 ### Warnings
 
