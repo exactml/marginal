@@ -10,6 +10,17 @@
 
 ### Fixes
 
+- `AnthropicProvider.generate_structured` now sets `strict: true` on its tool
+  definition, so Claude's response is generated via grammar-constrained decoding
+  instead of free-form generation that merely tries to follow the schema. The
+  two-attempt retry from ISSUE-96 stays in place as a dormant safety net (e.g. a
+  schema complex enough to hit strict mode's compilation limits fails at the
+  request level, not via a validation mismatch), but the schema-mismatch failures
+  ISSUE-96 was built to recover from should no longer occur in the first place --
+  the server can no longer emit a token that violates `_FindingsResponse`'s shape
+
+  ([ISSUE-96](https://github.com/exactml/marginal/issues/96))
+
 ### Warnings
 
 ## marginal v0.2.2, 2026-09-20
