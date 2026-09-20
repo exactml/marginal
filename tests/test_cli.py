@@ -7,8 +7,10 @@ from pydantic import ValidationError
 from marginal.cli import main
 from marginal.cli.review import (
     MAX_FINDINGS_PER_REVIEW,
+    MAX_GRAPH_CONTEXT_CALLERS,
     _base_lines,
     _build_finding_prompt,
+    _build_graph_context_section,
     _build_inline_comments,
     _coverage_warning_lines,
     _finding_badge,
@@ -24,6 +26,7 @@ from marginal.github.errors import (
     GitHubNotFoundError,
     PermissionDeniedError,
 )
+from marginal.graph import CallSite, ChangedDefinition, Definition
 from marginal.providers.errors import MissingCredentialsError
 from marginal.review import Finding, Severity
 
@@ -1000,6 +1003,30 @@ def test_review_skips_graph_context_outside_a_git_repo(
     assert exit_code == 0
     err = capsys.readouterr().err
     assert "couldn't build code-graph context" in err
+
+
+def test_build_graph_context_section_skips_unreadable_callers_to_reach_a_readable_one(
+    tmp_path,
+):
+    """A definition's callers are tried in order until `MAX_GRAPH_CONTEXT_CALLERS`
+    snippets are actually collected -- an unreadable caller must not consume
+    a cap slot and hide a later, readable one for the same definition."""
+    (tmp_path / "readable.py").write_text("line1\nline2\nline3\n")
+    definition = Definition(
+        qualified_name="pkg.a.helper", file="pkg/a.py", line_start=1, line_end=2
+    )
+    unreadable_callers = [
+        CallSite(file=f"missing_{i}.py", line=1) for i in range(MAX_GRAPH_CONTEXT_CALLERS)
+    ]
+    changed = ChangedDefinition(
+        definition=definition,
+        callers=[*unreadable_callers, CallSite(file="readable.py", line=2)],
+    )
+
+    section = _build_graph_context_section([changed], str(tmp_path))
+
+    assert section is not None
+    assert "readable.py:2" in section
 
 
 # -- review: secret redaction warning --------------------------------------

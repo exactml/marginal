@@ -413,7 +413,9 @@ def _build_graph_context_section(
         if remaining <= 0:
             break
         caller_blocks = []
-        for site in changed.callers[:remaining]:
+        for site in changed.callers:
+            if len(caller_blocks) >= remaining:
+                break
             snippet = _read_snippet(repo_root, site.file, site.line)
             if snippet is not None:
                 caller_blocks.append(f"{site.file}:{site.line}\n{snippet}")
