@@ -14,6 +14,13 @@ DEFAULT_MAX_TOKENS = 4096
 _STRUCTURED_OUTPUT_TOOL = "emit_structured_output"
 
 
+def _find_tool_input(response: object, tool_name: str) -> dict | None:
+    for block in response.content:
+        if getattr(block, "type", None) == "tool_use" and block.name == tool_name:
+            return block.input
+    return None
+
+
 class AnthropicProvider:
     """`ModelProvider` for a single Claude model."""
 
@@ -40,34 +47,40 @@ class AnthropicProvider:
     async def generate_structured(
         self, prompt: str, schema: type[BaseModel], **kwargs: object
     ) -> BaseModel:
-        try:
-            response = await self._client.messages.create(
-                model=self._model,
-                max_tokens=kwargs.pop("max_tokens", DEFAULT_MAX_TOKENS),
-                messages=[{"role": "user", "content": prompt}],
-                tools=[
-                    {
-                        "name": _STRUCTURED_OUTPUT_TOOL,
-                        "description": "Return the requested structured output.",
-                        "input_schema": schema.model_json_schema(),
-                    }
-                ],
-                tool_choice={"type": "tool", "name": _STRUCTURED_OUTPUT_TOOL},
-                **kwargs,
-            )
-        except anthropic.APIError as exc:
-            raise ProviderAPIError("anthropic", str(exc)) from exc
-        for block in response.content:
-            if getattr(block, "type", None) == "tool_use" and block.name == _STRUCTURED_OUTPUT_TOOL:
-                try:
-                    return schema.model_validate(block.input)
-                except ValidationError as exc:
-                    raise ProviderResponseError(
-                        f"anthropic structured output failed schema validation: {exc}"
-                    ) from exc
+        max_tokens = kwargs.pop("max_tokens", DEFAULT_MAX_TOKENS)
+        validation_error: ValidationError | None = None
+        for _ in range(2):
+            try:
+                response = await self._client.messages.create(
+                    model=self._model,
+                    max_tokens=max_tokens,
+                    messages=[{"role": "user", "content": prompt}],
+                    tools=[
+                        {
+                            "name": _STRUCTURED_OUTPUT_TOOL,
+                            "description": "Return the requested structured output.",
+                            "input_schema": schema.model_json_schema(),
+                        }
+                    ],
+                    tool_choice={"type": "tool", "name": _STRUCTURED_OUTPUT_TOOL},
+                    **kwargs,
+                )
+            except anthropic.APIError as exc:
+                raise ProviderAPIError("anthropic", str(exc)) from exc
+            tool_input = _find_tool_input(response, _STRUCTURED_OUTPUT_TOOL)
+            if tool_input is None:
+                raise ProviderResponseError(
+                    f"anthropic provider did not return the expected "
+                    f"{_STRUCTURED_OUTPUT_TOOL!r} tool call"
+                )
+            try:
+                return schema.model_validate(tool_input)
+            except ValidationError as exc:
+                validation_error = exc
         raise ProviderResponseError(
-            f"anthropic provider did not return the expected {_STRUCTURED_OUTPUT_TOOL!r} tool call"
-        )
+            f"anthropic structured output failed schema validation after retrying once: "
+            f"{validation_error}"
+        ) from validation_error
 
     async def stream(self, prompt: str, **kwargs: object) -> AsyncIterator[str]:
         try:

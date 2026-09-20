@@ -34,31 +34,35 @@ class OpenAIProvider:
     async def generate_structured(
         self, prompt: str, schema: type[BaseModel], **kwargs: object
     ) -> BaseModel:
-        try:
-            response = await self._client.chat.completions.create(
-                model=self._model,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": schema.__name__,
-                        "schema": schema.model_json_schema(),
-                        "strict": True,
+        validation_error: ValidationError | None = None
+        for _ in range(2):
+            try:
+                response = await self._client.chat.completions.create(
+                    model=self._model,
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format={
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": schema.__name__,
+                            "schema": schema.model_json_schema(),
+                            "strict": True,
+                        },
                     },
-                },
-                **kwargs,
-            )
-        except openai.APIError as exc:
-            raise ProviderAPIError("openai", str(exc)) from exc
-        content = response.choices[0].message.content
-        if content is None:
-            raise ProviderResponseError("openai provider returned no structured-output content")
-        try:
-            return schema.model_validate_json(content)
-        except ValidationError as exc:
-            raise ProviderResponseError(
-                f"openai structured output failed schema validation: {exc}"
-            ) from exc
+                    **kwargs,
+                )
+            except openai.APIError as exc:
+                raise ProviderAPIError("openai", str(exc)) from exc
+            content = response.choices[0].message.content
+            if content is None:
+                raise ProviderResponseError("openai provider returned no structured-output content")
+            try:
+                return schema.model_validate_json(content)
+            except ValidationError as exc:
+                validation_error = exc
+        raise ProviderResponseError(
+            f"openai structured output failed schema validation after retrying once: "
+            f"{validation_error}"
+        ) from validation_error
 
     async def stream(self, prompt: str, **kwargs: object) -> AsyncIterator[str]:
         try:

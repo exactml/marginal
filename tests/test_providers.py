@@ -162,6 +162,42 @@ async def test_anthropic_generate_structured_raises_without_tool_use():
     with pytest.raises(ProviderResponseError):
         await provider.generate_structured("review this", Verdict)
 
+    assert client.messages.create.call_count == 1
+
+
+def _anthropic_tool_response(tool_input: object) -> SimpleNamespace:
+    return SimpleNamespace(
+        content=[SimpleNamespace(type="tool_use", name="emit_structured_output", input=tool_input)]
+    )
+
+
+async def test_anthropic_generate_structured_retries_once_after_validation_error():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.side_effect = [
+        _anthropic_tool_response({"approved": "not-a-bool"}),
+        _anthropic_tool_response({"approved": True, "reason": "fixed on retry"}),
+    ]
+    provider = _anthropic_provider(client)
+
+    result = await provider.generate_structured("review this", Verdict)
+
+    assert result == Verdict(approved=True, reason="fixed on retry")
+    assert client.messages.create.call_count == 2
+
+
+async def test_anthropic_generate_structured_fails_after_two_invalid_attempts():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.side_effect = [
+        _anthropic_tool_response({"parameter name": "CHANGELOG.md"}),
+        _anthropic_tool_response({"parameter name": "CHANGELOG.md"}),
+    ]
+    provider = _anthropic_provider(client)
+
+    with pytest.raises(ProviderResponseError, match="after retrying once"):
+        await provider.generate_structured("review this", Verdict)
+
+    assert client.messages.create.call_count == 2
+
 
 async def test_anthropic_stream_yields_only_text_deltas():
     events = [
@@ -295,6 +331,40 @@ async def test_openai_generate_structured_raises_on_empty_content():
 
     with pytest.raises(ProviderResponseError):
         await provider.generate_structured("review this", Verdict)
+
+    assert client.chat.completions.create.call_count == 1
+
+
+def _openai_content_response(content: str) -> SimpleNamespace:
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+
+async def test_openai_generate_structured_retries_once_after_validation_error():
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock())))
+    client.chat.completions.create.side_effect = [
+        _openai_content_response('{"approved": "not-a-bool"}'),
+        _openai_content_response('{"approved": true, "reason": "fixed on retry"}'),
+    ]
+    provider = _openai_provider(client)
+
+    result = await provider.generate_structured("review this", Verdict)
+
+    assert result == Verdict(approved=True, reason="fixed on retry")
+    assert client.chat.completions.create.call_count == 2
+
+
+async def test_openai_generate_structured_fails_after_two_invalid_attempts():
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock())))
+    client.chat.completions.create.side_effect = [
+        _openai_content_response('{"parameter name": "CHANGELOG.md"}'),
+        _openai_content_response('{"parameter name": "CHANGELOG.md"}'),
+    ]
+    provider = _openai_provider(client)
+
+    with pytest.raises(ProviderResponseError, match="after retrying once"):
+        await provider.generate_structured("review this", Verdict)
+
+    assert client.chat.completions.create.call_count == 2
 
 
 async def test_openai_stream_yields_only_non_empty_deltas():
