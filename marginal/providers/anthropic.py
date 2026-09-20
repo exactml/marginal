@@ -23,10 +23,18 @@ def _find_tool_input(response: object, tool_name: str) -> dict | None:
 
 # Anthropic's strict tool use compiles `input_schema` into a grammar and
 # rejects the whole request with a 400 if the schema uses a keyword outside
-# its supported subset. Pydantic still enforces these bounds locally when the
-# response is validated, so dropping them from the wire schema only loses the
-# server-side guarantee for that specific bound, not the check itself.
-_UNSUPPORTED_STRICT_KEYWORDS = frozenset(
+# its supported subset. Two lists, not one denylist of keywords known to be
+# rejected -- a denylist alone only protects against keywords someone already
+# thought to list (v0.2.3 shipped broken exactly this way, missing
+# `uniqueItems`). A keyword that's neither confirmed-supported nor
+# confirmed-unsupported raises immediately, in a test, the moment a schema
+# uses it, rather than silently shipping something unvetted to production.
+#
+# Confirmed unsupported (Anthropic's docs, plus `minimum`/`maximum`
+# reproduced live in production) -- deliberately stripped from the wire
+# schema. Pydantic still enforces the same bound locally when the response
+# is validated, so only the server-side guarantee for that bound is lost.
+_STRICT_MODE_STRIPPED_KEYWORDS = frozenset(
     {
         "minimum",
         "maximum",
@@ -36,13 +44,44 @@ _UNSUPPORTED_STRICT_KEYWORDS = frozenset(
         "minLength",
         "maxLength",
         "maxItems",
+        "uniqueItems",
+    }
+)
+
+# Confirmed supported -- left as-is.
+_STRICT_MODE_ALLOWED_KEYWORDS = frozenset(
+    {
+        "type",
+        "properties",
+        "required",
+        "items",
+        "enum",
+        "$ref",
+        "$defs",
+        "additionalProperties",
+        "anyOf",
+        "description",
+        "title",
     }
 )
 
 
 def _strict_input_schema(schema: type[BaseModel]) -> dict:
-    """`schema`'s JSON schema, adapted to what strict tool use accepts."""
+    """`schema`'s JSON schema, adapted to what strict tool use accepts.
+
+    Raises `ValueError` if the schema uses a keyword in neither
+    `_STRICT_MODE_ALLOWED_KEYWORDS` nor `_STRICT_MODE_STRIPPED_KEYWORDS` --
+    add it to one of them only after confirming, against Anthropic's
+    strict-tool-use docs, which one it actually belongs in.
+    """
     return _adapt_node(schema.model_json_schema())
+
+
+# `$defs` maps arbitrary type names to schemas; `properties` maps arbitrary
+# field names to schemas. Their keys are names chosen by our own models, not
+# JSON Schema keywords, so they're exempt from the keyword checks below --
+# only their *values* are schema nodes that need adapting/validating.
+_NAME_KEYED_CONTAINERS = frozenset({"$defs", "properties"})
 
 
 def _adapt_node(node: object) -> object:
@@ -53,11 +92,28 @@ def _adapt_node(node: object) -> object:
     nullable_type = _nullable_type(node)
     if nullable_type is not None:
         return {"type": [nullable_type, "null"]}
+    unrecognized = node.keys() - _STRICT_MODE_ALLOWED_KEYWORDS - _STRICT_MODE_STRIPPED_KEYWORDS
+    if unrecognized:
+        raise ValueError(
+            f"schema uses keyword(s) {sorted(unrecognized)!r} not vetted against "
+            "Anthropic's strict tool use -- confirm support before allowlisting them"
+        )
+    if "additionalProperties" in node and node["additionalProperties"] is not False:
+        raise ValueError(
+            "strict tool use requires additionalProperties: false wherever it "
+            f"appears, got {node['additionalProperties']!r}"
+        )
     return {
-        key: _adapt_node(value)
+        key: _adapt_value(key, value)
         for key, value in node.items()
-        if key not in _UNSUPPORTED_STRICT_KEYWORDS
+        if key not in _STRICT_MODE_STRIPPED_KEYWORDS
     }
+
+
+def _adapt_value(key: str, value: object) -> object:
+    if key in _NAME_KEYED_CONTAINERS and isinstance(value, dict):
+        return {name: _adapt_node(sub_schema) for name, sub_schema in value.items()}
+    return _adapt_node(value)
 
 
 def _nullable_type(node: dict) -> str | None:

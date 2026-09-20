@@ -16,7 +16,7 @@ from marginal.providers import (
     UnknownProviderError,
     get_provider,
 )
-from marginal.providers.anthropic import AnthropicProvider
+from marginal.providers.anthropic import AnthropicProvider, _strict_input_schema
 from marginal.providers.credentials import require_env
 from marginal.providers.openai import OpenAIProvider
 
@@ -228,6 +228,25 @@ async def test_anthropic_generate_structured_findings_response_schema_is_strict_
     sent_schema = json.dumps(kwargs["tools"][0]["input_schema"])
     for forbidden in ("minimum", "maximum", "maxItems", "anyOf"):
         assert forbidden not in sent_schema, f"{forbidden!r} leaked into the strict schema"
+
+
+class Unique(BaseModel):
+    tags: set[str]
+
+
+def test_strict_input_schema_strips_unique_items():
+    schema = _strict_input_schema(Unique)
+
+    assert "uniqueItems" not in json.dumps(schema)
+
+
+class Pattern(BaseModel):
+    code: str = Field(pattern=r"^[A-Z]+$")
+
+
+def test_strict_input_schema_raises_on_an_unvetted_keyword():
+    with pytest.raises(ValueError, match="pattern"):
+        _strict_input_schema(Pattern)
 
 
 async def test_anthropic_generate_structured_wraps_validation_error():
