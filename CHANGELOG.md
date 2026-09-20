@@ -10,6 +10,18 @@
 
 ### Fixes
 
+### Warnings
+
+## marginal v0.2.2, 2026-09-20
+
+### Breaking Changes
+
+### New Features
+
+### Improvements
+
+### Fixes
+
 - `AnthropicProvider.generate_structured` and `OpenAIProvider.generate_structured` now
   retry once (two attempts total) when the model's response fails schema validation,
   instead of failing the review outright on the first mismatch. Observed live twice on
@@ -20,7 +32,8 @@
   `ProviderAPIError`, or a response with no tool call/content at all, still fails
   immediately without retrying -- only a schema mismatch gets the second attempt
 
-  ([ISSUE-96](https://github.com/exactml/marginal/issues/96))
+  ([ISSUE-96](https://github.com/exactml/marginal/issues/96),
+  [PR-97](https://github.com/exactml/marginal/pull/97) by [@exactml](https://github.com/exactml))
 
 ### Warnings
 
