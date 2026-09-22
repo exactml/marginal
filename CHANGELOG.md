@@ -145,6 +145,17 @@
   ([ISSUE-57](https://github.com/exactml/marginal/issues/57),
   [PR-79](https://github.com/exactml/marginal/pull/79) by [@exactml](https://github.com/exactml))
 
+- `marginal review` supports `config.anti_policies` files (patterns the model
+  must never flag as findings). Anti-policy files are loaded relative to the
+  repo root via `marginal.policy.load_policies` (skipping and warning to stderr
+  on a missing file rather than failing the whole review) and folded into the
+  prompt under an explicit "do not flag" framing distinct from `config.policies`.
+  With no anti-policies configured -- the default -- the prompt is byte-for-byte
+  unchanged from before. `marginal init` also scaffolds `.marginal/anti-policies/`
+  with a guide README alongside policies
+
+  ([ISSUE-46](https://github.com/exactml/marginal/issues/46))
+
 - `marginal review` now checks whether it actually saw everything that
   changed in the PR. `GitHubClient.get_pull_request_files` previously made
   one unpaginated call to GitHub's files endpoint, so a PR with more files

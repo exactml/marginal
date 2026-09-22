@@ -42,12 +42,20 @@ def test_init_creates_all_artifacts(tmp_path, capsys):
     assert "security.md" in policy_readme.read_text()
     assert "testing.md" in policy_readme.read_text()
     assert "architecture.md" in policy_readme.read_text()
+    assert (tmp_path / ".marginal" / "anti-policies").is_dir()
+    anti_policy_readme = tmp_path / ".marginal" / "anti-policies" / "README.md"
+    assert anti_policy_readme.is_file()
+    assert "tradeoffs.md" in anti_policy_readme.read_text()
+    assert "patterns.md" in anti_policy_readme.read_text()
+    assert "exceptions.md" in anti_policy_readme.read_text()
     assert (tmp_path / ".github" / "workflows" / "marginal.yml").is_file()
 
     out = capsys.readouterr().out
     assert "✓ Created .marginal/config.yaml" in out
     assert "✓ Created .marginal/policies/" in out
     assert "✓ Created .marginal/policies/README.md" in out
+    assert "✓ Created .marginal/anti-policies/" in out
+    assert "✓ Created .marginal/anti-policies/README.md" in out
     assert "✓ Created .github/workflows/marginal.yml" in out
     assert "marginal is ready." in out
 
@@ -72,6 +80,8 @@ def test_rerun_skips_existing_artifacts(tmp_path, capsys):
     assert "- Skipped .marginal/config.yaml (already exists)" in out
     assert "- Skipped .marginal/policies/ (already exists)" in out
     assert "- Skipped .marginal/policies/README.md (already exists)" in out
+    assert "- Skipped .marginal/anti-policies/ (already exists)" in out
+    assert "- Skipped .marginal/anti-policies/README.md (already exists)" in out
     assert "- Skipped .github/workflows/marginal.yml (already exists)" in out
 
 
@@ -99,6 +109,8 @@ def test_force_overwrites_existing_artifacts(tmp_path, capsys):
     assert "↻ Overwrote .marginal/config.yaml" in out
     assert "↻ Overwrote .marginal/policies/" in out
     assert "↻ Overwrote .marginal/policies/README.md" in out
+    assert "↻ Overwrote .marginal/anti-policies/" in out
+    assert "↻ Overwrote .marginal/anti-policies/README.md" in out
     assert "↻ Overwrote .github/workflows/marginal.yml" in out
     assert "✓ Created" not in out
 
@@ -131,6 +143,7 @@ def test_init_policies_survive_git_commit(tmp_path):
         text=True,
     ).stdout.splitlines()
     assert ".marginal/policies/README.md" in tracked
+    assert ".marginal/anti-policies/README.md" in tracked
 
 
 def test_generated_config_round_trips_through_load_config(tmp_path):
@@ -351,7 +364,7 @@ def test_base_lines_skips_the_details_block_with_no_files():
 def test_build_finding_prompt_without_policies_is_unchanged():
     files = [{"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}]
 
-    prompt = _build_finding_prompt(files, [], [], ".")
+    prompt = _build_finding_prompt(files)
 
     assert "policies" not in prompt.lower()
     assert prompt.endswith("--- marginal/retry.py ---\n@@ -1,3 +1,4 @@\n+time.sleep(1)")
@@ -361,7 +374,7 @@ def test_build_finding_prompt_folds_policy_content_in():
     files = [{"filename": "marginal/retry.py", "patch": "+time.sleep(1)"}]
     policies = [(".marginal/policies/coding.md", "Never use a blocking sleep in async code.")]
 
-    prompt = _build_finding_prompt(files, policies, [], ".")
+    prompt = _build_finding_prompt(files, policies=policies)
 
     assert ".marginal/policies/coding.md" in prompt
     assert "Never use a blocking sleep in async code." in prompt
@@ -376,7 +389,7 @@ def test_build_finding_prompt_folds_policy_content_in():
 def test_build_finding_prompt_redacts_a_secret_in_the_patch():
     files = [{"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"}]
 
-    prompt = _build_finding_prompt(files, [], [], ".")
+    prompt = _build_finding_prompt(files)
 
     assert "AKIAIOSFODNN7EXAMPLE" not in prompt
     assert prompt.endswith("--- marginal/config.py ---\n+api_key = '[REDACTED]'")
@@ -457,6 +470,52 @@ def test_coverage_warning_lines_can_report_both_gaps_at_once():
 
     assert "⚠️ **Incomplete review coverage**" in rendered
     assert "⚠️ **No diff available**" in rendered
+
+
+def test_build_finding_prompt_without_anti_policies_is_unchanged():
+    files = [{"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}]
+
+    prompt = _build_finding_prompt(files)
+
+    assert "anti-policies" not in prompt.lower()
+    assert "policies" not in prompt.lower()
+    assert prompt.endswith("--- marginal/retry.py ---\n@@ -1,3 +1,4 @@\n+time.sleep(1)")
+
+
+def test_build_finding_prompt_folds_anti_policy_content_in():
+    files = [{"filename": "marginal/retry.py", "patch": "+def foo(a, b, c, d, e): pass"}]
+    anti_policies = [
+        (".marginal/anti-policies/params.md", "Long parameter lists are fine in this codebase.")
+    ]
+
+    prompt = _build_finding_prompt(files, anti_policies=anti_policies)
+
+    assert ".marginal/anti-policies/params.md" in prompt
+    assert "Long parameter lists are fine in this codebase." in prompt
+    assert "Do not flag any issues matching this repository's anti-policies" in prompt
+    assert "never be reported as findings" in prompt
+    assert "+def foo(a, b, c, d, e): pass" in prompt
+    assert prompt.index("Long parameter lists") < prompt.index("+def foo")
+
+
+def test_build_finding_prompt_folds_both_policies_and_anti_policies():
+    files = [{"filename": "marginal/retry.py", "patch": "+time.sleep(1)"}]
+    policies = [(".marginal/policies/coding.md", "Never use a blocking sleep in async code.")]
+    anti_policies = [
+        (".marginal/anti-policies/params.md", "Long parameter lists are fine in this codebase.")
+    ]
+
+    prompt = _build_finding_prompt(files, policies=policies, anti_policies=anti_policies)
+
+    assert ".marginal/policies/coding.md" in prompt
+    assert ".marginal/anti-policies/params.md" in prompt
+    assert "weigh the diff against this repository's own engineering policies" in prompt
+    assert "Do not flag any issues matching this repository's anti-policies" in prompt
+    assert (
+        prompt.index("engineering policies")
+        < prompt.index("anti-policies")
+        < prompt.index("+time.sleep(1)")
+    )
 
 
 # -- review: LLM finding -------------------------------------------------
@@ -1228,3 +1287,86 @@ def test_review_without_reviewer_model_does_not_compute_coverage(
     out = capsys.readouterr().out
     assert "coverage" not in out.lower()
     assert "No diff available" not in out
+
+
+# -- review: anti-policies in the finding prompt ---------------------------
+
+
+def _write_reviewer_config_with_anti_policies(tmp_path, anti_policy_paths):
+    config_dir = tmp_path / ".marginal"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    anti_policies_yaml = "\n".join(f"  - {path}" for path in anti_policy_paths)
+    (config_dir / "config.yaml").write_text(
+        "version: 1\n"
+        "models:\n"
+        "  reviewer:\n"
+        "    provider: anthropic\n"
+        "    model: claude-3-5-sonnet\n"
+        "anti_policies:\n" + anti_policies_yaml + "\n"
+    )
+
+
+def test_review_folds_a_configured_anti_policy_file_into_the_prompt(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config_with_anti_policies(tmp_path, [".marginal/anti-policies/params.md"])
+    anti_policies_dir = tmp_path / ".marginal" / "anti-policies"
+    anti_policies_dir.mkdir(parents=True, exist_ok=True)
+    (anti_policies_dir / "params.md").write_text("Long parameter lists are fine in this codebase.")
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(
+        return_value=_findings_response(
+            Finding(
+                file="marginal/retry.py",
+                line=2,
+                severity=Severity.HIGH,
+                confidence=0.9,
+                message="This introduces a blocking sleep in an async retry loop.",
+            )
+        )
+    )
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    prompt = provider.generate_structured.call_args.args[0]
+    assert ".marginal/anti-policies/params.md" in prompt
+    assert "Long parameter lists are fine in this codebase." in prompt
+    assert "Do not flag any issues matching this repository's anti-policies" in prompt
+
+
+def test_review_with_a_missing_anti_policy_file_does_not_crash(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config_with_anti_policies(tmp_path, [".marginal/anti-policies/missing.md"])
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(
+        return_value=_findings_response(
+            Finding(
+                file="marginal/retry.py",
+                line=None,
+                severity=Severity.LOW,
+                confidence=0.9,
+                message="Minor nit.",
+            )
+        )
+    )
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 0
+    err = capsys.readouterr().err
+    assert "policy file not found" in err
+    assert ".marginal/anti-policies/missing.md" in err
+    prompt = provider.generate_structured.call_args.args[0]
+    assert "missing.md" not in prompt

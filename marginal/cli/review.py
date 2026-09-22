@@ -74,11 +74,11 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     that model over the changed files' diffs -- each file's patch run
     through `marginal.review.redact_secrets` first, so a diff containing a
     recognizable secret shape never reaches the model with that value intact
-    -- plus the content of any `config.policies` files (loaded via
-    `marginal.policy.load_policies`, relative to `path`; a missing file is
-    skipped with a warning rather than failing the review), then runs the
-    list through `marginal.review.filter_findings`: each finding is dropped
-    outright if its self-reported `confidence` is below
+    -- plus the content of any `config.policies` and `config.anti_policies`
+    files (loaded via `marginal.policy.load_policies`, relative to `path`; a
+    missing file is skipped with a warning rather than failing the review),
+    then runs the list through `marginal.review.filter_findings`: each finding
+    is dropped outright if its self-reported `confidence` is below
     `config.review.confidence_threshold`, and the survivors are capped at
     `config.review.max_comments` (highest-confidence first). Each finding
     that survives appends to the printed summary as a severity+confidence
@@ -147,12 +147,20 @@ def run_review(repo: str, pr_number: int, path: str = ".", *, comment: bool = Fa
     coverage_lines: list[str] = []
     if reviewer_model is not None:
         policies = load_policies(path, config.policies)
+        anti_policies = load_policies(path, config.anti_policies)
         redacted_files = _redacted_filenames(files)
         coverage_lines = _coverage_warning_lines(pull_request, files)
         graph_context = _build_graph_context(path, files, enabled=config.context.code_graph)
         try:
             findings = asyncio.run(
-                _generate_findings(reviewer_model, files, policies, graph_context, path)
+                _generate_findings(
+                    reviewer_model,
+                    files,
+                    policies=policies,
+                    anti_policies=anti_policies,
+                    graph_context=graph_context,
+                    repo_root=path,
+                )
             )
         except MissingCredentialsError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
@@ -279,14 +287,21 @@ def _build_inline_comments(findings: list[Finding]) -> list[dict[str, object]]:
 async def _generate_findings(
     model_spec: ModelSpec,
     files: list[dict[str, object]],
-    policies: list[tuple[str, str]],
-    graph_context: list[ChangedDefinition],
-    repo_root: str,
+    policies: list[tuple[str, str]] | None = None,
+    anti_policies: list[tuple[str, str]] | None = None,
+    graph_context: list[ChangedDefinition] | None = None,
+    repo_root: str = ".",
 ) -> list[Finding]:
     """Generate a bounded list of unvalidated `Finding`s from `model_spec` over
-    `files`' diffs, `policies`, and `graph_context`."""
+    `files`' diffs, `policies`, `anti_policies`, and `graph_context`."""
     provider = get_provider(model_spec)
-    prompt = _build_finding_prompt(files, policies, graph_context, repo_root)
+    prompt = _build_finding_prompt(
+        files,
+        policies=policies,
+        anti_policies=anti_policies,
+        graph_context=graph_context,
+        repo_root=repo_root,
+    )
     result = await provider.generate_structured(prompt, schema=_FindingsResponse)
     if not isinstance(result, _FindingsResponse):
         raise ProviderResponseError(
@@ -373,9 +388,10 @@ def _redacted_filenames(files: list[dict[str, object]]) -> list[str]:
 
 def _build_finding_prompt(
     files: list[dict[str, object]],
-    policies: list[tuple[str, str]],
-    graph_context: list[ChangedDefinition],
-    repo_root: str,
+    policies: list[tuple[str, str]] | None = None,
+    anti_policies: list[tuple[str, str]] | None = None,
+    graph_context: list[ChangedDefinition] | None = None,
+    repo_root: str = ".",
 ) -> str:
     diff = "\n\n".join(
         f"--- {file['filename']} ---\n{redact_secrets(str(file.get('patch', '')))}"
@@ -389,9 +405,20 @@ def _build_finding_prompt(
             "below -- a violation of one of these is at least as important as a "
             f"general code-quality issue:\n\n{policy_text}"
         )
-    graph_section = _build_graph_context_section(graph_context, repo_root)
-    if graph_section:
-        sections.append(graph_section)
+    if anti_policies:
+        anti_policy_text = "\n\n".join(
+            f"--- {path} ---\n{content}" for path, content in anti_policies
+        )
+        sections.append(
+            "Do not flag any issues matching this repository's anti-policies "
+            "below -- these are deliberate, accepted tradeoffs or intentional "
+            "patterns that must never be reported as findings:\n\n"
+            f"{anti_policy_text}"
+        )
+    if graph_context:
+        graph_section = _build_graph_context_section(graph_context, repo_root)
+        if graph_section:
+            sections.append(graph_section)
     sections.append(diff)
     return "\n\n".join(sections)
 

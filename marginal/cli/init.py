@@ -12,6 +12,8 @@ from marginal.config.schema import MarginalConfig
 CONFIG_FILE = Path(".marginal") / "config.yaml"
 POLICIES_DIR = Path(".marginal") / "policies"
 POLICIES_README = POLICIES_DIR / "README.md"
+ANTI_POLICIES_DIR = Path(".marginal") / "anti-policies"
+ANTI_POLICIES_README = ANTI_POLICIES_DIR / "README.md"
 WORKFLOW_FILE = Path(".github") / "workflows" / "marginal.yml"
 
 InitStatus = Literal["created", "skipped", "overwritten"]
@@ -30,6 +32,25 @@ Suggested files include:
 - `architecture.md` for boundaries and design constraints
 
 Keep each policy focused on a rule, its rationale, and the code it applies to.
+"""
+
+ANTI_POLICIES_README_TEMPLATE = """\
+# Review anti-policies
+
+Add repository-specific anti-policy guidance as Markdown files in this directory.
+List the files you want `marginal review` to load in `.marginal/config.yaml`
+under `anti_policies`.
+
+Anti-policies document deliberate tradeoffs, accepted technical debt, or
+intentional patterns that `marginal review` should never flag as issues.
+
+Suggested files include:
+
+- `tradeoffs.md` for accepted design tradeoffs and known compromises
+- `patterns.md` for intentional patterns that reviewers might otherwise question
+- `exceptions.md` for deliberate deviations from general guidelines
+
+Keep each anti-policy focused on the accepted pattern, its rationale, and why it is intentional.
 """
 
 WORKFLOW_TEMPLATE = """\
@@ -51,7 +72,7 @@ jobs:
 
 
 def run_init(path: str | Path = ".", force: bool = False) -> int:
-    """Scaffold marginal's config, policy guide, and GitHub workflow under `path`.
+    """Scaffold marginal's config, policy guides, and GitHub workflow under `path`.
 
     Each artifact is skipped if it already exists, unless `force` is set. A
     forced write is reported as an overwrite so reruns are distinguishable
@@ -65,6 +86,11 @@ def run_init(path: str | Path = ".", force: bool = False) -> int:
     _report(
         ".marginal/policies/README.md",
         _write_file(root / POLICIES_README, POLICIES_README_TEMPLATE, force),
+    )
+    _report(".marginal/anti-policies/", _make_dir(root / ANTI_POLICIES_DIR, force))
+    _report(
+        ".marginal/anti-policies/README.md",
+        _write_file(root / ANTI_POLICIES_README, ANTI_POLICIES_README_TEMPLATE, force),
     )
     _report(
         ".github/workflows/marginal.yml",

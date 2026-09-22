@@ -69,7 +69,7 @@ The agent inspects the PR, walks the code graph, checks it against your policies
 - **Context over diff** — changed code is understood in terms of callers, callees, interfaces, tests, and the repositories that depend on it, not in isolation.
 - **Breaking changes** — signature changes, removed fields, schema changes, and incompatible library updates, flagged with the affected consumers as evidence.
 - **Dependency intelligence** — when a PR bumps a dependency, marginal correlates the upstream changelog against how your code actually uses it, and only speaks up when something you rely on actually changed.
-- **Architecture & policy drift** — deviations from the rules your team has written down in `.marginal/policies/`, evaluated against real repository relationships, not vibes.
+- **Architecture & policy drift** — deviations from the rules your team has written down in `.marginal/policies/`, evaluated against real repository relationships, not vibes. Deliberate tradeoffs and accepted patterns documented in `.marginal/anti-policies/` are respected so marginal never flags intentional code.
 - **Ownership & technical debt** — findings are connected to CODEOWNERS and known debt items, without pinging anyone unless you've explicitly enabled it.
 
 ## Quickstart
@@ -82,6 +82,8 @@ marginal init
 ✓ Created .marginal/config.yaml
 ✓ Created .marginal/policies/
 ✓ Created .marginal/policies/README.md
+✓ Created .marginal/anti-policies/
+✓ Created .marginal/anti-policies/README.md
 ✓ Created .github/workflows/marginal.yml
 
 marginal is ready.
@@ -120,6 +122,11 @@ Everything lives in your repository, version-controlled alongside your code:
 │   ├── testing.md
 │   ├── architecture.md
 │   └── ...
+├── anti-policies/
+│   ├── README.md
+│   ├── tradeoffs.md
+│   ├── patterns.md
+│   └── ...
 └── ...
 ```
 
@@ -145,6 +152,13 @@ models:
   reviewer:
     provider: openai
     model: codex
+
+policies:
+  - .marginal/policies/security.md
+  - .marginal/policies/testing.md
+
+anti_policies:
+  - .marginal/anti-policies/tradeoffs.md
 ```
 
 API keys are never stored in configuration — only in your CI secrets or environment. See the full [specification](docs/REQUIREMENTS.md) for every option.
