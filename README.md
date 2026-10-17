@@ -81,6 +81,7 @@ marginal init
 ```text
 ✓ Created .marginal/config.yaml
 ✓ Created .marginal/policies/
+✓ Created .marginal/policies/README.md
 ✓ Created .github/workflows/marginal.yml
 
 marginal is ready.
@@ -114,9 +115,11 @@ Everything lives in your repository, version-controlled alongside your code:
 .marginal/
 ├── config.yaml
 ├── policies/
-│   ├── coding.md
+│   ├── README.md
+│   ├── security.md
+│   ├── testing.md
 │   ├── architecture.md
-│   └── review.md
+│   └── ...
 └── ...
 ```
 

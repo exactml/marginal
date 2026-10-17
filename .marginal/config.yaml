@@ -2,7 +2,7 @@ version: 1
 review:
   enabled: true
   inline_comments: true
-  confidence_threshold: 0.85
+  confidence_threshold: 0.6
   max_comments: 8
   tone: concise
 context:

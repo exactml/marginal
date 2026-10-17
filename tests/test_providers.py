@@ -1,11 +1,13 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import anthropic
 import openai
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from marginal.cli.review import _FindingsResponse
 from marginal.config import ModelSpec
 from marginal.providers import (
     MissingCredentialsError,
@@ -14,7 +16,7 @@ from marginal.providers import (
     UnknownProviderError,
     get_provider,
 )
-from marginal.providers.anthropic import AnthropicProvider
+from marginal.providers.anthropic import AnthropicProvider, _strict_input_schema
 from marginal.providers.credentials import require_env
 from marginal.providers.openai import OpenAIProvider
 
@@ -135,6 +137,135 @@ async def test_anthropic_generate_structured_validates_tool_input():
     assert result == Verdict(approved=True, reason="looks good")
 
 
+async def test_anthropic_generate_structured_requests_strict_tool_use():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.return_value = SimpleNamespace(
+        content=[
+            SimpleNamespace(
+                type="tool_use",
+                name="emit_structured_output",
+                input={"approved": True, "reason": "looks good"},
+            )
+        ]
+    )
+    provider = _anthropic_provider(client)
+
+    await provider.generate_structured("review this", Verdict)
+
+    _, kwargs = client.messages.create.call_args
+    assert kwargs["tools"][0]["strict"] is True
+
+
+class Scored(BaseModel):
+    score: float = Field(ge=0.0, le=1.0)
+    tags: list[str] = Field(max_length=3)
+    note: int | None = None
+
+
+async def test_anthropic_generate_structured_strips_keywords_strict_mode_rejects():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.return_value = SimpleNamespace(
+        content=[
+            SimpleNamespace(
+                type="tool_use",
+                name="emit_structured_output",
+                input={"score": 0.9, "tags": ["a"], "note": None},
+            )
+        ]
+    )
+    provider = _anthropic_provider(client)
+
+    await provider.generate_structured("review this", Scored)
+
+    _, kwargs = client.messages.create.call_args
+    sent_schema = json.dumps(kwargs["tools"][0]["input_schema"])
+    # Strict tool use rejects a request outright (400, before any generation)
+    # if the schema uses any of these -- confirmed live in production.
+    for forbidden in ("minimum", "maximum", "maxItems", "anyOf"):
+        assert forbidden not in sent_schema, f"{forbidden!r} leaked into the strict schema"
+
+
+async def test_anthropic_generate_structured_still_enforces_stripped_bounds_locally():
+    """Stripping `minimum`/`maximum` from the wire schema must not stop
+    pydantic from rejecting an out-of-bounds value in the response -- the
+    server-side guarantee is gone, but the client-side check must stay."""
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.return_value = SimpleNamespace(
+        content=[
+            SimpleNamespace(
+                type="tool_use",
+                name="emit_structured_output",
+                input={"score": 1.5, "tags": ["a"], "note": None},
+            )
+        ]
+    )
+    provider = _anthropic_provider(client)
+
+    with pytest.raises(ProviderResponseError, match="failed schema validation"):
+        await provider.generate_structured("review this", Scored)
+
+
+async def test_anthropic_generate_structured_findings_response_schema_is_strict_compatible():
+    """Regression test for the exact schema that broke production: strict
+    tool use rejected `_FindingsResponse` outright because `Finding.confidence`
+    carries `ge=0.0, le=1.0` and `_FindingsResponse.findings` carries a
+    `max_length` -- both render as keywords strict mode doesn't support."""
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.return_value = SimpleNamespace(
+        content=[
+            SimpleNamespace(
+                type="tool_use",
+                name="emit_structured_output",
+                input={"findings": []},
+            )
+        ]
+    )
+    provider = _anthropic_provider(client)
+
+    await provider.generate_structured("review this", _FindingsResponse)
+
+    _, kwargs = client.messages.create.call_args
+    sent_schema = json.dumps(kwargs["tools"][0]["input_schema"])
+    for forbidden in ("minimum", "maximum", "maxItems", "anyOf"):
+        assert forbidden not in sent_schema, f"{forbidden!r} leaked into the strict schema"
+
+
+class Unique(BaseModel):
+    tags: set[str]
+
+
+def test_strict_input_schema_strips_unique_items():
+    schema = _strict_input_schema(Unique)
+
+    assert "uniqueItems" not in json.dumps(schema)
+
+
+class Pattern(BaseModel):
+    code: str = Field(pattern=r"^[A-Z]+$")
+
+
+def test_strict_input_schema_raises_on_an_unvetted_keyword():
+    with pytest.raises(ValueError, match="pattern"):
+        _strict_input_schema(Pattern)
+
+
+async def test_anthropic_generate_structured_wraps_validation_error():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.return_value = SimpleNamespace(
+        content=[
+            SimpleNamespace(
+                type="tool_use",
+                name="emit_structured_output",
+                input={"parameter name": "CHANGELOG.md"},
+            )
+        ]
+    )
+    provider = _anthropic_provider(client)
+
+    with pytest.raises(ProviderResponseError, match="failed schema validation"):
+        await provider.generate_structured("review this", Verdict)
+
+
 async def test_anthropic_generate_structured_raises_without_tool_use():
     client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
     client.messages.create.return_value = SimpleNamespace(
@@ -144,6 +275,42 @@ async def test_anthropic_generate_structured_raises_without_tool_use():
 
     with pytest.raises(ProviderResponseError):
         await provider.generate_structured("review this", Verdict)
+
+    assert client.messages.create.call_count == 1
+
+
+def _anthropic_tool_response(tool_input: object) -> SimpleNamespace:
+    return SimpleNamespace(
+        content=[SimpleNamespace(type="tool_use", name="emit_structured_output", input=tool_input)]
+    )
+
+
+async def test_anthropic_generate_structured_retries_once_after_validation_error():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.side_effect = [
+        _anthropic_tool_response({"approved": "not-a-bool"}),
+        _anthropic_tool_response({"approved": True, "reason": "fixed on retry"}),
+    ]
+    provider = _anthropic_provider(client)
+
+    result = await provider.generate_structured("review this", Verdict)
+
+    assert result == Verdict(approved=True, reason="fixed on retry")
+    assert client.messages.create.call_count == 2
+
+
+async def test_anthropic_generate_structured_fails_after_two_invalid_attempts():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.side_effect = [
+        _anthropic_tool_response({"parameter name": "CHANGELOG.md"}),
+        _anthropic_tool_response({"parameter name": "CHANGELOG.md"}),
+    ]
+    provider = _anthropic_provider(client)
+
+    with pytest.raises(ProviderResponseError, match="after retrying once"):
+        await provider.generate_structured("review this", Verdict)
+
+    assert client.messages.create.call_count == 2
 
 
 async def test_anthropic_stream_yields_only_text_deltas():
@@ -256,6 +423,19 @@ async def test_openai_generate_structured_parses_json_content():
     assert result == Verdict(approved=False, reason="missing tests")
 
 
+async def test_openai_generate_structured_wraps_validation_error():
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock())))
+    client.chat.completions.create.return_value = SimpleNamespace(
+        choices=[
+            SimpleNamespace(message=SimpleNamespace(content='{"parameter name": "CHANGELOG.md"}'))
+        ]
+    )
+    provider = _openai_provider(client)
+
+    with pytest.raises(ProviderResponseError, match="failed schema validation"):
+        await provider.generate_structured("review this", Verdict)
+
+
 async def test_openai_generate_structured_raises_on_empty_content():
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock())))
     client.chat.completions.create.return_value = SimpleNamespace(
@@ -265,6 +445,40 @@ async def test_openai_generate_structured_raises_on_empty_content():
 
     with pytest.raises(ProviderResponseError):
         await provider.generate_structured("review this", Verdict)
+
+    assert client.chat.completions.create.call_count == 1
+
+
+def _openai_content_response(content: str) -> SimpleNamespace:
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+
+async def test_openai_generate_structured_retries_once_after_validation_error():
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock())))
+    client.chat.completions.create.side_effect = [
+        _openai_content_response('{"approved": "not-a-bool"}'),
+        _openai_content_response('{"approved": true, "reason": "fixed on retry"}'),
+    ]
+    provider = _openai_provider(client)
+
+    result = await provider.generate_structured("review this", Verdict)
+
+    assert result == Verdict(approved=True, reason="fixed on retry")
+    assert client.chat.completions.create.call_count == 2
+
+
+async def test_openai_generate_structured_fails_after_two_invalid_attempts():
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock())))
+    client.chat.completions.create.side_effect = [
+        _openai_content_response('{"parameter name": "CHANGELOG.md"}'),
+        _openai_content_response('{"parameter name": "CHANGELOG.md"}'),
+    ]
+    provider = _openai_provider(client)
+
+    with pytest.raises(ProviderResponseError, match="after retrying once"):
+        await provider.generate_structured("review this", Verdict)
+
+    assert client.chat.completions.create.call_count == 2
 
 
 async def test_openai_stream_yields_only_non_empty_deltas():
