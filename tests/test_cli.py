@@ -1317,12 +1317,16 @@ def test_review_format_json_includes_surviving_findings(
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=Finding(
-            file="marginal/retry.py",
-            line=2,
-            severity=Severity.HIGH,
-            confidence=0.9,
-            message="This introduces a blocking sleep in an async retry loop.",
+        return_value=_FindingsResponse(
+            findings=[
+                Finding(
+                    file="marginal/retry.py",
+                    line=2,
+                    severity=Severity.HIGH,
+                    confidence=0.9,
+                    message="This introduces a blocking sleep in an async retry loop.",
+                )
+            ]
         )
     )
 
@@ -1353,12 +1357,16 @@ def test_review_format_json_omits_a_finding_below_the_confidence_threshold(
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=Finding(
-            file="marginal/retry.py",
-            line=2,
-            severity=Severity.LOW,
-            confidence=0.5,
-            message="Might be worth a second look, but not sure.",
+        return_value=_FindingsResponse(
+            findings=[
+                Finding(
+                    file="marginal/retry.py",
+                    line=2,
+                    severity=Severity.LOW,
+                    confidence=0.5,
+                    message="Might be worth a second look, but not sure.",
+                )
+            ]
         )
     )
 
@@ -1382,7 +1390,7 @@ def test_review_format_json_reports_redacted_files(
         {"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"}
     ]
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_finding())
+    provider.generate_structured = AsyncMock(return_value=_FindingsResponse(findings=[_finding()]))
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--format", "json"])
 
@@ -1441,12 +1449,16 @@ def test_review_posts_the_same_review_under_both_formats(
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=Finding(
-            file="marginal/config.py",
-            line=1,
-            severity=Severity.HIGH,
-            confidence=0.9,
-            message="Hardcoded credential.",
+        return_value=_FindingsResponse(
+            findings=[
+                Finding(
+                    file="marginal/config.py",
+                    line=1,
+                    severity=Severity.HIGH,
+                    confidence=0.9,
+                    message="Hardcoded credential.",
+                )
+            ]
         )
     )
 
