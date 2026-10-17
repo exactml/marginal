@@ -77,16 +77,6 @@ FINDING_PROMPT_INSTRUCTIONS = (
 class _PromptOverBudget(Exception):
     """The built prompt's estimated size exceeds `review.max_prompt_tokens`."""
 
-    def __init__(self, estimated_tokens: int, max_prompt_tokens: int) -> None:
-        super().__init__(
-            f"skipped generating findings: the review prompt is an estimated "
-            f"{estimated_tokens:,} tokens, over review.max_prompt_tokens "
-            f"({max_prompt_tokens:,}) -- no model was called; raise the cap in "
-            ".marginal/config.yaml or split the PR to review it"
-        )
-        self.estimated_tokens = estimated_tokens
-        self.max_prompt_tokens = max_prompt_tokens
-
 
 class _FindingsResponse(BaseModel):
     """Structured-output wrapper: the bounded list of findings for one review."""
@@ -239,7 +229,11 @@ def run_review(
             )
         except _PromptOverBudget as exc:
             over_budget = exc
-            print(f"marginal review: {exc}", file=sys.stderr)
+            print(
+                f"marginal review: skipped generating findings: {exc} -- raise the cap in "
+                ".marginal/config.yaml or split the PR to review it",
+                file=sys.stderr,
+            )
         except MissingCredentialsError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
             return 3
@@ -499,7 +493,10 @@ async def _generate_findings(
     prompt = _build_finding_prompt(files, policies, graph_context, repo_root)
     estimated_tokens = _estimate_tokens(prompt)
     if estimated_tokens > max_prompt_tokens:
-        raise _PromptOverBudget(estimated_tokens, max_prompt_tokens)
+        raise _PromptOverBudget(
+            f"the review prompt is an estimated {estimated_tokens:,} tokens, over "
+            f"review.max_prompt_tokens ({max_prompt_tokens:,}), so no model was called"
+        )
     provider = get_provider(model_spec)
     result = await provider.generate_structured(prompt, schema=_FindingsResponse)
     if not isinstance(result, _FindingsResponse):
@@ -523,13 +520,7 @@ def _budget_warning_lines(over_budget: _PromptOverBudget | None) -> list[str]:
     """
     if over_budget is None:
         return []
-    return [
-        "",
-        f"⚠️ **Review skipped** -- this PR's review prompt is an estimated "
-        f"{over_budget.estimated_tokens:,} tokens, over the configured "
-        f"`review.max_prompt_tokens` of {over_budget.max_prompt_tokens:,}, so no "
-        "model was called and nothing in this diff was reviewed.",
-    ]
+    return ["", f"⚠️ **Review skipped** -- {over_budget}, so nothing in this diff was reviewed."]
 
 
 def _build_graph_context(
