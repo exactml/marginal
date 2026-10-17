@@ -9,12 +9,14 @@ from marginal.cli import main
 from marginal.cli.review import (
     MAX_FINDINGS_PER_REVIEW,
     MAX_GRAPH_CONTEXT_CALLERS,
+    REVIEW_HEADING,
     _base_lines,
     _build_finding_prompt,
     _build_graph_context_section,
     _build_inline_comments,
     _build_json_result,
     _coverage_warning_lines,
+    _estimate_tokens,
     _finding_badge,
     _FindingsResponse,
     _missing_patch_filenames,
@@ -1328,6 +1330,7 @@ def test_review_format_json_prints_parseable_json_with_pr_metadata(
         "findings": [],
         "redacted_files": [],
         "comment_posted": False,
+        "prompt_over_budget": False,
     }
     # The markdown summary is replaced, not appended to, under --format json.
     assert "### 🤖 marginal review" not in out
@@ -1614,7 +1617,14 @@ def test_build_json_result_serializes_a_finding_as_plain_json():
     )
 
     result = _build_json_result(
-        "acme/widgets", 42, _pull_request(), ["a.py"], [finding], [], comment_posted=True
+        "acme/widgets",
+        42,
+        _pull_request(),
+        ["a.py"],
+        [finding],
+        [],
+        comment_posted=True,
+        prompt_over_budget=False,
     )
 
     # Round-trips cleanly -- severity is a plain string, not an enum repr.
@@ -1800,3 +1810,173 @@ def test_first_run_posts_neighbouring_same_severity_findings_side_by_side(
 
     posted = client.create_review.call_args.kwargs["comments"]
     assert [c["line"] for c in posted] == [2, 3]
+
+
+# -- review: prompt token budget -------------------------------------------
+
+
+def _write_reviewer_config_with_budget(tmp_path, max_prompt_tokens, policies=()):
+    config_dir = tmp_path / ".marginal"
+    config_dir.mkdir(exist_ok=True)
+    policies_yaml = "".join(f"  - {policy}\n" for policy in policies)
+    (config_dir / "config.yaml").write_text(
+        "version: 1\n"
+        "models:\n"
+        "  reviewer:\n"
+        "    provider: anthropic\n"
+        "    model: claude-3-5-sonnet\n"
+        "review:\n"
+        f"  max_prompt_tokens: {max_prompt_tokens}\n"
+        + ("policies:\n" + policies_yaml if policies else "")
+    )
+
+
+_BUDGET_FILES = [{"filename": "marginal/retry.py", "patch": _RETRY_PATCH}]
+
+
+def _budget_prompt_tokens():
+    """The estimate `run_review` computes for `_BUDGET_FILES` in a non-git
+    tmp dir with no policies (so no graph context either)."""
+    return _estimate_tokens(_build_finding_prompt(_redact_patches(_BUDGET_FILES), [], [], "."))
+
+
+def _run_budgeted_review(mock_github_client, mock_provider, *extra_args):
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = _BUDGET_FILES
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=_findings_response(_finding_at(2, "This sleep blocks the retry loop."))
+    )
+    return main(["review", "--repo", "acme/widgets", "--pr", "42", *extra_args])
+
+
+def test_estimate_tokens_rounds_characters_up_to_whole_tokens():
+    assert _estimate_tokens("") == 0
+    assert _estimate_tokens("abc") == 1
+    assert _estimate_tokens("abcd") == 2
+
+
+def test_review_at_exactly_the_prompt_budget_still_calls_the_model(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config_with_budget(tmp_path, _budget_prompt_tokens())
+
+    exit_code = _run_budgeted_review(mock_github_client, mock_provider)
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_awaited_once()
+    captured = capsys.readouterr()
+    assert "This sleep blocks the retry loop." in captured.out
+    assert "Review skipped" not in captured.out
+    assert "max_prompt_tokens" not in captured.err
+
+
+def test_review_over_the_prompt_budget_never_calls_the_model(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    estimated = _budget_prompt_tokens()
+    _write_reviewer_config_with_budget(tmp_path, estimated - 1)
+
+    exit_code = _run_budgeted_review(mock_github_client, mock_provider)
+
+    # A degraded review, not a failure.
+    assert exit_code == 0
+    mock_provider.assert_not_called()
+    mock_provider.return_value.generate_structured.assert_not_awaited()
+    captured = capsys.readouterr()
+    assert (
+        f"marginal review: skipped generating findings: the review prompt is an estimated "
+        f"{estimated:,} tokens, over review.max_prompt_tokens ({estimated - 1:,})"
+    ) in captured.err
+    assert "Traceback" not in captured.err
+    # Metadata summary still prints, flagged so it can't read as "nothing found".
+    assert "**PR #42: Fix flaky retry logic**" in captured.out
+    assert "⚠️ **Review skipped**" in captured.out
+    assert "confidence" not in captured.out
+
+
+def test_review_budget_counts_every_prompt_section_not_just_the_diff(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    """A small diff still goes over budget once a large policy file is
+    folded into the prompt -- the cap is on the built prompt as a whole."""
+    monkeypatch.chdir(tmp_path)
+    policy = tmp_path / ".marginal" / "policies" / "huge.md"
+    policy.parent.mkdir(parents=True)
+    policy.write_text("Always do the right thing.\n" * 1000)
+    _write_reviewer_config_with_budget(
+        tmp_path, _budget_prompt_tokens() * 2, policies=[".marginal/policies/huge.md"]
+    )
+
+    exit_code = _run_budgeted_review(mock_github_client, mock_provider)
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_not_awaited()
+    assert "⚠️ **Review skipped**" in capsys.readouterr().out
+
+
+def test_review_over_the_prompt_budget_posts_the_skip_notice_with_comment(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config_with_budget(tmp_path, 1)
+    client = mock_github_client.return_value
+    client.list_reviews.return_value = []
+    client.list_review_comments.return_value = []
+
+    exit_code = _run_budgeted_review(mock_github_client, mock_provider, "--comment")
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT", comments=[])
+    assert "⚠️ **Review skipped**" in client.create_review.call_args.args[1]
+
+
+def test_review_over_the_prompt_budget_posts_even_after_an_earlier_review(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    """Dedup would normally stay silent on a re-run with nothing new; here the
+    new push went unreviewed, so silence would read as "still nothing to flag"."""
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config_with_budget(tmp_path, 1)
+    client = mock_github_client.return_value
+    client.list_reviews.return_value = [{"body": f"{REVIEW_HEADING}\n\nearlier review"}]
+    client.list_review_comments.return_value = []
+
+    exit_code = _run_budgeted_review(mock_github_client, mock_provider, "--comment")
+
+    assert exit_code == 0
+    client.create_review.assert_called_once()
+    assert "⚠️ **Review skipped**" in client.create_review.call_args.args[1]
+    assert "nothing was posted" not in capsys.readouterr().err
+
+
+def test_review_format_json_reports_the_prompt_over_budget(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config_with_budget(tmp_path, 1)
+
+    exit_code = _run_budgeted_review(mock_github_client, mock_provider, "--format", "json")
+
+    assert exit_code == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["prompt_over_budget"] is True
+    assert result["findings"] == []
+    assert result["comment_posted"] is False
+
+
+def test_review_format_json_reports_the_prompt_within_budget(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+
+    exit_code = _run_budgeted_review(mock_github_client, mock_provider, "--format", "json")
+
+    assert exit_code == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["prompt_over_budget"] is False
+    assert len(result["findings"]) == 1
