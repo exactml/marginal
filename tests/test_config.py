@@ -69,6 +69,7 @@ def test_missing_config_returns_defaults(tmp_path):
     assert config.review.enabled is True
     assert config.review.confidence_threshold == 0.85
     assert config.review.max_comments == 8
+    assert config.review.max_prompt_tokens == 100_000
     assert config.review.tone == ReviewTone.CONCISE
     assert config.context.cross_repository is False
     assert config.ownership.notify_responsible is False
@@ -192,3 +193,19 @@ def test_default_permissions_follow_least_privilege():
     assert permissions.write.approve is False
     assert permissions.write.push is False
     assert permissions.write.merge is False
+
+
+def test_max_prompt_tokens_can_be_overridden(tmp_path):
+    write_config(tmp_path, "review:\n  max_prompt_tokens: 50000\n")
+
+    assert load_config(tmp_path).review.max_prompt_tokens == 50_000
+
+
+@pytest.mark.parametrize(
+    "max_prompt_tokens", ["0", "-1", "1.5", "100.0", "true", "'100000'", "high"]
+)
+def test_invalid_max_prompt_tokens_is_rejected(tmp_path, max_prompt_tokens):
+    write_config(tmp_path, f"review:\n  max_prompt_tokens: {max_prompt_tokens}\n")
+
+    with pytest.raises(ConfigValidationError, match="review.max_prompt_tokens"):
+        load_config(tmp_path)

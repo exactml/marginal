@@ -33,6 +33,11 @@ class ReviewConfig(BaseModel):
     inline_comments: bool = True
     confidence_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
     max_comments: int = Field(default=8, gt=0)
+    # Ceiling on the built review prompt's estimated size, checked before any
+    # model call -- marginal bills the user's own API key, so an unexpectedly
+    # huge prompt is skipped rather than paid for. Strict so a stray `true` or
+    # `"100k"` is a config error instead of being coerced into a number.
+    max_prompt_tokens: int = Field(default=100_000, gt=0, strict=True)
     tone: ReviewTone = ReviewTone.CONCISE
 
 
