@@ -27,6 +27,7 @@ from marginal.review.dedup import (
     posted_fingerprints,
 )
 from marginal.review.redact import redact_secrets
+from marginal.review.replies import ReplyThread, maintainer_replies
 
 SEVERITY_EMOJI = {
     Severity.CRITICAL: "🔴",
@@ -47,6 +48,13 @@ MAX_GRAPH_CONTEXT_CALLERS = 10
 
 # Lines of source shown above and below a caller's own line.
 _GRAPH_CONTEXT_SNIPPET_RADIUS = 2
+
+# Most-recent maintainer-answered threads folded into the prompt, and the
+# characters kept from each thread's comment and from its replies -- bounds
+# the prompt on a PR with a long back-and-forth.
+MAX_REPLY_THREADS = 10
+_REPLY_COMMENT_CHARS = 600
+_REPLY_TEXT_CHARS = 1500
 
 OutputFormat = Literal["text", "json"]
 
@@ -131,6 +139,14 @@ def run_review(
     exactly as it would be without this section -- never something that
     fails the review itself.
 
+    The prompt also carries any maintainer replies to marginal's own inline
+    comments on this PR (`marginal.review.replies.maintainer_replies`), so
+    the model doesn't raise a point a maintainer already answered again
+    unless the code it's about changed. Bounded to the `MAX_REPLY_THREADS`
+    most recent threads, each clipped; with no such replies the prompt is
+    unchanged. Reading the comments needs only `permissions.read`, so this
+    happens with or without `comment`.
+
     If redaction actually masked something, the summary also gets a
     `⚠️ **Redacted a likely secret**` line naming the affected file(s) --
     this is folded into the same body/summary rather than becoming a
@@ -197,9 +213,10 @@ def run_review(
         redacted_files = _redacted_filenames(files, redacted)
         coverage_lines = _coverage_warning_lines(pull_request, files)
         graph_context = _build_graph_context(path, files, enabled=config.context.code_graph)
+        replies = maintainer_replies(review_comments)
         try:
             findings = asyncio.run(
-                _generate_findings(reviewer_model, redacted, policies, graph_context, path)
+                _generate_findings(reviewer_model, redacted, policies, graph_context, path, replies)
             )
         except MissingCredentialsError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
@@ -437,11 +454,12 @@ async def _generate_findings(
     policies: list[tuple[str, str]],
     graph_context: list[ChangedDefinition],
     repo_root: str,
+    replies: list[ReplyThread],
 ) -> list[Finding]:
     """Generate a bounded list of unvalidated `Finding`s from `model_spec` over
-    `files`' diffs, `policies`, and `graph_context`."""
+    `files`' diffs, `policies`, `graph_context`, and maintainer `replies`."""
     provider = get_provider(model_spec)
-    prompt = _build_finding_prompt(files, policies, graph_context, repo_root)
+    prompt = _build_finding_prompt(files, policies, graph_context, repo_root, replies)
     result = await provider.generate_structured(prompt, schema=_FindingsResponse)
     if not isinstance(result, _FindingsResponse):
         raise ProviderResponseError(
@@ -538,6 +556,7 @@ def _build_finding_prompt(
     policies: list[tuple[str, str]],
     graph_context: list[ChangedDefinition],
     repo_root: str,
+    replies: list[ReplyThread] | None = None,
 ) -> str:
     """The reviewer prompt. `files` must already be `_redact_patches` output."""
     diff = "\n\n".join(f"--- {file['filename']} ---\n{file['patch']}" for file in files)
@@ -552,6 +571,8 @@ def _build_finding_prompt(
     graph_section = _build_graph_context_section(graph_context, repo_root)
     if graph_section:
         sections.append(graph_section)
+    if replies:
+        sections.append(_build_replies_section(replies))
     sections.append(diff)
     return "\n\n".join(sections)
 
@@ -593,6 +614,35 @@ def _build_graph_context_section(
         "check whether the change is compatible with how they're used there:\n\n"
         + "\n\n".join(blocks)
     )
+
+
+def _build_replies_section(replies: list[ReplyThread]) -> str:
+    """A prompt section quoting maintainer answers to marginal's earlier comments.
+
+    Keeps the `MAX_REPLY_THREADS` most recent threads, clips each comment and
+    its replies, and runs the result through `redact_secrets` -- the text is
+    human-written, but may still quote code from the diff.
+    """
+    blocks = []
+    for thread in replies[-MAX_REPLY_THREADS:]:
+        location = thread.path if thread.line is None else f"{thread.path}:{thread.line}"
+        reply_text = "\n\n".join(thread.replies)
+        blocks.append(
+            f"--- {location} ---\n"
+            f"marginal's earlier comment:\n{_clip(thread.comment, _REPLY_COMMENT_CHARS)}\n\n"
+            f"Maintainer reply:\n{_clip(reply_text, _REPLY_TEXT_CHARS)}"
+        )
+    return redact_secrets(
+        "A maintainer already answered some of marginal's earlier comments on this pull "
+        "request. Don't raise any of these points again -- reworded, or on a nearby line -- "
+        "unless the code it's about has changed in a way the reply doesn't cover:\n\n"
+        + "\n\n".join(blocks)
+    )
+
+
+def _clip(text: str, limit: int) -> str:
+    """`text`, cut to `limit` characters with a ` [...]` mark if it was longer."""
+    return text if len(text) <= limit else text[:limit].rstrip() + " [...]"
 
 
 def _read_snippet(repo_root: str, file: str, line: int) -> str | None:

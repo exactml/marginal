@@ -49,7 +49,7 @@ def maintainer_replies(comments: Iterable[dict[str, object]]) -> list[ReplyThrea
     roots = {
         c["id"]: c
         for c in comments
-        if not c.get("in_reply_to_id") and is_marginal_comment(_body(c))
+        if c.get("id") is not None and not c.get("in_reply_to_id") and is_marginal_comment(_body(c))
     }
     replies: dict[object, list[str]] = {}
     for c in comments:
