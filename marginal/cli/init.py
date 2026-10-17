@@ -53,6 +53,29 @@ jobs:
       - uses: exactml/marginal-action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Only the key for the provider in .marginal/config.yaml is used;
+          # the other secret can stay unset.
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+"""
+
+NEXT_STEPS = """\
+Next steps -- pick one provider:
+
+  1. In .marginal/config.yaml, set the reviewer model:
+
+       models:
+         reviewer:
+           provider: anthropic    # or: openai
+           model: <model id>
+
+  2. Add that provider's API key as a repository secret:
+
+       gh secret set ANTHROPIC_API_KEY    # provider: anthropic
+       gh secret set OPENAI_API_KEY       # provider: openai
+
+The workflow already passes both secrets, so nothing else needs editing.
+Open a pull request to get your first review.
 """
 
 
@@ -79,6 +102,8 @@ def run_init(path: str | Path = ".", force: bool = False) -> int:
 
     print()
     print("marginal is ready.")
+    print()
+    print(NEXT_STEPS, end="")
     return 0
 
 

@@ -85,13 +85,31 @@ marginal init
 ✓ Created .github/workflows/marginal.yml
 
 marginal is ready.
+
+Next steps -- pick one provider:
+
+  1. In .marginal/config.yaml, set the reviewer model:
+
+       models:
+         reviewer:
+           provider: anthropic    # or: openai
+           model: <model id>
+
+  2. Add that provider's API key as a repository secret:
+
+       gh secret set ANTHROPIC_API_KEY    # provider: anthropic
+       gh secret set OPENAI_API_KEY       # provider: openai
+
+The workflow already passes both secrets, so nothing else needs editing.
+Open a pull request to get your first review.
 ```
 
 ```yaml
 # .github/workflows/marginal.yml
+name: marginal
+
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
 
 # One review per PR at a time: two runs started by quick successive pushes
 # would each miss the other's review and post the same header twice.
@@ -102,11 +120,16 @@ concurrency:
 jobs:
   review:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
-      - uses: actions/checkout@v4
       - uses: exactml/marginal-action@v1
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Only the key for the provider in .marginal/config.yaml is used;
+          # the other secret can stay unset.
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 ```
 
 Open a PR, and marginal builds context, reasons over the change, and posts inline comments plus a summary — all inside your own GitHub Actions run.

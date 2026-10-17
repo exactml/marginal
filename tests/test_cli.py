@@ -1,5 +1,6 @@
 import json
 import subprocess
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -7,6 +8,7 @@ import yaml
 from pydantic import ValidationError
 
 from marginal.cli import main
+from marginal.cli.init import WORKFLOW_TEMPLATE
 from marginal.cli.review import (
     MAX_FINDINGS_PER_REVIEW,
     MAX_GRAPH_CONTEXT_CALLERS,
@@ -62,6 +64,52 @@ def test_init_creates_all_artifacts(tmp_path, capsys):
     assert "✓ Created .marginal/policies/README.md" in out
     assert "✓ Created .github/workflows/marginal.yml" in out
     assert "marginal is ready." in out
+
+
+def test_init_next_steps_name_both_providers_without_picking_one(tmp_path, capsys):
+    main(["init", str(tmp_path)])
+
+    out = capsys.readouterr().out
+    assert out.index("marginal is ready.") < out.index("Next steps -- pick one provider:")
+    assert "gh secret set ANTHROPIC_API_KEY" in out
+    assert "gh secret set OPENAI_API_KEY" in out
+    assert "provider: anthropic    # or: openai" in out
+
+
+def test_init_workflow_passes_both_provider_keys(tmp_path):
+    main(["init", str(tmp_path)])
+
+    workflow = yaml.safe_load((tmp_path / ".github" / "workflows" / "marginal.yml").read_text())
+
+    (step,) = workflow["jobs"]["review"]["steps"]
+    assert step["with"] == {
+        "github-token": "${{ secrets.GITHUB_TOKEN }}",
+        "anthropic-api-key": "${{ secrets.ANTHROPIC_API_KEY }}",
+        "openai-api-key": "${{ secrets.OPENAI_API_KEY }}",
+    }
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai"])
+def test_init_config_with_the_next_step_applied_loads(tmp_path, provider):
+    """Following step 1 of the printed next steps yields a valid config."""
+    main(["init", str(tmp_path)])
+    config_path = tmp_path / ".marginal" / "config.yaml"
+    config = yaml.safe_load(config_path.read_text())
+    config["models"] = {"reviewer": {"provider": provider, "model": "some-model"}}
+    config_path.write_text(yaml.safe_dump(config))
+
+    assert load_config(tmp_path).models["reviewer"].provider == provider
+
+
+def test_readme_quickstart_matches_what_init_prints_and_writes(tmp_path, capsys):
+    """README's Quickstart shows `marginal init`'s real output and workflow,
+    so the two can't drift apart again."""
+    main(["init", str(tmp_path)])
+    out = capsys.readouterr().out.replace(str(tmp_path), ".")
+    readme = (Path(__file__).parent.parent / "README.md").read_text()
+
+    assert f"```text\n{out}```" in readme
+    assert f"```yaml\n# .github/workflows/marginal.yml\n{WORKFLOW_TEMPLATE}```" in readme
 
 
 def test_init_workflow_runs_one_review_per_pr_at_a_time(tmp_path):
