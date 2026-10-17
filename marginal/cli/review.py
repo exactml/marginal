@@ -70,6 +70,13 @@ OutputFormat = Literal["text", "json"]
 # that it has already reviewed a PR.
 REVIEW_HEADING = "### 🤖 marginal review"
 
+# Shown when no model reviewed the diff; without it, a fresh `marginal init`
+# setup posts just a title and file list with nothing pointing at the gap.
+NO_REVIEWER_NOTICE = (
+    "ℹ️ **No reviewer model configured**, so only the PR's metadata is shown. Set "
+    "`models.reviewer` in `.marginal/config.yaml` to have a model review the diff."
+)
+
 FINDING_PROMPT_INSTRUCTIONS = (
     "You are reviewing a pull request. Identify the most important, "
     "actionable issues in the diff below -- as many as are genuinely "
@@ -277,7 +284,8 @@ def run_review(
         pr_number, pull_request, filenames, _verdict(findings) if reviewed else None
     )
     warning_lines = (
-        _budget_warning_lines(over_budget)
+        (["", NO_REVIEWER_NOTICE] if reviewer_model is None else [])
+        + _budget_warning_lines(over_budget)
         + _redaction_warning_lines(redacted_files)
         + coverage_lines
     )

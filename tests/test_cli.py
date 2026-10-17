@@ -13,6 +13,7 @@ from marginal.cli.review import (
     MAX_FINDINGS_PER_REVIEW,
     MAX_GRAPH_CONTEXT_CALLERS,
     MAX_REPLY_THREADS,
+    NO_REVIEWER_NOTICE,
     REVIEW_HEADING,
     _base_lines,
     _build_finding_prompt,
@@ -293,6 +294,8 @@ def test_review_default_output_is_byte_for_byte_markdown(
                 "- `tests/test_retry.py`",
                 "",
                 "</details>",
+                "",
+                NO_REVIEWER_NOTICE,
             ]
         )
         + "\n"
