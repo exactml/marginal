@@ -33,6 +33,15 @@
 
   ([ISSUE-84](https://github.com/exactml/marginal/issues/84))
 
+- Added `marginal help` and `marginal help <command>`: the first prints the
+  same top-level usage as `marginal --help`, the second the usage for that
+  subcommand (e.g. `marginal help review` lists `--repo`, `--pr` and
+  `--comment`). An unknown command exits 2 with argparse's usual error, just
+  like an unknown subcommand does
+
+  ([ISSUE-77](https://github.com/exactml/marginal/issues/77),
+  [PR-78](https://github.com/exactml/marginal/pull/78) by [@HarshRajSinghania](https://github.com/HarshRajSinghania))
+
 ### Improvements
 
 ### Fixes
