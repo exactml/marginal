@@ -173,16 +173,21 @@ def run_review(
         return 1
     client = GitHubClient(repo, config.permissions)
 
+    reviewer_model = config.models.get("reviewer")
     try:
         pull_request = client.get_pull_request(pr_number)
         files = client.get_pull_request_files(pr_number)
+        # Read once, up front: the prompt needs maintainer replies before
+        # generating, and `--comment` needs the posted markers for dedup.
+        review_comments = (
+            client.list_review_comments(pr_number) if reviewer_model is not None or comment else []
+        )
     except (PermissionDeniedError, GitHubAuthenticationError, GitHubAPIError) as exc:
         print(f"marginal review: {exc}", file=sys.stderr)
         return 1
 
     filenames = [str(file["filename"]) for file in files]
 
-    reviewer_model = config.models.get("reviewer")
     findings: list[Finding] = []
     redacted_files: list[str] = []
     coverage_lines: list[str] = []
@@ -225,7 +230,7 @@ def run_review(
             reviews = client.list_reviews(pr_number)
             posted = posted_fingerprints(
                 [review.get("body") for review in reviews]
-                + [c.get("body") for c in client.list_review_comments(pr_number)]
+                + [c.get("body") for c in review_comments]
             )
             new_findings = [f for f in findings if not _nearby_fingerprints(f, patches) & posted]
             if len(new_findings) < len(findings):

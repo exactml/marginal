@@ -536,6 +536,8 @@ def test_review_without_reviewer_model_skips_generation(
     mock_provider.assert_not_called()
     out = capsys.readouterr().out
     assert "confidence" not in out
+    # Nothing to generate and nothing to post, so no reason to read comments.
+    client.list_review_comments.assert_not_called()
 
 
 def test_review_with_anchored_finding_posts_it_as_inline_comment(
@@ -1800,3 +1802,36 @@ def test_first_run_posts_neighbouring_same_severity_findings_side_by_side(
 
     posted = client.create_review.call_args.kwargs["comments"]
     assert [c["line"] for c in posted] == [2, 3]
+
+
+def test_review_fails_cleanly_when_reading_comments_fails_without_comment_flag(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    """Comments are read before generation even without `--comment`, and a
+    failure there keeps the usual one-line error contract."""
+    _write_reviewer_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = []
+    client.list_review_comments.side_effect = GitHubAPIError(500, "Internal Server Error")
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=_FindingsResponse(findings=[])
+    )
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert err.startswith("marginal review:") and err.count("\n") == 1
+    mock_provider.return_value.generate_structured.assert_not_called()
+
+
+def test_review_reads_the_pr_comments_only_once_per_run(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config(tmp_path)
+
+    _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, [], [])
+
+    mock_github_client.return_value.list_review_comments.assert_called_once_with(42)
