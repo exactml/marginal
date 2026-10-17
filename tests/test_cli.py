@@ -18,6 +18,7 @@ from marginal.cli.review import (
     _finding_badge,
     _FindingsResponse,
     _missing_patch_filenames,
+    _redact_patches,
     _redacted_filenames,
     _redaction_warning_lines,
     run_review,
@@ -416,7 +417,7 @@ def test_build_finding_prompt_folds_policy_content_in():
 def test_build_finding_prompt_redacts_a_secret_in_the_patch():
     files = [{"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"}]
 
-    prompt = _build_finding_prompt(files, [], [], ".")
+    prompt = _build_finding_prompt(_redact_patches(files), [], [], ".")
 
     assert "AKIAIOSFODNN7EXAMPLE" not in prompt
     assert prompt.endswith("--- marginal/config.py ---\n+api_key = '[REDACTED]'")
@@ -428,7 +429,7 @@ def test_redacted_filenames_returns_only_files_whose_patch_changed():
         {"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"},
     ]
 
-    assert _redacted_filenames(files) == ["marginal/config.py"]
+    assert _redacted_filenames(files, _redact_patches(files)) == ["marginal/config.py"]
 
 
 def test_redaction_warning_lines_empty_when_nothing_redacted():

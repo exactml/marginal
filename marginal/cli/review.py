@@ -178,12 +178,13 @@ def run_review(
     coverage_lines: list[str] = []
     if reviewer_model is not None:
         policies = load_policies(path, config.policies)
-        redacted_files = _redacted_filenames(files)
+        redacted = _redact_patches(files)
+        redacted_files = _redacted_filenames(files, redacted)
         coverage_lines = _coverage_warning_lines(pull_request, files)
         graph_context = _build_graph_context(path, files, enabled=config.context.code_graph)
         try:
             findings = asyncio.run(
-                _generate_findings(reviewer_model, files, policies, graph_context, path)
+                _generate_findings(reviewer_model, redacted, policies, graph_context, path)
             )
         except MissingCredentialsError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
@@ -443,12 +444,19 @@ def _coverage_warning_lines(
     return lines
 
 
-def _redacted_filenames(files: list[dict[str, object]]) -> list[str]:
-    """Filenames whose patch contains a likely secret that `redact_secrets` masked."""
+def _redact_patches(files: list[dict[str, object]]) -> list[dict[str, object]]:
+    """`files` with each `patch` run through `redact_secrets` -- once per run."""
+    return [{**file, "patch": redact_secrets(str(file.get("patch", "")))} for file in files]
+
+
+def _redacted_filenames(
+    files: list[dict[str, object]], redacted: list[dict[str, object]]
+) -> list[str]:
+    """Filenames whose patch `_redact_patches` changed, i.e. masked a likely secret."""
     return [
         str(file["filename"])
-        for file in files
-        if redact_secrets(patch := str(file.get("patch", ""))) != patch
+        for file, clean in zip(files, redacted, strict=True)
+        if clean["patch"] != str(file.get("patch", ""))
     ]
 
 
@@ -458,10 +466,8 @@ def _build_finding_prompt(
     graph_context: list[ChangedDefinition],
     repo_root: str,
 ) -> str:
-    diff = "\n\n".join(
-        f"--- {file['filename']} ---\n{redact_secrets(str(file.get('patch', '')))}"
-        for file in files
-    )
+    """The reviewer prompt. `files` must already be `_redact_patches` output."""
+    diff = "\n\n".join(f"--- {file['filename']} ---\n{file['patch']}" for file in files)
     sections = [FINDING_PROMPT_INSTRUCTIONS]
     if policies:
         policy_text = "\n\n".join(f"--- {path} ---\n{content}" for path, content in policies)
