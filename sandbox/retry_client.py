@@ -1,6 +1,9 @@
 import asyncio
 import time
 
+DEFAULT_TIMEOUT = 30
+MAX_BACKOFF = 60
+
 
 async def fetch_with_retry(session, url, attempts=5):
     for attempt in range(attempts):
