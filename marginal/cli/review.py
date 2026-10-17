@@ -5,13 +5,17 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from pathlib import Path
 from typing import Literal, get_args
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from marginal.config.errors import ConfigError
 from marginal.config.loader import load_config
 from marginal.config.schema import ModelSpec
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubAPIError, GitHubAuthenticationError, PermissionDeniedError
+from marginal.graph import ChangedDefinition, build_symbol_graph, find_out_of_diff_callers
 from marginal.policy import load_policies
 from marginal.providers.errors import MissingCredentialsError, ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
@@ -25,17 +29,40 @@ SEVERITY_EMOJI = {
     Severity.LOW: "⚪",
 }
 
+# A model can return at most this many findings from one review -- well above
+# `config.review.max_comments`'s default, so that setting has real findings
+# left to cap rather than just passing everything through.
+MAX_FINDINGS_PER_REVIEW = 20
+
+# Total out-of-diff caller snippets folded into the prompt across every
+# changed definition -- bounds the prompt against a definition with a huge
+# fan-out, independent of repo size.
+MAX_GRAPH_CONTEXT_CALLERS = 10
+
+# Lines of source shown above and below a caller's own line.
+_GRAPH_CONTEXT_SNIPPET_RADIUS = 2
+
 OutputFormat = Literal["text", "json"]
 
 FINDING_PROMPT_INSTRUCTIONS = (
-    "You are reviewing a pull request. Identify the single most important, "
-    "actionable issue in the diff below. Report the file it's in, the line "
-    "number in the new version of the file if you can identify one (omit it "
-    "if you can't), a severity, a confidence between 0.0 and 1.0 for how "
-    "likely this is a real, actionable issue (not a false positive or a "
-    "stylistic nitpick), and a concise 2-3 sentence explanation of the "
-    "problem."
+    "You are reviewing a pull request. Identify the most important, "
+    "actionable issues in the diff below -- as many as are genuinely "
+    f"warranted, up to {MAX_FINDINGS_PER_REVIEW}. Return an empty list if "
+    "nothing in the diff is worth flagging. For each issue, report the file "
+    "it's in, the line number in the new version of the file if you can "
+    "identify one (omit it if you can't), a severity, a confidence between "
+    "0.0 and 1.0 for how likely this is a real, actionable issue (not a "
+    "false positive or a stylistic nitpick), and a concise 2-3 sentence "
+    "explanation of the problem."
 )
+
+
+class _FindingsResponse(BaseModel):
+    """Structured-output wrapper: the bounded list of findings for one review."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    findings: list[Finding] = Field(max_length=MAX_FINDINGS_PER_REVIEW)
 
 
 def run_review(
@@ -65,22 +92,34 @@ def run_review(
     by exit code rather than by parsing stderr. Any other `output_format`
     raises `ValueError` before any network call is made.
 
-    If `models.reviewer` is configured, also generates one unvalidated,
-    structured `Finding` from that model over the changed files' diffs --
-    each file's patch run through `marginal.review.redact_secrets` first,
-    so a diff containing a recognizable secret shape never reaches the
-    model with that value intact -- plus the content of any
-    `config.policies` files (loaded via `marginal.policy.load_policies`,
-    relative to `path`; a missing file is skipped with a warning rather
-    than failing the review), then runs it
-    through `marginal.review.filter_findings`: dropped outright if its
-    self-reported `confidence` is below `config.review.confidence_threshold`,
-    otherwise capped alongside any others at `config.review.max_comments`
-    (highest-confidence first). A finding that survives appends to the
-    printed summary as a severity+confidence badge (e.g. `🔴 **Critical** ·
-    92% confidence`) followed by its message. Without `models.reviewer`, or
-    if the finding gets filtered out, the summary stays metadata-only, same
-    as if nothing was generated.
+    If `models.reviewer` is configured, also generates a bounded list of
+    unvalidated, structured `Finding`s (up to `MAX_FINDINGS_PER_REVIEW`) from
+    that model over the changed files' diffs -- each file's patch run
+    through `marginal.review.redact_secrets` first, so a diff containing a
+    recognizable secret shape never reaches the model with that value intact
+    -- plus the content of any `config.policies` files (loaded via
+    `marginal.policy.load_policies`, relative to `path`; a missing file is
+    skipped with a warning rather than failing the review), then runs the
+    list through `marginal.review.filter_findings`: each finding is dropped
+    outright if its self-reported `confidence` is below
+    `config.review.confidence_threshold`, and the survivors are capped at
+    `config.review.max_comments` (highest-confidence first). Each finding
+    that survives appends to the printed summary as a severity+confidence
+    badge (e.g. `🔴 **Critical** · 92% confidence`) followed by its message.
+    Without `models.reviewer`, or if every finding gets filtered out, the
+    summary stays metadata-only, same as if nothing was generated.
+
+    With `config.context.code_graph` (on by default), the prompt also names
+    any definition this diff changes that's called from a file outside the
+    diff -- `marginal.graph.build_symbol_graph` indexes the repo, and
+    `marginal.graph.find_out_of_diff_callers` maps the diff's changed
+    definitions to those out-of-diff call sites, each folded in as a short
+    source snippet (bounded to `MAX_GRAPH_CONTEXT_CALLERS` total). This is
+    best-effort: a definition with no out-of-diff callers, `code_graph`
+    turned off, or the graph failing to build at all (not a git checkout,
+    `git` missing, a tracked file with invalid syntax) all leave the prompt
+    exactly as it would be without this section -- never something that
+    fails the review itself.
 
     If redaction actually masked something, the summary also gets a
     `⚠️ **Redacted a likely secret**` line naming the affected file(s) --
@@ -96,7 +135,7 @@ def run_review(
     one that looked at everything and found nothing.
 
     If `comment` is set, also posts a PR review via
-    `GitHubClient.create_review(..., event="COMMENT", comments=...)`. A
+    `GitHubClient.create_review(..., event="COMMENT", comments=...)`. Each
     finding anchored to a `line` is posted as an inline `comments` entry
     instead of being folded into the review's overall body -- it still shows
     up in the printed summary above, just not duplicated into the body too.
@@ -134,15 +173,18 @@ def run_review(
     filenames = [str(file["filename"]) for file in files]
 
     reviewer_model = config.models.get("reviewer")
-    finding: Finding | None = None
+    findings: list[Finding] = []
     redacted_files: list[str] = []
     coverage_lines: list[str] = []
     if reviewer_model is not None:
         policies = load_policies(path, config.policies)
         redacted_files = _redacted_filenames(files)
         coverage_lines = _coverage_warning_lines(pull_request, files)
+        graph_context = _build_graph_context(path, files, enabled=config.context.code_graph)
         try:
-            finding = asyncio.run(_generate_finding(reviewer_model, files, policies))
+            findings = asyncio.run(
+                _generate_findings(reviewer_model, files, policies, graph_context, path)
+            )
         except MissingCredentialsError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
             return 3
@@ -150,7 +192,6 @@ def run_review(
             print(f"marginal review: {exc}", file=sys.stderr)
             return 1
 
-    findings = [finding] if finding is not None else []
     findings = filter_findings(
         findings,
         confidence_threshold=config.review.confidence_threshold,
@@ -316,18 +357,48 @@ def _build_json_result(
     }
 
 
-async def _generate_finding(
-    model_spec: ModelSpec, files: list[dict[str, object]], policies: list[tuple[str, str]]
-) -> Finding:
-    """Generate one unvalidated `Finding` from `model_spec` over `files`' diffs and `policies`."""
+async def _generate_findings(
+    model_spec: ModelSpec,
+    files: list[dict[str, object]],
+    policies: list[tuple[str, str]],
+    graph_context: list[ChangedDefinition],
+    repo_root: str,
+) -> list[Finding]:
+    """Generate a bounded list of unvalidated `Finding`s from `model_spec` over
+    `files`' diffs, `policies`, and `graph_context`."""
     provider = get_provider(model_spec)
-    prompt = _build_finding_prompt(files, policies)
-    result = await provider.generate_structured(prompt, schema=Finding)
-    if not isinstance(result, Finding):
+    prompt = _build_finding_prompt(files, policies, graph_context, repo_root)
+    result = await provider.generate_structured(prompt, schema=_FindingsResponse)
+    if not isinstance(result, _FindingsResponse):
         raise ProviderResponseError(
-            f"expected a Finding from generate_structured, got {type(result).__name__}"
+            f"expected a _FindingsResponse from generate_structured, got {type(result).__name__}"
         )
-    return result
+    return result.findings
+
+
+def _build_graph_context(
+    repo_root: str, files: list[dict[str, object]], *, enabled: bool
+) -> list[ChangedDefinition]:
+    """The PR's changed definitions and their out-of-diff callers, or `[]`.
+
+    `[]` both when `enabled` is `False` and when building the graph fails for
+    any reason (`repo_root` isn't a git working tree, `git` isn't installed,
+    a tracked file has invalid syntax) -- this context is a best-effort
+    addition to the prompt, never something that should fail the review
+    itself, the same way a missing policy file only warns rather than
+    aborting.
+    """
+    if not enabled:
+        return []
+    try:
+        graph = build_symbol_graph(repo_root)
+        return find_out_of_diff_callers(graph, files)
+    except Exception as exc:
+        print(
+            f"marginal review: warning: couldn't build code-graph context, skipping: {exc}",
+            file=sys.stderr,
+        )
+        return []
 
 
 def _missing_patch_filenames(files: list[dict[str, object]]) -> list[str]:
@@ -381,7 +452,12 @@ def _redacted_filenames(files: list[dict[str, object]]) -> list[str]:
     ]
 
 
-def _build_finding_prompt(files: list[dict[str, object]], policies: list[tuple[str, str]]) -> str:
+def _build_finding_prompt(
+    files: list[dict[str, object]],
+    policies: list[tuple[str, str]],
+    graph_context: list[ChangedDefinition],
+    repo_root: str,
+) -> str:
     diff = "\n\n".join(
         f"--- {file['filename']} ---\n{redact_secrets(str(file.get('patch', '')))}"
         for file in files
@@ -394,5 +470,58 @@ def _build_finding_prompt(files: list[dict[str, object]], policies: list[tuple[s
             "below -- a violation of one of these is at least as important as a "
             f"general code-quality issue:\n\n{policy_text}"
         )
+    graph_section = _build_graph_context_section(graph_context, repo_root)
+    if graph_section:
+        sections.append(graph_section)
     sections.append(diff)
     return "\n\n".join(sections)
+
+
+def _build_graph_context_section(
+    graph_context: list[ChangedDefinition], repo_root: str
+) -> str | None:
+    """A prompt section naming out-of-diff callers of what this diff changes.
+
+    `None` if there's nothing to show -- `graph_context` is empty, every
+    changed definition's callers are all inside the diff already, or none of
+    the caller files could be read for a snippet. Bounded to
+    `MAX_GRAPH_CONTEXT_CALLERS` caller snippets total, across every changed
+    definition, so a definition with a huge fan-out can't blow up the prompt.
+    """
+    blocks: list[str] = []
+    remaining = MAX_GRAPH_CONTEXT_CALLERS
+    for changed in graph_context:
+        if remaining <= 0:
+            break
+        caller_blocks = []
+        for site in changed.callers:
+            if len(caller_blocks) >= remaining:
+                break
+            snippet = _read_snippet(repo_root, site.file, site.line)
+            if snippet is not None:
+                caller_blocks.append(f"{site.file}:{site.line}\n{snippet}")
+        if not caller_blocks:
+            continue
+        remaining -= len(caller_blocks)
+        blocks.append(
+            f"`{changed.definition.qualified_name}` (defined in "
+            f"{changed.definition.file}) is called from:\n\n" + "\n\n".join(caller_blocks)
+        )
+    if not blocks:
+        return None
+    return (
+        "This diff changes definitions that other, unchanged files in the repo call -- "
+        "check whether the change is compatible with how they're used there:\n\n"
+        + "\n\n".join(blocks)
+    )
+
+
+def _read_snippet(repo_root: str, file: str, line: int) -> str | None:
+    """A few lines of `file` around `line` (1-indexed), or `None` if unreadable."""
+    try:
+        lines = Path(repo_root, file).read_text().splitlines()
+    except OSError:
+        return None
+    start = max(line - _GRAPH_CONTEXT_SNIPPET_RADIUS, 1)
+    end = min(line + _GRAPH_CONTEXT_SNIPPET_RADIUS, len(lines))
+    return "\n".join(f"{n}: {lines[n - 1]}" for n in range(start, end + 1))

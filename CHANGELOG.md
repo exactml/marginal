@@ -6,24 +6,32 @@
 
 ### New Features
 
-- `marginal init` now seeds `.marginal/policies/README.md` with guidance and
-  distinguishes forced reruns with `↻ Overwrote` status lines, so the policy
-  directory survives the first commit and scaffold changes are visible
-  ([ISSUE-75](https://github.com/exactml/marginal/issues/75))
+- Added `marginal.graph.find_out_of_diff_callers`, which maps a PR's changed
+  definitions (from #82's symbol graph) to the callers of each that sit
+  outside the diff's own changed files -- a caller already visible in the
+  diff is dropped, since the diff already shows it directly. Determines
+  "changed" by overlapping each file's diff hunks (parsed from the unified
+  diff's `@@ ... @@` headers) against a definition's line span; an unchanged
+  definition is skipped, and one touched by several hunks is reported once.
+  Nothing consumes this yet -- it's the input the review prompt in upcoming
+  work will use to show a reviewer what its own diff doesn't
 
-- `marginal review` now checks whether it actually saw everything that
-  changed in the PR. `GitHubClient.get_pull_request_files` previously made
-  one unpaginated call to GitHub's files endpoint, so a PR with more files
-  than fit on a single page was silently truncated -- it now follows every
-  page GitHub returns (up to GitHub's own 3000-file-per-PR cap). Separately,
-  a file whose `patch` GitHub omits (large diff or binary) is now detected
-  and named. Either gap -- a file count short of `changed_files`, or a
-  present-but-patchless file -- surfaces as a `⚠️ **Incomplete review
-  coverage**` / `⚠️ **No diff available**` line in the same summary/review
-  body as the existing redaction warning, so a review with no findings
-  can't be mistaken for one that looked at everything and found nothing
+  ([ISSUE-83](https://github.com/exactml/marginal/issues/83),
+  [PR-94](https://github.com/exactml/marginal/pull/94) by [@exactml](https://github.com/exactml))
 
-  ([ISSUE-71](https://github.com/exactml/marginal/issues/71))
+- `config.context.code_graph` (on by default) now does something: `marginal
+  review`'s prompt names any definition a diff changes that's called from a
+  file outside the diff, with a short source snippet at each call site --
+  #82's indexer and #83's diff-to-caller lookup feed straight into it. A
+  change to `Widget.render()` in one file now shows the reviewer model the
+  caller in another file it would otherwise never see, capped at 10 caller
+  snippets total so a large fan-out can't blow up the prompt. Best-effort
+  throughout: a definition with only in-diff callers, `code_graph` turned
+  off, or the graph failing to build at all (no git checkout, `git`
+  missing, a tracked file with invalid syntax) all leave the prompt exactly
+  as before -- this never fails the review itself
+
+  ([ISSUE-84](https://github.com/exactml/marginal/issues/84))
 
 - `marginal review` gains a `--format {text,json}` flag. With `--format json`
   it prints a single JSON object to stdout -- repo, PR number, title, state,
@@ -43,7 +51,148 @@
   yet, and formalizing one is left until there's real external consumption
 
   ([ISSUE-50](https://github.com/exactml/marginal/issues/50),
-  [PR-XX](https://github.com/exactml/marginal/pull/XX) by [@rishcx](https://github.com/rishcx))
+  [PR-81](https://github.com/exactml/marginal/pull/81) by [@rishcx](https://github.com/rishcx))
+
+### Improvements
+
+### Fixes
+
+### Warnings
+
+## marginal v0.2.4, 2026-09-20
+
+### Breaking Changes
+
+### New Features
+
+### Improvements
+
+### Fixes
+
+- Fixes a regression introduced in v0.2.3: `AnthropicProvider.generate_structured`'s
+  `strict: true` tool definition was rejected outright by the API (`400
+  invalid_request_error`) for every request, because `Finding.confidence`'s
+  `ge`/`le` bounds and `_FindingsResponse.findings`' `max_length` render as
+  `minimum`/`maximum`/`maxItems` -- keywords outside strict tool use's supported
+  JSON Schema subset. The wire schema sent to Anthropic now has those keywords
+  stripped (and a nullable field's `anyOf: [{type: X}, {type: "null"}]` rewritten
+  to the `{"type": [X, "null"]}` form Anthropic's docs describe), while pydantic's
+  own validation of the response still enforces the same bounds locally -- the
+  server-side guarantee for a bound is gone, the check itself isn't.
+  `_strict_input_schema` checks every schema keyword against two explicit
+  lists (confirmed-unsupported -> stripped, confirmed-supported -> kept) and
+  raises immediately on anything in neither -- a keyword nobody's vetted yet
+  now breaks a test the next time a constrained field is added, instead of
+  breaking production the way this regression did
+
+  ([ISSUE-96](https://github.com/exactml/marginal/issues/96),
+  [PR-101](https://github.com/exactml/marginal/pull/101) by [@exactml](https://github.com/exactml))
+
+### Warnings
+
+## marginal v0.2.3, 2026-09-20
+
+### Breaking Changes
+
+### New Features
+
+### Improvements
+
+### Fixes
+
+- `AnthropicProvider.generate_structured` now sets `strict: true` on its tool
+  definition, so Claude's response is generated via grammar-constrained decoding
+  instead of free-form generation that merely tries to follow the schema. The
+  two-attempt retry from ISSUE-96 stays in place as a dormant safety net (e.g. a
+  schema complex enough to hit strict mode's compilation limits fails at the
+  request level, not via a validation mismatch), but the schema-mismatch failures
+  ISSUE-96 was built to recover from should no longer occur in the first place --
+  the server can no longer emit a token that violates `_FindingsResponse`'s shape
+
+  ([ISSUE-96](https://github.com/exactml/marginal/issues/96),
+  [PR-99](https://github.com/exactml/marginal/pull/99) by [@exactml](https://github.com/exactml))
+
+### Warnings
+
+## marginal v0.2.2, 2026-09-20
+
+### Breaking Changes
+
+### New Features
+
+### Improvements
+
+### Fixes
+
+- `AnthropicProvider.generate_structured` and `OpenAIProvider.generate_structured` now
+  retry once (two attempts total) when the model's response fails schema validation,
+  instead of failing the review outright on the first mismatch. Observed live twice on
+  the exact same `_FindingsResponse` schema, in two different shapes -- an extra
+  wrapper key around the payload, and the correct payload double-encoded as a string
+  inside the field it belongs in -- both are the kind of one-off structured-output
+  quirk a second attempt at the identical request routinely clears. A transport-level
+  `ProviderAPIError`, or a response with no tool call/content at all, still fails
+  immediately without retrying -- only a schema mismatch gets the second attempt
+
+  ([ISSUE-96](https://github.com/exactml/marginal/issues/96),
+  [PR-97](https://github.com/exactml/marginal/pull/97) by [@exactml](https://github.com/exactml))
+
+### Warnings
+
+## marginal v0.2.1, 2026-09-20
+
+### Breaking Changes
+
+### New Features
+
+- `marginal init` now seeds `.marginal/policies/README.md` with guidance and
+  distinguishes forced reruns with `↻ Overwrote` status lines, so the policy
+  directory survives the first commit and scaffold changes are visible
+
+  ([ISSUE-75](https://github.com/exactml/marginal/issues/75),
+  [PR-80](https://github.com/exactml/marginal/pull/80) by [@dvd233](https://github.com/dvd233))
+
+- `marginal review` can now return more than one finding per run. The
+  reviewer model is asked for a bounded list of the most important,
+  actionable issues in the diff (up to 20) instead of a single one, so
+  `config.review.confidence_threshold` and `config.review.max_comments` --
+  already built to filter and cap a *list* of findings -- finally have more
+  than one item to work with. A diff with several real issues can now
+  produce several posted findings in one review, capped at `max_comments`
+  (highest-confidence first); a diff with nothing worth flagging still
+  produces the same metadata-only summary as before
+
+  ([ISSUE-57](https://github.com/exactml/marginal/issues/57),
+  [PR-79](https://github.com/exactml/marginal/pull/79) by [@exactml](https://github.com/exactml))
+
+- `marginal review` now checks whether it actually saw everything that
+  changed in the PR. `GitHubClient.get_pull_request_files` previously made
+  one unpaginated call to GitHub's files endpoint, so a PR with more files
+  than fit on a single page was silently truncated -- it now follows every
+  page GitHub returns (up to GitHub's own 3000-file-per-PR cap). Separately,
+  a file whose `patch` GitHub omits (large diff or binary) is now detected
+  and named. Either gap -- a file count short of `changed_files`, or a
+  present-but-patchless file -- surfaces as a `⚠️ **Incomplete review
+  coverage**` / `⚠️ **No diff available**` line in the same summary/review
+  body as the existing redaction warning, so a review with no findings
+  can't be mistaken for one that looked at everything and found nothing
+
+  ([ISSUE-71](https://github.com/exactml/marginal/issues/71),
+  [PR-73](https://github.com/exactml/marginal/pull/73) by [@exactml](https://github.com/exactml))
+
+- Added `marginal.graph.build_symbol_graph`, a same-repo Python symbol graph
+  built by `ast`-parsing every tracked file: every module- and class-level
+  function/class definition, plus every call site resolved to its
+  definition on a best-effort basis (a same-module match first, otherwise
+  the one definition repo-wide whose name matches uniquely). A call to
+  `Widget().render()` in one file now resolves to `Widget.render`'s
+  definition in another; an ambiguous or dynamic call site is left
+  unresolved rather than guessed. Nothing consumes the graph in a review
+  yet -- this is the indexer the diff-to-caller lookup and prompt wiring in
+  upcoming work build on
+
+  ([ISSUE-82](https://github.com/exactml/marginal/issues/82),
+  [PR-89](https://github.com/exactml/marginal/pull/89) by [@exactml](https://github.com/exactml))
 
 ### Improvements
 
@@ -56,7 +205,8 @@
   a raw traceback instead of the one-line provider error `run_review` already
   handles
 
-  ([ISSUE-39](https://github.com/exactml/marginal/issues/39))
+  ([ISSUE-39](https://github.com/exactml/marginal/issues/39),
+  [PR-42](https://github.com/exactml/marginal/pull/42) by [@HarshRajSinghania](https://github.com/HarshRajSinghania))
 
 ### Warnings
 
@@ -268,7 +418,8 @@
   one-line/non-zero-exit handling as a GitHub error. Still no validation,
   deduplication, or confidence scoring — one raw, unvalidated finding
 
-  ([ISSUE-21](https://github.com/exactml/marginal/issues/21) by [@exactml](https://github.com/exactml))
+  ([ISSUE-21](https://github.com/exactml/marginal/issues/21),
+  [PR-22](https://github.com/exactml/marginal/pull/22) by [@exactml](https://github.com/exactml))
 
 ### Improvements
 
@@ -280,7 +431,8 @@
   `ANTHROPIC_API_KEY` repository secret added manually before this repo's
   own PRs get a real generated finding instead of a `MissingCredentialsError`
 
-  ([ISSUE-23](https://github.com/exactml/marginal/issues/23) by [@exactml](https://github.com/exactml))
+  ([ISSUE-23](https://github.com/exactml/marginal/issues/23),
+  [PR-24](https://github.com/exactml/marginal/pull/24) by [@exactml](https://github.com/exactml))
 
 ### Fixes
 
@@ -292,7 +444,8 @@
   as required. Also adds this same corrected workflow to `marginal`'s own
   repo, so it reviews its own PRs via `exactml/marginal-action@v1`
 
-  ([ISSUE-19](https://github.com/exactml/marginal/issues/19) by [@exactml](https://github.com/exactml))
+  ([ISSUE-19](https://github.com/exactml/marginal/issues/19),
+  [PR-20](https://github.com/exactml/marginal/pull/20) by [@exactml](https://github.com/exactml))
 
 ### Warnings
 
