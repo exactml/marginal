@@ -2,6 +2,52 @@
 
 <!-- towncrier release notes start -->
 
+## marginal v0.2.7, 2026-10-17
+
+### Breaking Changes
+
+### New Features
+
+- New `marginal compact --repo <owner/name> --pr <number>` closes marginal's
+  findings that a later push already resolved, so they stop looking live. It
+  re-checks every inline finding marginal posted on the PR that hasn't been
+  closed yet. A finding whose file the PR no longer changes is resolved
+  straight away, without calling the model. The rest go to `models.reviewer`
+  in one call with the current diff of their files; a finding stays open
+  unless the model says the current code clearly no longer has the problem,
+  and stays open if the model doesn't answer for it. It prints a summary, and
+  with `--comment` it replies `✅ Resolved: <reason>` in each resolved
+  finding's thread and resolves the thread, collapsing it in GitHub's UI; a
+  thread already resolved, by marginal or by hand, is skipped next time. A PR with nothing open is
+  a no-op that never calls the model. It respects `review.max_prompt_tokens`
+  and uses the same exit codes as `marginal review` (1 for errors, 3 for a
+  missing provider key). It only re-checks inline findings, not ones that
+  landed in a review's body
+
+  ([ISSUE-54](https://github.com/exactml/marginal/issues/54),
+  [PR-121](https://github.com/exactml/marginal/pull/121) by [@exactml](https://github.com/exactml))
+
+### Improvements
+
+- `marginal init` now ends with provider-neutral next steps: set
+  `models.reviewer` in `.marginal/config.yaml` to either `anthropic` or
+  `openai`, then add that provider's key with `gh secret set ANTHROPIC_API_KEY`
+  or `gh secret set OPENAI_API_KEY`. The workflow it scaffolds passes both keys
+  to `marginal-action`, so whichever provider you pick needs only its own
+  secret, with no workflow edits. Before, a fresh setup had no reviewer model
+  and no key wired in, and gave no hint about either. A review that ran
+  without a reviewer model now says so (`ℹ️ No reviewer model configured`)
+  instead of showing only a title and file list. The README's Quickstart now
+  matches what `marginal init` really prints and writes; it previously showed
+  an outdated workflow that passed the key through `env:`
+
+  ([ISSUE-74](https://github.com/exactml/marginal/issues/74),
+  [PR-119](https://github.com/exactml/marginal/pull/119) by [@exactml](https://github.com/exactml))
+
+### Fixes
+
+### Warnings
+
 ## marginal v0.2.6, 2026-10-17
 
 ### Breaking Changes
