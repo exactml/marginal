@@ -2,6 +2,74 @@
 
 <!-- towncrier release notes start -->
 
+## marginal v0.2.6, 2026-10-17
+
+### Breaking Changes
+
+### New Features
+
+- New `review.max_prompt_tokens` setting (default 100000) caps how large a
+  review prompt marginal will send to your model. Right before the model call,
+  marginal estimates the size of the fully built prompt (diff, policies and
+  code-graph context together) at roughly 3 characters per token. If it's over
+  the cap, the model is never called, so a huge PR or an overgrown policy set
+  can't run up an unexpected bill on your API key. The run still exits 0: it
+  prints a notice to stderr, and the summary (and the review posted with
+  `--comment`) keeps the PR metadata plus a `⚠️ Review skipped` line, so it
+  can't be mistaken for a review that found nothing. That notice is posted
+  even if marginal already reviewed the PR, since the new push went unreviewed.
+  `--format json` gets a new `prompt_over_budget` field. The estimate is a
+  length heuristic, not the provider's real tokenizer
+
+  ([ISSUE-44](https://github.com/exactml/marginal/issues/44),
+  [PR-114](https://github.com/exactml/marginal/pull/114) by [@exactml](https://github.com/exactml))
+
+- `marginal review` now remembers what a maintainer said back to it on the same
+  PR. Before generating findings, it reads the PR's review-comment threads,
+  picks out human replies to marginal's own inline comments, and quotes each
+  comment and its replies in the prompt, asking the model not to raise those
+  points again (reworded or on a nearby line) unless the code they're about has
+  changed. Comments from releases that predate the fingerprint marker are still
+  recognized by their severity badge. Replies to anyone else's comments, and
+  replies from bot accounts, are ignored. The section keeps the 10 most recent
+  answered threads, clips each one, and redacts likely secrets. With no such
+  replies the prompt is exactly what it was before. The comments are now read
+  on every run with a reviewer model, not only with `--comment`, which needs
+  only `permissions.read.pull_requests`; a failure to read them exits 1 like
+  any other GitHub error. This is context for the model, not a filter: a
+  finding can still repeat if the model ignores it, and only this PR's own
+  threads are read
+
+  ([ISSUE-55](https://github.com/exactml/marginal/issues/55),
+  [PR-115](https://github.com/exactml/marginal/pull/115) by [@exactml](https://github.com/exactml))
+
+### Improvements
+
+- A marginal review now opens with its verdict, so the outcome is readable
+  without opening any inline thread: `**3 findings** · 🔴 1 critical · 🟠 2
+  high`, counted by severity with the most serious first, or `✅ **No issues
+  found**` when the model reviewed the diff and flagged nothing. On a re-run it
+  counts only what's new and notes how many were already flagged earlier on
+  the PR. A run without a reviewer model shows no verdict, so it never claims
+  "no issues" for a diff nobody reviewed. The base and head SHAs in the header
+  are shortened to 7 characters
+
+  ([PR-117](https://github.com/exactml/marginal/pull/117) by [@exactml](https://github.com/exactml))
+
+### Fixes
+
+- The workflow `marginal init` scaffolds now runs one review per PR at a time
+  (a `concurrency` group keyed on the PR number, queueing rather than
+  cancelling). Two pushes a few seconds apart used to start two runs in
+  parallel; neither saw the other's review, so both posted the same header and
+  findings. Queued, the second run sees the first one's review and skips what's
+  already there. An existing `.github/workflows/marginal.yml` isn't rewritten:
+  add the same `concurrency` block to it, as shown in the README
+
+  ([PR-116](https://github.com/exactml/marginal/pull/116) by [@exactml](https://github.com/exactml))
+
+### Warnings
+
 ## marginal v0.2.5, 2026-10-17
 
 ### Breaking Changes
