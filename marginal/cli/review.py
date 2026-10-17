@@ -20,6 +20,12 @@ from marginal.policy import load_policies
 from marginal.providers.errors import MissingCredentialsError, ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
 from marginal.review import Finding, Severity, filter_findings
+from marginal.review.dedup import (
+    finding_fingerprint,
+    fingerprint_marker,
+    nearby_fingerprints,
+    posted_fingerprints,
+)
 from marginal.review.redact import redact_secrets
 
 SEVERITY_EMOJI = {
@@ -43,6 +49,10 @@ MAX_GRAPH_CONTEXT_CALLERS = 10
 _GRAPH_CONTEXT_SNIPPET_RADIUS = 2
 
 OutputFormat = Literal["text", "json"]
+
+# Every review marginal posts opens with this, which is how a re-run spots
+# that it has already reviewed a PR.
+REVIEW_HEADING = "### 🤖 marginal review"
 
 FINDING_PROMPT_INSTRUCTIONS = (
     "You are reviewing a pull request. Identify the most important, "
@@ -198,7 +208,6 @@ def run_review(
         confidence_threshold=config.review.confidence_threshold,
         max_comments=config.review.max_comments,
     )
-    inline_comments = _build_inline_comments(findings)
 
     base_lines = _base_lines(pr_number, pull_request, filenames)
     warning_lines = _redaction_warning_lines(redacted_files) + coverage_lines
@@ -209,21 +218,56 @@ def run_review(
             )
         )
 
+    comment_posted = False
     if comment:
-        body = "\n".join(
-            base_lines
-            + warning_lines
-            + [line for f in findings if f.line is None for line in _finding_lines(f)]
-        )
+        patches = {str(file["filename"]): file.get("patch") for file in files}
         try:
-            client.create_review(pr_number, body, event="COMMENT", comments=inline_comments)
+            reviews = client.list_reviews(pr_number)
+            posted = posted_fingerprints(
+                [review.get("body") for review in reviews]
+                + [c.get("body") for c in client.list_review_comments(pr_number)]
+            )
+            new_findings = [f for f in findings if not _nearby_fingerprints(f, patches) & posted]
+            if len(new_findings) < len(findings):
+                print(
+                    f"marginal review: skipped {len(findings) - len(new_findings)} finding(s) "
+                    "matching one already posted on this PR (same file and severity, same or "
+                    "neighbouring line)",
+                    file=sys.stderr,
+                )
+            already_reviewed = any(REVIEW_HEADING in (r.get("body") or "") for r in reviews)
+            if new_findings or not already_reviewed:
+                body = "\n".join(
+                    base_lines
+                    + warning_lines
+                    + [
+                        line
+                        for f in new_findings
+                        if f.line is None
+                        for line in [
+                            *_finding_lines(f),
+                            fingerprint_marker(_fingerprint(f, patches)),
+                        ]
+                    ]
+                )
+                client.create_review(
+                    pr_number,
+                    body,
+                    event="COMMENT",
+                    comments=_build_inline_comments(new_findings, patches),
+                )
+                comment_posted = True
+            else:
+                print(
+                    "marginal review: nothing new since marginal's last review on this PR, "
+                    "so nothing was posted",
+                    file=sys.stderr,
+                )
         except (PermissionDeniedError, GitHubAuthenticationError, GitHubAPIError) as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
             return 1
 
     if output_format == "json":
-        # A failed post returned 1 above, so reaching here with `comment` set
-        # means the review was posted.
         result = _build_json_result(
             repo,
             pr_number,
@@ -231,7 +275,7 @@ def run_review(
             filenames,
             findings,
             redacted_files,
-            comment_posted=comment,
+            comment_posted=comment_posted,
         )
         print(json.dumps(result, indent=2))
 
@@ -246,7 +290,7 @@ def _base_lines(pr_number: int, pull_request: dict[str, object], filenames: list
     """
     file_word = "file" if len(filenames) == 1 else "files"
     lines = [
-        "### 🤖 marginal review",
+        REVIEW_HEADING,
         "",
         f"**PR #{pr_number}: {pull_request['title']}** · {pull_request['state']} · "
         f"`{pull_request['base']['sha']}` → `{pull_request['head']['sha']}` · "
@@ -305,23 +349,47 @@ def _redaction_warning_lines(redacted_files: list[str]) -> list[str]:
     ]
 
 
-def _build_inline_comments(findings: list[Finding]) -> list[dict[str, object]]:
+def _build_inline_comments(
+    findings: list[Finding], patches: dict[str, str | None]
+) -> list[dict[str, object]]:
     """Build one GitHub review `comments` entry per line-anchored finding.
 
     A finding with no `line` is left out here -- callers should fall back to
     including it in the review's overall body instead, so it isn't silently
     dropped. The comment's own file/line already anchors it in the diff, so
-    its badge skips repeating the location.
+    its badge skips repeating the location. Each body ends with the
+    finding's hidden fingerprint marker, so a later run can skip it.
     """
     return [
         {
             "path": finding.file,
             "line": finding.line,
-            "body": f"{_finding_badge(finding, with_location=False)}\n\n{finding.message}",
+            "body": f"{_finding_badge(finding, with_location=False)}\n\n{finding.message}"
+            f"\n\n{fingerprint_marker(_fingerprint(finding, patches))}",
         }
         for finding in findings
         if finding.line is not None
     ]
+
+
+def _fingerprint(finding: Finding, patches: dict[str, str | None]) -> str:
+    return finding_fingerprint(*_identity(finding, patches))
+
+
+def _nearby_fingerprints(finding: Finding, patches: dict[str, str | None]) -> set[str]:
+    return nearby_fingerprints(*_identity(finding, patches))
+
+
+def _identity(
+    finding: Finding, patches: dict[str, str | None]
+) -> tuple[str, int | None, str, str, str | None]:
+    return (
+        finding.file,
+        finding.line,
+        finding.severity.value,
+        finding.message,
+        patches.get(finding.file),
+    )
 
 
 def _build_json_result(

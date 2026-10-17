@@ -33,6 +33,7 @@ from marginal.github.errors import (
 from marginal.graph import CallSite, ChangedDefinition, Definition
 from marginal.providers.errors import MissingCredentialsError
 from marginal.review import Finding, Severity
+from marginal.review.dedup import finding_fingerprint, fingerprint_marker
 
 
 def test_init_creates_all_artifacts(tmp_path, capsys):
@@ -316,7 +317,7 @@ def test_build_inline_comments_skips_findings_without_a_line():
         ),
     ]
 
-    assert _build_inline_comments(findings) == []
+    assert _build_inline_comments(findings, {}) == []
 
 
 def test_build_inline_comments_builds_one_entry_per_anchored_finding():
@@ -334,9 +335,19 @@ def test_build_inline_comments_builds_one_entry_per_anchored_finding():
         ),
     ]
 
-    assert _build_inline_comments(findings) == [
-        {"path": "a.py", "line": 10, "body": "🟠 **High** · 90% confidence\n\nissue in a"},
-        {"path": "c.py", "line": 3, "body": "🟡 **Medium** · 90% confidence\n\nissue in c"},
+    marker_a = fingerprint_marker(finding_fingerprint("a.py", 10, "high", "issue in a", None))
+    marker_c = fingerprint_marker(finding_fingerprint("c.py", 3, "medium", "issue in c", None))
+    assert _build_inline_comments(findings, {}) == [
+        {
+            "path": "a.py",
+            "line": 10,
+            "body": f"🟠 **High** · 90% confidence\n\nissue in a\n\n{marker_a}",
+        },
+        {
+            "path": "c.py",
+            "line": 3,
+            "body": f"🟡 **Medium** · 90% confidence\n\nissue in c\n\n{marker_c}",
+        },
     ]
 
 
@@ -592,7 +603,16 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(
                 "line": 2,
                 "body": (
                     "🟠 **High** · 90% confidence\n\n"
-                    "This introduces a blocking sleep in an async retry loop."
+                    "This introduces a blocking sleep in an async retry loop.\n\n"
+                    + fingerprint_marker(
+                        finding_fingerprint(
+                            "marginal/retry.py",
+                            2,
+                            "high",
+                            "This introduces a blocking sleep in an async retry loop.",
+                            "@@ -1,3 +1,4 @@\n+time.sleep(1)",
+                        )
+                    )
                 ),
             }
         ],
@@ -659,7 +679,14 @@ def test_review_with_unanchored_finding_posts_it_in_the_summary_body_not_inline(
     out = capsys.readouterr().out
     assert "🟡 **Medium** · 90% confidence — `marginal/retry.py`" in out
 
-    client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT", comments=[])
+    marker = fingerprint_marker(
+        finding_fingerprint(
+            "marginal/retry.py", None, "medium", "Consider adding a backoff cap.", None
+        )
+    )
+    client.create_review.assert_called_once_with(
+        42, out.rstrip("\n") + "\n" + marker, event="COMMENT", comments=[]
+    )
 
 
 def test_review_drops_a_finding_below_the_confidence_threshold(
@@ -1594,3 +1621,182 @@ def test_build_json_result_serializes_a_finding_as_plain_json():
     assert json.loads(json.dumps(result)) == result
     assert result["findings"][0]["severity"] == "high"
     assert result["findings"][0]["line"] is None
+
+
+# -- review: dedup across re-runs ------------------------------------------
+
+_RETRY_PATCH = "@@ -1,2 +1,3 @@\n import time\n+time.sleep(1)\n retry()"
+
+
+def _finding_at(line, message, severity=Severity.HIGH):
+    return Finding(
+        file="marginal/retry.py", line=line, severity=severity, confidence=0.9, message=message
+    )
+
+
+def _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, findings, posted):
+    """Run `marginal review --comment` with `posted` as what GitHub already has.
+
+    `posted` is a list of `create_review` calls from an earlier run; their
+    review bodies and inline comment bodies become the PR's existing ones.
+    """
+    monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.reset_mock()
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py", "patch": _RETRY_PATCH}
+    ]
+    client.list_reviews.return_value = [{"body": c.args[1]} for c in posted]
+    client.list_review_comments.return_value = [
+        {"body": comment["body"]} for c in posted for comment in c.kwargs["comments"]
+    ]
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=_FindingsResponse(findings=findings)
+    )
+    return main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+
+
+def test_rerun_with_the_same_finding_reworded_posts_nothing(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    first = [_finding_at(2, "This sleep blocks the async retry loop.")]
+    assert (
+        _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, first, [])
+        == 0
+    )
+    first_post = client.create_review.call_args
+    capsys.readouterr()
+
+    # The model rewords the same issue on the second run.
+    second = [_finding_at(2, "time.sleep() here stalls the event loop between retries.")]
+    exit_code = _run_review_posting(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, second, [first_post]
+    )
+
+    assert exit_code == 0
+    client.create_review.assert_not_called()
+    err = capsys.readouterr().err
+    assert "skipped 1 finding(s) matching one already posted" in err
+    assert "nothing was posted" in err
+
+
+def test_rerun_posts_only_the_new_finding(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    old = _finding_at(2, "This sleep blocks the async retry loop.")
+    _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, [old], [])
+    first_post = client.create_review.call_args
+
+    new = _finding_at(3, "retry() is called without a cap on attempts.", Severity.MEDIUM)
+    exit_code = _run_review_posting(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, [old, new], [first_post]
+    )
+
+    assert exit_code == 0
+    client.create_review.assert_called_once()
+    posted_comments = client.create_review.call_args.kwargs["comments"]
+    assert [(c["line"], c["body"].split("\n\n")[1]) for c in posted_comments] == [
+        (3, "retry() is called without a cap on attempts.")
+    ]
+
+
+def test_rerun_with_no_findings_does_not_repeat_the_review_header(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, [], [])
+    first_post = client.create_review.call_args
+    assert first_post is not None
+
+    exit_code = _run_review_posting(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, [], [first_post]
+    )
+
+    assert exit_code == 0
+    client.create_review.assert_not_called()
+
+
+def test_rerun_dedups_an_unanchored_finding_posted_in_the_body(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    finding = _finding_at(None, "Consider adding a backoff cap.")
+    _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, [finding], [])
+    first_post = client.create_review.call_args
+
+    _run_review_posting(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, [finding], [first_post]
+    )
+
+    client.create_review.assert_not_called()
+
+
+def test_rerun_json_reports_no_comment_posted_when_everything_was_skipped(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    finding = _finding_at(2, "This sleep blocks the async retry loop.")
+    _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, [finding], [])
+    first_post = client.create_review.call_args
+    capsys.readouterr()
+
+    client.create_review.reset_mock()
+    client.list_reviews.return_value = [{"body": first_post.args[1]}]
+    client.list_review_comments.return_value = [
+        {"body": c["body"]} for c in first_post.kwargs["comments"]
+    ]
+    exit_code = main(
+        ["review", "--repo", "acme/widgets", "--pr", "42", "--comment", "--format", "json"]
+    )
+
+    assert exit_code == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["comment_posted"] is False
+    # stdout still lists the finding; only the GitHub post is skipped.
+    assert len(result["findings"]) == 1
+
+
+def test_review_fails_cleanly_when_reading_existing_comments_fails(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = []
+    client.list_reviews.side_effect = GitHubAPIError(500, "Internal Server Error")
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=_FindingsResponse(findings=[])
+    )
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+
+    assert exit_code == 1
+    assert "marginal review:" in capsys.readouterr().err
+    client.create_review.assert_not_called()
+
+
+def test_first_run_posts_neighbouring_same_severity_findings_side_by_side(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    """New findings are only compared with what's already on the PR, never
+    with each other, so two adjacent same-severity findings both post."""
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    findings = [
+        _finding_at(2, "This sleep blocks the async retry loop."),
+        _finding_at(3, "retry() is called without a cap on attempts."),
+    ]
+
+    _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, findings, [])
+
+    posted = client.create_review.call_args.kwargs["comments"]
+    assert [c["line"] for c in posted] == [2, 3]

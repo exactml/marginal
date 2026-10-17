@@ -58,19 +58,17 @@ class GitHubClient:
         than fit on one page isn't silently truncated.
         """
         self._require_read("pull_requests")
-        files: list[dict[str, object]] = []
-        page = 1
-        while True:
-            batch = self._request(
-                "GET",
-                f"/repos/{self._repo}/pulls/{number}/files",
-                params={"per_page": 100, "page": page},
-            )
-            files.extend(batch)
-            if len(batch) < 100:
-                break
-            page += 1
-        return files
+        return self._get_all_pages(f"/repos/{self._repo}/pulls/{number}/files")
+
+    def list_review_comments(self, number: int) -> list[dict[str, object]]:
+        """Return every inline review comment on the PR, across all pages."""
+        self._require_read("pull_requests")
+        return self._get_all_pages(f"/repos/{self._repo}/pulls/{number}/comments")
+
+    def list_reviews(self, number: int) -> list[dict[str, object]]:
+        """Return every review submitted on the PR, across all pages."""
+        self._require_read("pull_requests")
+        return self._get_all_pages(f"/repos/{self._repo}/pulls/{number}/reviews")
 
     # -- writes ----------------------------------------------------------------
 
@@ -104,6 +102,17 @@ class GitHubClient:
     def _require_write(self, flag: str) -> None:
         if not getattr(self._permissions.write, flag):
             raise PermissionDeniedError(f"this operation requires permissions.write.{flag}")
+
+    def _get_all_pages(self, path: str) -> list[dict[str, object]]:
+        items: list[dict[str, object]] = []
+        page = 1
+        while True:
+            batch = self._request("GET", path, params={"per_page": 100, "page": page})
+            items.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+        return items
 
     def _request(
         self,

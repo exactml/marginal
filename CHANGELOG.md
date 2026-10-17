@@ -2,6 +2,105 @@
 
 <!-- towncrier release notes start -->
 
+## marginal v0.2.5, 2026-10-17
+
+### Breaking Changes
+
+### New Features
+
+- `marginal review` gains a `--format {text,json}` flag. With `--format json`
+  it prints a single JSON object to stdout -- repo, PR number, title, state,
+  base/head SHAs, the changed-file list, the surviving findings (each
+  `Finding` dumped in full, severity as a plain string), any files whose diff
+  had a secret redacted, and whether a comment was posted -- instead of the
+  human-readable Markdown summary, so `marginal review` can feed a dashboard,
+  a notifier, or another CI step without anyone scraping printed text. The
+  default (`--format text`) output is unchanged byte-for-byte, and `--comment`
+  posts the identical Markdown body and inline comments under either format:
+  the flag changes what goes to stdout, never what goes to GitHub. Errors keep
+  their existing exit codes (1, or 3 for missing reviewer credentials) and
+  stay plain text on stderr -- an invalid `.marginal/config.yaml` now follows
+  that same contract instead of escaping as a traceback -- so stdout under
+  `--format json` is either exactly one complete object or nothing at all.
+  The shape is best-effort for v1 -- there's no versioned schema contract
+  yet, and formalizing one is left until there's real external consumption
+
+  ([ISSUE-50](https://github.com/exactml/marginal/issues/50),
+  [PR-81](https://github.com/exactml/marginal/pull/81) by [@rishcx](https://github.com/rishcx))
+
+- `marginal review --comment` no longer reposts a finding it already posted on
+  the same PR. Each posted finding carries a hidden fingerprint marker, and a
+  re-run reads the PR's existing reviews and comments and skips any finding
+  whose fingerprint is already there. If nothing is new and marginal has
+  already reviewed the PR, it posts nothing at all, so every push no longer
+  adds another copy of the same header and file list. The fingerprint is the
+  file, the severity, and the text of the line the finding points at, not the
+  model's wording, which changes on every run, and not the line number, which
+  shifts when lines are added above it. A finding also counts as a repeat when
+  it's one line away from a same-severity finding already posted, because the
+  model's line anchor drifts by one between runs. Human replies in marginal's
+  threads are left alone. A finding with no line is matched by its message,
+  which may still repeat when the model rewords it
+
+  ([ISSUE-56](https://github.com/exactml/marginal/issues/56),
+  [PR-110](https://github.com/exactml/marginal/pull/110) by [@exactml](https://github.com/exactml))
+
+- Added `marginal help` and `marginal help <command>`: the first prints the
+  same top-level usage as `marginal --help`, the second the usage for that
+  subcommand (e.g. `marginal help review` lists `--repo`, `--pr` and
+  `--comment`). An unknown command exits 2 with argparse's usual error, just
+  like an unknown subcommand does
+
+  ([ISSUE-77](https://github.com/exactml/marginal/issues/77),
+  [PR-78](https://github.com/exactml/marginal/pull/78) by [@HarshRajSinghania](https://github.com/HarshRajSinghania))
+
+- Added `marginal.graph.find_out_of_diff_callers`, which maps a PR's changed
+  definitions (from #82's symbol graph) to the callers of each that sit
+  outside the diff's own changed files -- a caller already visible in the
+  diff is dropped, since the diff already shows it directly. Determines
+  "changed" by overlapping each file's diff hunks (parsed from the unified
+  diff's `@@ ... @@` headers) against a definition's line span; an unchanged
+  definition is skipped, and one touched by several hunks is reported once.
+  Nothing consumes this yet -- it's the input the review prompt in upcoming
+  work will use to show a reviewer what its own diff doesn't
+
+  ([ISSUE-83](https://github.com/exactml/marginal/issues/83),
+  [PR-94](https://github.com/exactml/marginal/pull/94) by [@exactml](https://github.com/exactml))
+
+- `config.context.code_graph` (on by default) now does something: `marginal
+  review`'s prompt names any definition a diff changes that's called from a
+  file outside the diff, with a short source snippet at each call site --
+  #82's indexer and #83's diff-to-caller lookup feed straight into it. A
+  change to `Widget.render()` in one file now shows the reviewer model the
+  caller in another file it would otherwise never see, capped at 10 caller
+  snippets total so a large fan-out can't blow up the prompt. Best-effort
+  throughout: a definition with only in-diff callers, `code_graph` turned
+  off, or the graph failing to build at all (no git checkout, `git`
+  missing, a tracked file with invalid syntax) all leave the prompt exactly
+  as before -- this never fails the review itself
+
+  ([ISSUE-84](https://github.com/exactml/marginal/issues/84),
+  [PR-106](https://github.com/exactml/marginal/pull/106) by [@exactml](https://github.com/exactml))
+
+### Improvements
+
+- Changelog entries are now one file per PR under `changelog.d/` (e.g.
+  `changelog.d/50.feature.md`), assembled into `CHANGELOG.md` by towncrier at
+  release time, instead of every PR editing the same `UNDER DEVELOPMENT` block.
+  Two open PRs no longer conflict over the changelog, and git's auto-merge can
+  no longer drop an entry under an already-released version. The rendered
+  format is unchanged; `CONTRIBUTING.md` documents the fragment types, and the
+  `cut-release` skill now builds the release section with `towncrier build`. A
+  new CI check fails a PR that adds no fragment, unless it has the
+  `skip-changelog` label
+
+  ([ISSUE-107](https://github.com/exactml/marginal/issues/107),
+  [PR-108](https://github.com/exactml/marginal/pull/108) by [@exactml](https://github.com/exactml))
+
+### Fixes
+
+### Warnings
+
 ## marginal v0.2.4, 2026-09-20
 
 ### Breaking Changes

@@ -209,6 +209,40 @@ def test_get_pull_request_files_follows_every_full_page(monkeypatch):
     assert second_call.kwargs["params"] == {"per_page": 100, "page": 2}
 
 
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("list_review_comments", "/repos/acme/widgets/pulls/7/comments"),
+        ("list_reviews", "/repos/acme/widgets/pulls/7/reviews"),
+    ],
+)
+def test_pr_comment_reads_follow_every_full_page(monkeypatch, method, path):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    first_page = [{"body": f"comment {i}"} for i in range(100)]
+    second_page = [{"body": "last"}]
+    session.request.side_effect = [_response(200, first_page), _response(200, second_page)]
+    client = _client(session=session)
+
+    result = getattr(client, method)(7)
+
+    assert result == first_page + second_page
+    first_call, second_call = session.request.call_args_list
+    assert first_call.args == ("GET", f"https://api.github.com{path}")
+    assert second_call.kwargs["params"] == {"per_page": 100, "page": 2}
+
+
+@pytest.mark.parametrize("method", ["list_review_comments", "list_reviews"])
+def test_pr_comment_reads_denied_without_read_permission(monkeypatch, method):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    client = _client(PermissionsConfig(read=PermissionsRead(pull_requests=False)), session)
+
+    with pytest.raises(PermissionDeniedError):
+        getattr(client, method)(7)
+    session.request.assert_not_called()
+
+
 # -- API errors ---------------------------------------------------------
 
 
