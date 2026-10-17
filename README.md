@@ -131,6 +131,7 @@ review:
   inline_comments: true
   confidence_threshold: 0.85
   max_comments: 8
+  max_prompt_tokens: 100000  # estimated; over this, the model is never called
   tone: concise
 
 context:
