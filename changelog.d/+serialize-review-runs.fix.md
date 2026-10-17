@@ -6,4 +6,4 @@ findings. Queued, the second run sees the first one's review and skips what's
 already there. An existing `.github/workflows/marginal.yml` isn't rewritten:
 add the same `concurrency` block to it, as shown in the README
 
-([PR-XX](https://github.com/exactml/marginal/pull/XX) by [@exactml](https://github.com/exactml))
+([PR-116](https://github.com/exactml/marginal/pull/116) by [@exactml](https://github.com/exactml))
