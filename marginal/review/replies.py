@@ -49,20 +49,14 @@ def maintainer_replies(comments: Iterable[dict[str, object]]) -> list[ReplyThrea
     roots = {
         c["id"]: c
         for c in comments
-        if c.get("id") is not None and not c.get("in_reply_to_id") and is_marginal_comment(_body(c))
+        if not c.get("in_reply_to_id") and is_marginal_comment(_body(c))
     }
     replies: dict[object, list[str]] = {}
     for c in comments:
         parent = c.get("in_reply_to_id")
         body = _body(c).strip()
         user = c.get("user") or {}
-        if (
-            parent in roots
-            and body
-            and not is_marginal_comment(body)
-            and isinstance(user, dict)
-            and user.get("type") != "Bot"
-        ):
+        if parent in roots and body and not is_marginal_comment(body) and user.get("type") != "Bot":
             replies.setdefault(parent, []).append(body)
     return [
         ReplyThread(
