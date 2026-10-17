@@ -3,18 +3,21 @@ import subprocess
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import yaml
 from pydantic import ValidationError
 
 from marginal.cli import main
 from marginal.cli.review import (
     MAX_FINDINGS_PER_REVIEW,
     MAX_GRAPH_CONTEXT_CALLERS,
+    MAX_REPLY_THREADS,
     REVIEW_HEADING,
     _base_lines,
     _build_finding_prompt,
     _build_graph_context_section,
     _build_inline_comments,
     _build_json_result,
+    _build_replies_section,
     _coverage_warning_lines,
     _estimate_tokens,
     _finding_badge,
@@ -36,6 +39,7 @@ from marginal.graph import CallSite, ChangedDefinition, Definition
 from marginal.providers.errors import MissingCredentialsError
 from marginal.review import Finding, Severity
 from marginal.review.dedup import finding_fingerprint, fingerprint_marker
+from marginal.review.replies import ReplyThread
 
 
 def test_init_creates_all_artifacts(tmp_path, capsys):
@@ -57,6 +61,19 @@ def test_init_creates_all_artifacts(tmp_path, capsys):
     assert "✓ Created .marginal/policies/README.md" in out
     assert "✓ Created .github/workflows/marginal.yml" in out
     assert "marginal is ready." in out
+
+
+def test_init_workflow_runs_one_review_per_pr_at_a_time(tmp_path):
+    """Overlapping runs on one PR each miss the other's review and post it
+    twice, so the scaffolded workflow queues them per PR instead."""
+    main(["init", str(tmp_path)])
+
+    workflow = yaml.safe_load((tmp_path / ".github" / "workflows" / "marginal.yml").read_text())
+
+    assert workflow["concurrency"] == {
+        "group": "marginal-${{ github.event.pull_request.number }}",
+        "cancel-in-progress": False,
+    }
 
 
 def test_init_defaults_to_current_directory(tmp_path, monkeypatch):
@@ -538,6 +555,8 @@ def test_review_without_reviewer_model_skips_generation(
     mock_provider.assert_not_called()
     out = capsys.readouterr().out
     assert "confidence" not in out
+    # Nothing to generate and nothing to post, so no reason to read comments.
+    client.list_review_comments.assert_not_called()
 
 
 def test_review_with_anchored_finding_posts_it_as_inline_comment(
@@ -1810,6 +1829,160 @@ def test_first_run_posts_neighbouring_same_severity_findings_side_by_side(
 
     posted = client.create_review.call_args.kwargs["comments"]
     assert [c["line"] for c in posted] == [2, 3]
+
+
+def test_review_fails_cleanly_when_reading_comments_fails_without_comment_flag(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    """Comments are read before generation even without `--comment`, and a
+    failure there keeps the usual one-line error contract."""
+    _write_reviewer_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = []
+    client.list_review_comments.side_effect = GitHubAPIError(500, "Internal Server Error")
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=_FindingsResponse(findings=[])
+    )
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert err.startswith("marginal review:") and err.count("\n") == 1
+    mock_provider.return_value.generate_structured.assert_not_called()
+
+
+def test_review_reads_the_pr_comments_only_once_per_run(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config(tmp_path)
+
+    _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, [], [])
+
+    mock_github_client.return_value.list_review_comments.assert_called_once_with(42)
+
+
+# -- review: maintainer replies folded into the prompt ---------------------
+
+_MAINTAINER = {"login": "maintainer", "type": "User"}
+_MARGINAL_BOT = {"login": "github-actions[bot]", "type": "Bot"}
+
+
+def _marginal_comment(id, message, line=2):
+    finding = _finding_at(line, message)
+    body = _build_inline_comments([finding], {"marginal/retry.py": _RETRY_PATCH})[0]["body"]
+    return {
+        "id": id,
+        "body": body,
+        "user": _MARGINAL_BOT,
+        "path": "marginal/retry.py",
+        "line": line,
+    }
+
+
+def _reply(id, to, body, user=_MAINTAINER):
+    return {"id": id, "in_reply_to_id": to, "body": body, "user": user, "path": "marginal/retry.py"}
+
+
+def _prompt_with_comments(tmp_path, monkeypatch, mock_github_client, mock_provider, comments):
+    """Run `marginal review` (no `--comment`) over `comments`; return its prompt."""
+    monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.reset_mock()
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py", "patch": _RETRY_PATCH}
+    ]
+    client.list_review_comments.return_value = comments
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(return_value=_FindingsResponse(findings=[]))
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42"]) == 0
+    return provider.generate_structured.call_args.args[0]
+
+
+def test_review_folds_a_maintainer_reply_to_marginal_into_the_prompt(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config(tmp_path)
+
+    prompt = _prompt_with_comments(
+        tmp_path,
+        monkeypatch,
+        mock_github_client,
+        mock_provider,
+        [
+            _marginal_comment(1, "This sleep blocks the async retry loop."),
+            _reply(2, 1, "Intentional: this runs in a worker thread, not the event loop."),
+        ],
+    )
+
+    assert "A maintainer already answered" in prompt
+    assert "--- marginal/retry.py:2 ---" in prompt
+    assert "This sleep blocks the async retry loop." in prompt
+    assert "Intentional: this runs in a worker thread" in prompt
+    # The hidden fingerprint marker is noise to the model.
+    assert "marginal:finding:" not in prompt
+    assert prompt.index("Intentional: this runs") < prompt.index("+time.sleep(1)")
+
+
+def test_review_prompt_is_unchanged_without_maintainer_replies(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config(tmp_path)
+    run = (tmp_path, monkeypatch, mock_github_client, mock_provider)
+
+    baseline = _prompt_with_comments(*run, [])
+    unanswered = _prompt_with_comments(*run, [_marginal_comment(1, "Blocking sleep.")])
+    answered_by_a_bot = _prompt_with_comments(
+        *run, [_marginal_comment(1, "Blocking sleep."), _reply(2, 1, "ack", _MARGINAL_BOT)]
+    )
+    reply_to_a_human = _prompt_with_comments(
+        *run,
+        [
+            {"id": 1, "body": "Can we rename retry()?", "user": _MAINTAINER},
+            _reply(2, 1, "Sure, renamed.", {"login": "author", "type": "User"}),
+        ],
+    )
+
+    # Byte-identical to the prompt built with no replies argument at all.
+    assert baseline == _build_finding_prompt(
+        [{"filename": "marginal/retry.py", "patch": _RETRY_PATCH}], [], [], "."
+    )
+    assert unanswered == baseline
+    assert answered_by_a_bot == baseline
+    assert reply_to_a_human == baseline
+
+
+def test_build_replies_section_keeps_only_the_most_recent_threads_and_clips_them():
+    threads = [
+        ReplyThread(path="a.py", line=n, comment=f"comment {n}", replies=(f"reply {n}",))
+        for n in range(MAX_REPLY_THREADS + 5)
+    ]
+    threads[-1] = ReplyThread(path="a.py", line=99, comment="c" * 5000, replies=("r" * 5000,))
+
+    section = _build_replies_section(threads)
+
+    assert section.count("--- a.py:") == MAX_REPLY_THREADS
+    assert "reply 4\n" not in section and "reply 5" in section
+    assert "c" * 601 not in section and "r" * 1501 not in section
+    assert section.count(" [...]") == 2
+    assert len(section) < 10_000
+
+
+def test_build_replies_section_redacts_a_secret_quoted_in_a_reply():
+    thread = ReplyThread(
+        path="config.py",
+        line=1,
+        comment="Hardcoded key.",
+        replies=("AKIAIOSFODNN7EXAMPLE is fake",),
+    )
+
+    section = _build_replies_section([thread])
+
+    assert "AKIAIOSFODNN7EXAMPLE" not in section
+    assert "[REDACTED] is fake" in section
 
 
 # -- review: prompt token budget -------------------------------------------

@@ -93,6 +93,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+# One review per PR at a time: two runs started by quick successive pushes
+# would each miss the other's review and post the same header twice.
+concurrency:
+  group: marginal-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   review:
     runs-on: ubuntu-latest
