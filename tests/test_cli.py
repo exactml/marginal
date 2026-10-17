@@ -3,6 +3,7 @@ import subprocess
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import yaml
 from pydantic import ValidationError
 
 from marginal.cli import main
@@ -55,6 +56,19 @@ def test_init_creates_all_artifacts(tmp_path, capsys):
     assert "✓ Created .marginal/policies/README.md" in out
     assert "✓ Created .github/workflows/marginal.yml" in out
     assert "marginal is ready." in out
+
+
+def test_init_workflow_runs_one_review_per_pr_at_a_time(tmp_path):
+    """Overlapping runs on one PR each miss the other's review and post it
+    twice, so the scaffolded workflow queues them per PR instead."""
+    main(["init", str(tmp_path)])
+
+    workflow = yaml.safe_load((tmp_path / ".github" / "workflows" / "marginal.yml").read_text())
+
+    assert workflow["concurrency"] == {
+        "group": "marginal-${{ github.event.pull_request.number }}",
+        "cancel-in-progress": False,
+    }
 
 
 def test_init_defaults_to_current_directory(tmp_path, monkeypatch):
