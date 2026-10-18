@@ -23,6 +23,7 @@ from marginal.github.errors import (
     PermissionDeniedError,
 )
 from marginal.graph import ChangedDefinition, build_symbol_graph, find_out_of_diff_callers
+from marginal.graph.diff import _hunk_ranges
 from marginal.policy import load_policies
 from marginal.providers.errors import MissingCredentialsError, ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
@@ -349,7 +350,7 @@ def run_review(
                     + [
                         line
                         for f in new_findings
-                        if f.line is None
+                        if not _anchorable(f, patches)
                         for line in [
                             *_finding_lines(f),
                             fingerprint_marker(_fingerprint(f, patches)),
@@ -360,7 +361,9 @@ def run_review(
                     pr_number,
                     body,
                     event="COMMENT",
-                    comments=_build_inline_comments(new_findings, patches),
+                    comments=_build_inline_comments(
+                        [f for f in new_findings if _anchorable(f, patches)], patches
+                    ),
                 )
                 comment_posted = True
             else:
@@ -557,6 +560,19 @@ def _build_inline_comments(
         for finding in findings
         if finding.line is not None
     ]
+
+
+def _anchorable(finding: Finding, patches: dict[str, str | None]) -> bool:
+    """Whether GitHub accepts an inline comment at `finding`'s line: it must
+    fall inside one of its file's diff hunks. GitHub rejects the whole review
+    (422) over a single comment anchored anywhere else, so such a finding goes
+    in the review body instead."""
+    patch = patches.get(finding.file)
+    return (
+        finding.line is not None
+        and bool(patch)
+        and any(start <= finding.line <= end for start, end in _hunk_ranges(str(patch)))
+    )
 
 
 def _fingerprint(finding: Finding, patches: dict[str, str | None]) -> str:

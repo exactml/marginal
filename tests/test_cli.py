@@ -2546,3 +2546,52 @@ def test_rereview_reads_pr_comments_for_dismissals(
     )
 
     client.list_issue_comments.assert_called_once_with(42)
+
+
+# -- review: findings GitHub can't anchor inline ----------------------------
+
+
+def test_a_finding_outside_the_diff_hunks_goes_in_the_body_not_inline(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    """GitHub rejects the whole review (422) over one inline comment on a line
+    outside the diff, so such a finding is posted in the body instead."""
+    _write_reviewer_config(tmp_path)
+    inside = _finding_at(2, "This sleep blocks the async retry loop.")
+    outside = _finding_at(40, "retry() further down never caps its attempts.")
+
+    _run_review_posting(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, [inside, outside], []
+    )
+
+    call = mock_github_client.return_value.create_review.call_args
+    assert [c["line"] for c in call.kwargs["comments"]] == [2]
+    body = call.args[1]
+    assert "`marginal/retry.py:40`" in body
+    assert "retry() further down never caps its attempts." in body
+    assert body.count("marginal:finding:") == 1
+
+
+def test_a_finding_in_a_file_without_a_patch_goes_in_the_body(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [{"filename": "logo.png"}]
+    client.list_reviews.return_value = []
+    client.list_review_comments.return_value = []
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=_FindingsResponse(
+            findings=[
+                Finding(file="logo.png", line=1, severity=Severity.LOW, confidence=0.9, message="x")
+            ]
+        )
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"]) == 0
+
+    call = client.create_review.call_args
+    assert call.kwargs["comments"] == []
+    assert "`logo.png:1`" in call.args[1]
