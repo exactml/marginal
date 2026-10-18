@@ -16,7 +16,12 @@ from marginal.config.errors import ConfigError
 from marginal.config.loader import load_config
 from marginal.config.schema import ModelSpec
 from marginal.github.client import GitHubClient
-from marginal.github.errors import GitHubAPIError, GitHubAuthenticationError, PermissionDeniedError
+from marginal.github.errors import (
+    GitHubAPIError,
+    GitHubAuthenticationError,
+    GitHubError,
+    PermissionDeniedError,
+)
 from marginal.graph import ChangedDefinition, build_symbol_graph, find_out_of_diff_callers
 from marginal.policy import load_policies
 from marginal.providers.errors import MissingCredentialsError, ProviderError, ProviderResponseError
@@ -398,7 +403,7 @@ def _close_resolved_findings(
             post=True,
             log_prefix="marginal review",
         )
-    except (CompactSkipped, ProviderError, GitHubAPIError, PermissionDeniedError) as exc:
+    except (CompactSkipped, ProviderError, GitHubError) as exc:
         print(f"marginal review: couldn't re-check earlier findings: {exc}", file=sys.stderr)
         return
     if findings:

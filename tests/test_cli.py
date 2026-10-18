@@ -2443,3 +2443,19 @@ def test_rereview_json_stdout_stays_one_object(
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["pr_number"] == 42
+
+
+def test_a_rejected_token_during_the_recheck_never_fails_the_review(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    """Any GitHub error -- including a 401, which isn't a GitHubAPIError --
+    stays inside the best-effort re-check."""
+    client = mock_github_client.return_value
+    client.list_review_threads.side_effect = GitHubAuthenticationError("token rejected")
+
+    exit_code = _rereview(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, still_applies=False
+    )
+
+    assert exit_code == 0
+    assert "couldn't re-check earlier findings: token rejected" in capsys.readouterr().err
