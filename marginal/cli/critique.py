@@ -26,9 +26,10 @@ CRITIQUE_INSTRUCTIONS = (
     "- If the code or a comment in the diff says the behavior is intentional, it's "
     "a trade-off, not a defect -- drop it unless it is clearly unsafe.\n"
     "- If it restates an earlier finding in this list, drop it.\n"
-    "For each finding id, answer drop=true to remove it, or drop=false with its "
-    "revised confidence between 0.0 and 1.0 that it's a real, actionable issue. "
-    "Give a one-sentence reason either way."
+    "You can only lower a finding's confidence or drop it, never raise it. For "
+    "each finding id, answer drop=true to remove it, or drop=false with its revised "
+    "confidence between 0.0 and its current confidence that it's a real, "
+    "actionable issue. Give a one-sentence reason either way."
 )
 
 
@@ -56,8 +57,11 @@ def critique_findings(
     *,
     max_prompt_tokens: int,
 ) -> list[Finding]:
-    """`findings` after one more model call re-scores or drops each of them.
+    """`findings` after one more model call lowers the confidence of, or drops,
+    each of them.
 
+    A revised confidence is capped at the first-pass one, so the critique can
+    only keep a finding out, never push one over `confidence_threshold`.
     `files` must already be `_redact_patches` output. A finding the model
     doesn't answer is kept unchanged; answers for unknown ids are ignored.
     Best-effort: over `max_prompt_tokens`, or on any `ProviderError`, it logs
@@ -90,7 +94,11 @@ def critique_findings(
         if answer is None:
             kept.append(finding)
         elif not answer.drop:
-            kept.append(finding.model_copy(update={"confidence": answer.confidence}))
+            kept.append(
+                finding.model_copy(
+                    update={"confidence": min(answer.confidence, finding.confidence)}
+                )
+            )
     print(
         f"marginal review: self-critique dropped {len(findings) - len(kept)} of "
         f"{len(findings)} finding(s)",

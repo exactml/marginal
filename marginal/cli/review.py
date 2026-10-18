@@ -153,9 +153,10 @@ def run_review(
 
     With `config.review.self_reflect`, the findings first go back to the same
     model with the diff (`marginal.cli.critique.critique_findings`), which
-    re-scores or drops each one, so the threshold and cap act on that second
-    look. It's one extra call, skipped when nothing was found, and
-    best-effort: over budget or failed, the findings pass on unchanged.
+    can lower each one's confidence or drop it (never raise it), so the
+    threshold and cap act on that second look. It's one extra call, skipped
+    when nothing was found, and best-effort: over budget or failed, the
+    findings pass on unchanged.
 
     Before any model call, the fully built prompt's size is estimated
     (`_estimate_tokens`, a length heuristic) and checked against

@@ -89,16 +89,26 @@ def test_off_by_default_makes_one_model_call(tmp_path, provider, capsys):
 def test_critique_rescores_and_drops_before_filtering(tmp_path, provider, capsys):
     _config(tmp_path, self_reflect=True)
 
-    exit_code = _review(provider, _verdicts((1, True, 0.9), (2, False, 0.5), (3, False, 0.95)))
+    exit_code = _review(provider, _verdicts((1, True, 0.9), (2, False, 0.5), (3, False, 0.6)))
 
     assert exit_code == 0
     assert provider.await_count == 2
     captured = capsys.readouterr()
     assert "Sleep blocks the loop." not in captured.out  # dropped
     assert "Retry is unbounded." not in captured.out  # re-scored under the threshold
-    assert "95% confidence" in captured.out  # re-scored over it
-    assert "Import is unused." in captured.out
     assert "self-critique dropped 1 of 3 finding(s)" in captured.err
+
+
+def test_the_critique_can_never_raise_a_confidence(tmp_path, provider, capsys):
+    _config(tmp_path, self_reflect=True)
+
+    _review(provider, _verdicts((1, False, 1.0), (3, False, 0.95)))
+
+    out = capsys.readouterr().out
+    assert "Sleep blocks the loop." in out
+    assert "90% confidence" in out  # kept its first-pass 0.9, not 1.0
+    assert "100% confidence" not in out
+    assert "Import is unused." not in out  # 0.6 stays under the 0.85 threshold
 
 
 def test_a_finding_the_critique_leaves_out_is_kept_unchanged(tmp_path, provider, capsys):
