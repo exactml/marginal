@@ -151,6 +151,12 @@ def run_review(
     Without `models.reviewer`, or if every finding gets filtered out, the
     summary stays metadata-only, same as if nothing was generated.
 
+    With `config.review.self_reflect`, the findings first go back to the same
+    model with the diff (`marginal.cli.critique.critique_findings`), which
+    re-scores or drops each one, so the threshold and cap act on that second
+    look. It's one extra call, skipped when nothing was found, and
+    best-effort: over budget or failed, the findings pass on unchanged.
+
     Before any model call, the fully built prompt's size is estimated
     (`_estimate_tokens`, a length heuristic) and checked against
     `config.review.max_prompt_tokens`. Over the cap, the model is never
@@ -276,6 +282,16 @@ def run_review(
         except ProviderError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
             return 1
+        if config.review.self_reflect and findings:
+            # Imported here: `marginal.cli.critique` imports helpers from this module.
+            from marginal.cli.critique import critique_findings
+
+            findings = critique_findings(
+                reviewer_model,
+                findings,
+                redacted,
+                max_prompt_tokens=config.review.max_prompt_tokens,
+            )
 
     findings = filter_findings(
         findings,
