@@ -7,6 +7,7 @@ import sys
 from typing import get_args
 
 from marginal.cli.compact import run_compact
+from marginal.cli.doctor import run_doctor
 from marginal.cli.help import run_help
 from marginal.cli.init import run_init
 from marginal.cli.review import OutputFormat, run_review
@@ -51,6 +52,13 @@ def main(argv: list[str] | None = None) -> int:
         "--comment", action="store_true", help="Reply in each resolved finding's thread"
     )
 
+    doctor_parser = subparsers.add_parser(
+        "doctor", help="Check config, credentials, and GitHub access before a review"
+    )
+    doctor_parser.add_argument(
+        "--repo", help="GitHub repository as owner/name, to check GITHUB_TOKEN can reach it"
+    )
+
     help_parser = subparsers.add_parser("help", help="Show help for a command")
     help_parser.add_argument(
         "topic", nargs="?", help="Command to show help for (default: top-level usage)"
@@ -62,6 +70,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_help(parser, subparsers, args.topic)
     if args.command == "compact":
         return run_compact(args.repo, args.pr_number, comment=args.comment)
+    if args.command == "doctor":
+        return run_doctor(args.repo)
     if args.command == "init":
         return run_init(args.path, force=args.force)
     if args.command == "review":
