@@ -168,6 +168,13 @@ def close_resolved_findings(
     # A thread someone already resolved in GitHub's UI counts as closed too.
     closed_by_hand = {t["comment_id"] for t in threads if t["is_resolved"]}
     thread_ids = {t["comment_id"]: t["id"] for t in threads}
+    if post:
+        # marginal already replied "Resolved" but the thread is still open: an
+        # earlier resolve failed (an Actions token without `contents: write`).
+        roots = {c["id"]: c for c in comments}
+        for comment_id in _resolved_by_reply(comments) - closed_by_hand:
+            if comment_id in thread_ids and comment_id in roots:
+                _resolve_thread(client, thread_ids[comment_id], roots[comment_id], log_prefix)
     findings = [c for c in _open_findings(comments) if c["id"] not in closed_by_hand]
     if not findings:
         return [], {}
@@ -210,25 +217,36 @@ def close_resolved_findings(
                 c["id"],
                 f"✅ **Resolved**: {_resolution(verdict, by_id)}\n\n{RESOLVED_MARKER}",
             )
-            # Best-effort: the reply already records the resolution, so a token
-            # that can't resolve threads costs only the collapse, not the run.
-            try:
-                if c["id"] in thread_ids:
-                    client.resolve_review_thread(thread_ids[c["id"]])
-            except _GITHUB_ERRORS as exc:
-                print(
-                    f"{log_prefix}: replied on {_location(c)} but couldn't resolve "
-                    f"its thread: {exc}",
-                    file=sys.stderr,
-                )
+            if c["id"] in thread_ids:
+                _resolve_thread(client, thread_ids[c["id"]], c, log_prefix)
     return findings, verdicts
+
+
+def _resolved_by_reply(comments: list[dict[str, object]]) -> set[object]:
+    """Ids of the findings whose thread already has marginal's resolution reply."""
+    return {
+        c.get("in_reply_to_id") for c in comments if RESOLVED_MARKER in str(c.get("body") or "")
+    }
+
+
+def _resolve_thread(
+    client: GitHubClient, thread_id: str, comment: dict[str, object], log_prefix: str
+) -> None:
+    """Best-effort: the reply already records the resolution, so a token that
+    can't resolve threads costs only the collapse, not the run."""
+    try:
+        client.resolve_review_thread(thread_id)
+    except _GITHUB_ERRORS as exc:
+        print(
+            f"{log_prefix}: replied on {_location(comment)} but couldn't resolve its thread "
+            f"(in GitHub Actions the job needs `permissions: contents: write`): {exc}",
+            file=sys.stderr,
+        )
 
 
 def _open_findings(comments: list[dict[str, object]]) -> list[dict[str, object]]:
     """marginal's own inline findings whose thread has no resolution reply yet."""
-    closed = {
-        c.get("in_reply_to_id") for c in comments if RESOLVED_MARKER in str(c.get("body") or "")
-    }
+    closed = _resolved_by_reply(comments)
     return [
         c
         for c in comments

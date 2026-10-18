@@ -360,3 +360,59 @@ def test_the_prompt_shows_each_findings_replies_and_the_later_pr_comments(client
     assert "Other pull request comments:\n\ncomment 9 by @bob: LGTM" in prompt
     assert "Too early to count." not in prompt
     assert "ack" not in prompt.split("Current diff:")[0]
+
+
+# -- retrying a thread resolve that failed earlier --------------------------
+
+
+def _resolution_reply(id, to):
+    return {
+        "id": id,
+        "in_reply_to_id": to,
+        "body": f"✅ **Resolved**: fixed\n\n{RESOLVED_MARKER}",
+        "user": {"login": "github-actions[bot]", "type": "Bot"},
+    }
+
+
+def test_a_replied_but_unresolved_thread_is_resolved_again(client, provider, capsys):
+    """An earlier resolve failed (e.g. no contents: write): the reply exists,
+    the thread is still open. The next run resolves it, without a new reply."""
+    client.list_review_comments.return_value = [_finding(1), _resolution_reply(2, 1)]
+    client.list_review_threads.return_value = [
+        {"id": "PRRT_1", "is_resolved": False, "comment_id": 1}
+    ]
+
+    assert _compact("--comment") == 0
+
+    client.resolve_review_thread.assert_called_once_with("PRRT_1")
+    client.reply_to_review_comment.assert_not_called()
+    provider.generate_structured.assert_not_called()
+
+
+def test_the_retry_skips_threads_already_resolved_and_runs_only_with_comment(client, provider):
+    client.list_review_comments.return_value = [_finding(1), _resolution_reply(2, 1)]
+    client.list_review_threads.return_value = [
+        {"id": "PRRT_1", "is_resolved": True, "comment_id": 1}
+    ]
+    assert _compact("--comment") == 0
+    client.resolve_review_thread.assert_not_called()
+
+    client.list_review_threads.return_value = [
+        {"id": "PRRT_1", "is_resolved": False, "comment_id": 1}
+    ]
+    assert _compact() == 0
+    client.resolve_review_thread.assert_not_called()
+
+
+def test_a_failed_resolve_names_the_missing_permission(client, provider, capsys):
+    client.list_review_comments.return_value = [_finding(1), _resolution_reply(2, 1)]
+    client.list_review_threads.return_value = [
+        {"id": "PRRT_1", "is_resolved": False, "comment_id": 1}
+    ]
+    client.resolve_review_thread.side_effect = GitHubAPIError(
+        200, "Resource not accessible by integration"
+    )
+
+    assert _compact("--comment") == 0
+
+    assert "needs `permissions: contents: write`" in capsys.readouterr().err
