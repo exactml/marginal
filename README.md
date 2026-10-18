@@ -134,6 +134,27 @@ jobs:
 
 Open a PR, and marginal builds context, reasons over the change, and posts inline comments plus a summary — all inside your own GitHub Actions run.
 
+### Check your setup
+
+`marginal doctor` checks everything a review needs, without calling a model or posting anything: that `.marginal/config.yaml` is valid, that `models.reviewer` is set and each configured provider's API key is in the environment, that `permissions` let `marginal review --comment` read the PR and post, and that `GITHUB_TOKEN` is set. With `--repo`, it also makes one read-only GitHub call to confirm the token is accepted and the repository is reachable.
+
+```bash
+marginal doctor --repo owner/name
+```
+
+```text
+✓ .marginal/config.yaml is valid
+✗ models.reviewer: the 'anthropic' provider requires the ANTHROPIC_API_KEY environment variable to be set
+    → export it in your shell, and add it as a repository secret for CI
+✓ permissions allow `marginal review --comment`
+✓ GITHUB_TOKEN is set
+✓ GitHub accepted GITHUB_TOKEN and owner/name is reachable
+
+1 check(s) failed.
+```
+
+It exits 0 when every check passes and 1 when any fails, so it also works as a CI step.
+
 _marginal is under active, in-the-open development — this is the interface it's being built toward. Follow [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) for current scope, or jump into [Issues](https://github.com/exactml/marginal/issues) to help build it._
 
 ## Configuration
