@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
+      contents: write
     steps:
       - uses: exactml/marginal-action@v1
         with:
