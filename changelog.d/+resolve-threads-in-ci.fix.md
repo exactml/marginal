@@ -8,4 +8,4 @@ already replied `✅ Resolved` in but couldn't resolve is resolved on the next
 run, without posting the reply again, and a failed resolve now says which
 permission is missing
 
-([PR-XX](https://github.com/exactml/marginal/pull/XX) by [@exactml](https://github.com/exactml))
+([PR-135](https://github.com/exactml/marginal/pull/135) by [@exactml](https://github.com/exactml))
