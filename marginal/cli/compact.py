@@ -93,13 +93,66 @@ def run_compact(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
         print(f"marginal compact: {exc}", file=sys.stderr)
         return 1
 
+    try:
+        findings, verdicts = close_resolved_findings(
+            client,
+            reviewer_model,
+            pr_number,
+            files,
+            comments,
+            threads,
+            max_prompt_tokens=config.review.max_prompt_tokens,
+            post=comment,
+            log_prefix="marginal compact",
+        )
+    except CompactSkipped as exc:
+        print(f"marginal compact: skipped re-checking: {exc}", file=sys.stderr)
+        return 0
+    except MissingCredentialsError as exc:
+        print(f"marginal compact: {exc}", file=sys.stderr)
+        return 3
+    except (ProviderError, *_GITHUB_ERRORS) as exc:
+        print(f"marginal compact: {exc}", file=sys.stderr)
+        return 1
+
+    if not findings:
+        print(f"{COMPACT_HEADING}\n\nNo open marginal findings on PR #{pr_number}.")
+    else:
+        print("\n".join(_summary_lines(pr_number, findings, verdicts)))
+    return 0
+
+
+class CompactSkipped(Exception):
+    """The re-check prompt is over `review.max_prompt_tokens`; no model was called."""
+
+
+def close_resolved_findings(
+    client: GitHubClient,
+    model_spec: ModelSpec,
+    pr_number: int,
+    files: list[dict[str, object]],
+    comments: list[dict[str, object]],
+    threads: list[dict[str, object]],
+    *,
+    max_prompt_tokens: int,
+    post: bool,
+    log_prefix: str,
+) -> tuple[list[dict[str, object]], dict[object, _Recheck]]:
+    """Re-check marginal's open findings and, with `post`, close the resolved ones.
+
+    Returns the open findings and the verdict for each one the model (or the
+    file-left-the-diff rule) answered. A finding still open gets nothing
+    posted. Raises `CompactSkipped` over budget, `ProviderError` from the
+    model, and GitHub errors from posting a reply; a failed thread resolve is
+    only reported on stderr under `log_prefix`. Shared by `marginal compact`
+    and `marginal review --comment`'s re-check on later pushes.
+    """
     # A thread someone already resolved in GitHub's UI counts as closed too.
     closed_by_hand = {t["comment_id"] for t in threads if t["is_resolved"]}
     thread_ids = {t["comment_id"]: t["id"] for t in threads}
     findings = [c for c in _open_findings(comments) if c["id"] not in closed_by_hand]
     if not findings:
-        print(f"{COMPACT_HEADING}\n\nNo open marginal findings on PR #{pr_number}.")
-        return 0
+        return [], {}
 
     patches = {str(f["filename"]): str(f["patch"]) for f in _redact_patches(files)}
     verdicts = {
@@ -113,39 +166,24 @@ def run_compact(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
     if to_check:
         prompt = _build_recheck_prompt(to_check, patches)
         estimated_tokens = _estimate_tokens(prompt)
-        if estimated_tokens > config.review.max_prompt_tokens:
-            print(
-                f"marginal compact: skipped re-checking: the prompt is an estimated "
-                f"{estimated_tokens:,} tokens, over review.max_prompt_tokens "
-                f"({config.review.max_prompt_tokens:,}), so no model was called",
-                file=sys.stderr,
+        if estimated_tokens > max_prompt_tokens:
+            raise CompactSkipped(
+                f"the prompt is an estimated {estimated_tokens:,} tokens, over "
+                f"review.max_prompt_tokens ({max_prompt_tokens:,}), so no model was called"
             )
-            return 0
-        try:
-            results = asyncio.run(_recheck(reviewer_model, prompt))
-        except MissingCredentialsError as exc:
-            print(f"marginal compact: {exc}", file=sys.stderr)
-            return 3
-        except ProviderError as exc:
-            print(f"marginal compact: {exc}", file=sys.stderr)
-            return 1
+        results = asyncio.run(_recheck(model_spec, prompt))
         asked = {c["id"] for c in to_check}
         verdicts.update({r.id: r for r in results if r.id in asked})
 
-    resolved = [c for c in findings if c["id"] in verdicts and not verdicts[c["id"]].still_applies]
-    print("\n".join(_summary_lines(pr_number, findings, verdicts)))
-
-    if comment:
-        for c in resolved:
-            try:
-                client.reply_to_review_comment(
-                    pr_number,
-                    c["id"],
-                    f"✅ **Resolved**: {verdicts[c['id']].reason}\n\n{RESOLVED_MARKER}",
-                )
-            except _GITHUB_ERRORS as exc:
-                print(f"marginal compact: {exc}", file=sys.stderr)
-                return 1
+    if post:
+        for c in findings:
+            if c["id"] not in verdicts or verdicts[c["id"]].still_applies:
+                continue
+            client.reply_to_review_comment(
+                pr_number,
+                c["id"],
+                f"✅ **Resolved**: {verdicts[c['id']].reason}\n\n{RESOLVED_MARKER}",
+            )
             # Best-effort: the reply already records the resolution, so a token
             # that can't resolve threads costs only the collapse, not the run.
             try:
@@ -153,11 +191,11 @@ def run_compact(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
                     client.resolve_review_thread(thread_ids[c["id"]])
             except _GITHUB_ERRORS as exc:
                 print(
-                    f"marginal compact: replied on {_location(c)} but couldn't resolve "
+                    f"{log_prefix}: replied on {_location(c)} but couldn't resolve "
                     f"its thread: {exc}",
                     file=sys.stderr,
                 )
-    return 0
+    return findings, verdicts
 
 
 def _open_findings(comments: list[dict[str, object]]) -> list[dict[str, object]]:
