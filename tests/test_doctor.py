@@ -127,22 +127,32 @@ def test_unknown_provider_is_reported(repo, tmp_path, capsys):
     assert "✗ models.reviewer: unsupported model provider 'acme'" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize(
-    "permissions, flag",
-    [
-        ("read:\n    pull_requests: false", "permissions.read.pull_requests"),
-        ("write:\n    comments: false", "permissions.write.comments"),
-    ],
-)
-def test_permissions_that_block_review_comment_are_reported(
-    repo, tmp_path, capsys, permissions, flag
-):
-    _write_config(tmp_path, f"version: 1\n{REVIEWER}permissions:\n  {permissions}\n")
+def test_read_pull_requests_off_is_a_failure(repo, tmp_path, capsys):
+    _write_config(
+        tmp_path, f"version: 1\n{REVIEWER}permissions:\n  read:\n    pull_requests: false\n"
+    )
 
     exit_code = main(["doctor"])
 
     assert exit_code == 1
-    assert f"✗ {flag} off, so `marginal review --comment` can't run\n" in capsys.readouterr().out
+    assert (
+        "✗ permissions.read.pull_requests is off, so `marginal review` can't read the PR\n"
+        in capsys.readouterr().out
+    )
+
+
+def test_write_comments_off_is_informational_not_a_failure(repo, tmp_path, capsys):
+    _write_config(tmp_path, f"version: 1\n{REVIEWER}permissions:\n  write:\n    comments: false\n")
+
+    exit_code = main(["doctor"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert (
+        "- permissions.write.comments is off, so `marginal review --comment` can't post "
+        "(fine if you only review locally)\n" in out
+    )
+    assert "All checks passed." in out
 
 
 def test_missing_github_token_skips_the_github_call(repo, monkeypatch, capsys):

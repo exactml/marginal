@@ -26,11 +26,12 @@ def run_doctor(repo: str | None = None, path: str | Path = ".") -> int:
     Checks that `.marginal/config.yaml` exists and is valid, that
     `models.reviewer` is set, that every configured model's provider is
     usable (SDK installed, API key env var set -- no model is called), that
-    the permissions let `marginal review --comment` read the PR and post, that
-    `GITHUB_TOKEN` is set, and, with `repo`, that GitHub accepts the token and
-    the repository is reachable (one read-only request). Nothing is posted.
+    the permissions let `marginal review` read the PR (with only a note when
+    `write.comments` is off), that `GITHUB_TOKEN` is set, and, with `repo`,
+    that GitHub accepts the token and the repository is reachable (one
+    read-only request). Nothing is posted.
 
-    Returns 0 if every check passes (a skipped one doesn't count), else 1.
+    Returns 0 if every check passes (a skipped or noted one doesn't count), else 1.
     """
     failed = 0
     for passed, message, fix in _checks(repo, Path(path)):
@@ -94,19 +95,19 @@ def _model_checks(config: MarginalConfig) -> Iterator[Check]:
 
 
 def _permissions_check(permissions: PermissionsConfig) -> Check:
-    off = [
-        name
-        for name, allowed in (
-            ("permissions.read.pull_requests", permissions.read.pull_requests),
-            ("permissions.write.comments", permissions.write.comments),
-        )
-        if not allowed
-    ]
-    if off:
+    if not permissions.read.pull_requests:
         return (
             False,
-            f"{' and '.join(off)} off, so `marginal review --comment` can't run",
+            "permissions.read.pull_requests is off, so `marginal review` can't read the PR",
             "set it to true in .marginal/config.yaml",
+        )
+    if not permissions.write.comments:
+        # Not a failure: reviewing locally without --comment never posts.
+        return (
+            None,
+            "permissions.write.comments is off, so `marginal review --comment` can't post "
+            "(fine if you only review locally)",
+            None,
         )
     return True, "permissions allow `marginal review --comment`", None
 
