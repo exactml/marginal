@@ -136,7 +136,7 @@ Open a PR, and marginal builds context, reasons over the change, and posts inlin
 
 ### Check your setup
 
-`marginal doctor` checks everything a review needs, without calling a model or posting anything: that `.marginal/config.yaml` is valid, that `models.reviewer` is set and each configured provider's API key is in the environment, that `permissions` let `marginal review --comment` read the PR and post, and that `GITHUB_TOKEN` is set. With `--repo`, it also makes one read-only GitHub call to confirm the token is accepted and the repository is reachable.
+`marginal doctor` checks everything a review needs, without calling a model or posting anything: that `.marginal/config.yaml` is valid, that `models.reviewer` is set and each configured provider's API key is in the environment, that `permissions` let `marginal review` read the PR, and that `GITHUB_TOKEN` is set. If `permissions.write.comments` is off it prints a note rather than a failure, since `--comment` is only needed to post. With `--repo`, it also makes one read-only GitHub call to confirm the token is accepted and the repository is reachable.
 
 ```bash
 marginal doctor --repo owner/name
