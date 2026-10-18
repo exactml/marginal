@@ -2,6 +2,101 @@
 
 <!-- towncrier release notes start -->
 
+## marginal v0.2.8, 2026-10-18
+
+### Breaking Changes
+
+### New Features
+
+- New `marginal doctor` command checks your setup before the first review: that
+  `.marginal/config.yaml` is valid, that `models.reviewer` is set and each
+  configured provider's API key is in the environment, that `permissions` let
+  `marginal review` read the PR, and that `GITHUB_TOKEN` is set. With
+  `--repo owner/name` it also makes one read-only GitHub call to confirm the
+  token is accepted and the repository is reachable. It never calls a model or
+  posts anything. Each check prints one ✓/✗ line with a fix under each failure;
+  `permissions.write.comments` being off is only noted, since you need it just to
+  post with `--comment`. The command exits 0 only when every check passes, else 1
+
+  ([ISSUE-45](https://github.com/exactml/marginal/issues/45),
+  [PR-129](https://github.com/exactml/marginal/pull/129) by [@exactml](https://github.com/exactml))
+
+- New `anti_policies` config key: a list of Markdown files describing
+  deliberate trade-offs marginal must never flag, such as "a +/-1 line dedup
+  window is intended". `marginal review` adds their content to the reviewer
+  prompt as its own "never flag" section, separate from `policies`' "check for"
+  guidance. A missing file is skipped with a warning, the same as a missing
+  policy file. With no anti-policies configured, the prompt is unchanged. This
+  is guidance to the model, not a filter on its findings.
+
+  ([ISSUE-46](https://github.com/exactml/marginal/issues/46),
+  [PR-126](https://github.com/exactml/marginal/pull/126) by [@exactml](https://github.com/exactml))
+
+- New `ollama` provider runs reviews on a model you host yourself, so no code
+  leaves your network. Set `models.reviewer` to `provider: ollama` and a local
+  model name; it needs no API key and talks to `http://localhost:11434/v1` unless
+  the new optional `base_url` field points it elsewhere. It uses Ollama's
+  OpenAI-compatible API, so other compatible servers such as vLLM work too.
+  `base_url` also works for the `anthropic` and `openai` providers, for a proxy
+  or a self-hosted OpenAI-compatible endpoint that still needs a key. Install
+  with `pip install 'marginal-review[ollama]'`
+
+  ([ISSUE-48](https://github.com/exactml/marginal/issues/48),
+  [PR-130](https://github.com/exactml/marginal/pull/130) by [@exactml](https://github.com/exactml))
+
+- New opt-in `review.self_reflect` setting (off by default): after the reviewer
+  model proposes its findings, marginal sends them back to the same model with
+  the diff for a second look before any filtering. The model drops a finding
+  that the diff doesn't support, that a comment marks as an intended trade-off,
+  or that repeats another finding, and may lower the confidence of the rest --
+  never raise it, so the second look can only keep a finding out -- and
+  `confidence_threshold` and `max_comments` act on that second-look confidence.
+  It costs one extra model call per review that found anything. If that call
+  fails or its prompt is over `review.max_prompt_tokens`, the findings go on
+  unchanged and the review still succeeds
+
+  ([ISSUE-72](https://github.com/exactml/marginal/issues/72),
+  [PR-127](https://github.com/exactml/marginal/pull/127) by [@exactml](https://github.com/exactml))
+
+- `marginal review --comment` now re-checks marginal's earlier findings on
+  every later push, the same way `marginal compact --comment` does: a finding
+  the push fixed gets a `✅ Resolved: <reason>` reply and its thread resolved,
+  and a finding still there gets nothing posted. It runs only once marginal has
+  already reviewed the PR, so the first review costs nothing extra, and it costs
+  one extra model call per push only while earlier findings are still open.
+  It's best-effort: if the re-check fails, the review is unaffected and only a
+  line is logged to stderr; stdout, including `--format json`, is unchanged
+
+  ([PR-125](https://github.com/exactml/marginal/pull/125) by [@exactml](https://github.com/exactml))
+
+### Improvements
+
+- When a person says one of marginal's inline findings is wrong, marginal now
+  closes it and credits them: it replies `✅ Resolved: @alice says this isn't an
+  issue ("…"), so marginal is closing it.` and resolves the thread. The person
+  can answer in the finding's own thread or in an ordinary PR comment; the
+  model matches each open finding against the human replies in its thread and
+  the human PR comments posted after it, so an unrelated comment such as "LGTM"
+  or a question closes nothing, and a dismissal only counts if it names one of
+  those comments. This runs wherever marginal re-checks open findings: in
+  `marginal compact` and on every later `marginal review --comment`
+
+  ([PR-128](https://github.com/exactml/marginal/pull/128) by [@exactml](https://github.com/exactml))
+
+### Fixes
+
+- `marginal review --comment` no longer fails, and no longer loses every
+  finding, when the model pins one finding to a line outside the diff. GitHub
+  only accepts inline comments on lines inside the diff's hunks and rejects the
+  whole review (`GitHub API error 422`) over a single one placed anywhere else,
+  so the run exited 1 and posted nothing. A finding on such a line, or in a
+  file GitHub shows no patch for, is now posted in the review body with its
+  `file:line`, like a finding with no line
+
+  ([PR-132](https://github.com/exactml/marginal/pull/132) by [@exactml](https://github.com/exactml))
+
+### Warnings
+
 ## marginal v0.2.7, 2026-10-17
 
 ### Breaking Changes
