@@ -63,6 +63,11 @@ class GitHubClient:
 
     # -- reads ---------------------------------------------------------------
 
+    def get_repository(self) -> dict[str, object]:
+        """Return the repository's metadata -- a cheap, read-only reachability check."""
+        self._require_read("repository")
+        return self._request("GET", f"/repos/{self._repo}")
+
     def get_pull_request(self, number: int) -> dict[str, object]:
         """Return the pull request's title, body, base/head SHAs, and state."""
         self._require_read("pull_requests")

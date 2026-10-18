@@ -79,6 +79,26 @@ def test_get_pull_request_files_denied_without_read_permission(monkeypatch):
     session.request.assert_not_called()
 
 
+def test_get_repository_fetches_the_repo(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = _response(200, {"full_name": "acme/widgets"})
+
+    assert _client(session=session).get_repository() == {"full_name": "acme/widgets"}
+    args, _ = session.request.call_args
+    assert args == ("GET", "https://api.github.com/repos/acme/widgets")
+
+
+def test_get_repository_denied_without_read_repository(monkeypatch):
+    monkeypatch.delenv(GITHUB_TOKEN_ENV_VAR, raising=False)
+    session = MagicMock()
+    client = _client(PermissionsConfig(read=PermissionsRead(repository=False)), session)
+
+    with pytest.raises(PermissionDeniedError, match="permissions.read.repository"):
+        client.get_repository()
+    session.request.assert_not_called()
+
+
 # -- write permission gating -----------------------------------------------
 
 
