@@ -7,4 +7,4 @@ one extra model call per push only while earlier findings are still open.
 It's best-effort: if the re-check fails, the review is unaffected and only a
 line is logged to stderr; stdout, including `--format json`, is unchanged
 
-([PR-XX](https://github.com/exactml/marginal/pull/XX) by [@exactml](https://github.com/exactml))
+([PR-125](https://github.com/exactml/marginal/pull/125) by [@exactml](https://github.com/exactml))
