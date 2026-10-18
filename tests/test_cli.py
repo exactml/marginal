@@ -40,7 +40,7 @@ from marginal.github.errors import (
     PermissionDeniedError,
 )
 from marginal.graph import CallSite, ChangedDefinition, Definition
-from marginal.providers.errors import MissingCredentialsError
+from marginal.providers.errors import MissingCredentialsError, ProviderResponseError
 from marginal.review import Finding, Severity
 from marginal.review.dedup import finding_fingerprint, fingerprint_marker
 from marginal.review.replies import ReplyThread
@@ -229,9 +229,11 @@ def mock_github_client():
 
 @pytest.fixture
 def mock_provider():
-    """Patch `marginal.cli.review.get_provider`, yielding the function mock."""
+    """Patch `get_provider` for review and for the compact re-check it runs on
+    later pushes, yielding the one function mock both use."""
     with patch("marginal.cli.review.get_provider") as mock_get_provider:
-        yield mock_get_provider
+        with patch("marginal.cli.compact.get_provider", mock_get_provider):
+            yield mock_get_provider
 
 
 def _pull_request(title="Fix flaky retry logic", state="open"):
@@ -1732,7 +1734,10 @@ def _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider
     ]
     client.list_reviews.return_value = [{"body": c.args[1]} for c in posted]
     client.list_review_comments.return_value = [
-        {"body": comment["body"]} for c in posted for comment in c.kwargs["comments"]
+        {"id": i, "body": comment["body"], "path": comment["path"], "line": comment["line"]}
+        for i, comment in enumerate(
+            (comment for c in posted for comment in c.kwargs["comments"]), start=1
+        )
     ]
     mock_provider.return_value.generate_structured = AsyncMock(
         return_value=_FindingsResponse(findings=findings)
@@ -1834,7 +1839,8 @@ def test_rerun_json_reports_no_comment_posted_when_everything_was_skipped(
     client.create_review.reset_mock()
     client.list_reviews.return_value = [{"body": first_post.args[1]}]
     client.list_review_comments.return_value = [
-        {"body": c["body"]} for c in first_post.kwargs["comments"]
+        {"id": i, "body": c["body"], "path": c["path"], "line": c["line"]}
+        for i, c in enumerate(first_post.kwargs["comments"], start=1)
     ]
     exit_code = main(
         ["review", "--repo", "acme/widgets", "--pr", "42", "--comment", "--format", "json"]
@@ -2294,3 +2300,146 @@ def test_review_over_the_prompt_budget_gives_no_verdict(
     out = capsys.readouterr().out
     assert "⚠️ **Review skipped**" in out
     assert "No issues found" not in out
+
+
+# -- review: re-checking earlier findings on later pushes -------------------
+
+
+def _earlier_finding_comment(id=1, line=2):
+    body = _build_inline_comments(
+        [_finding_at(line, "This sleep blocks the async retry loop.")],
+        {"marginal/retry.py": _RETRY_PATCH},
+    )[0]["body"]
+    return {"id": id, "body": body, "path": "marginal/retry.py", "line": line}
+
+
+def _rereview(
+    tmp_path,
+    monkeypatch,
+    mock_github_client,
+    mock_provider,
+    *,
+    still_applies,
+    earlier_review=True,
+    recheck_error=None,
+    extra_args=(),
+):
+    """Run `marginal review --comment` on a PR where marginal flagged line 2
+    before, with the model generating no new findings and answering the
+    re-check of that earlier finding with `still_applies`."""
+    from marginal.cli.compact import _Recheck, _RecheckResponse
+
+    _write_reviewer_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py", "patch": _RETRY_PATCH}
+    ]
+    client.list_reviews.return_value = (
+        [{"body": f"{REVIEW_HEADING}\n\nearlier"}] if earlier_review else []
+    )
+    client.list_review_comments.return_value = [_earlier_finding_comment()]
+    client.list_review_threads.return_value = [
+        {"id": "PRRT_1", "is_resolved": False, "comment_id": 1}
+    ]
+
+    async def generate(prompt, schema):
+        if schema is _FindingsResponse:
+            return _FindingsResponse(findings=[])
+        if recheck_error:
+            raise recheck_error
+        return _RecheckResponse(
+            results=[_Recheck(id=1, still_applies=still_applies, reason="Checked the diff.")]
+        )
+
+    mock_provider.return_value.generate_structured = AsyncMock(side_effect=generate)
+    return main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment", *extra_args])
+
+
+def test_rereview_closes_an_earlier_finding_the_push_fixed(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    client = mock_github_client.return_value
+
+    assert (
+        _rereview(tmp_path, monkeypatch, mock_github_client, mock_provider, still_applies=False)
+        == 0
+    )
+
+    client.reply_to_review_comment.assert_called_once()
+    assert client.reply_to_review_comment.call_args.args[:2] == (42, 1)
+    client.resolve_review_thread.assert_called_once_with("PRRT_1")
+    assert "re-checked 1 earlier finding(s): 1 resolved, 0 still open" in capsys.readouterr().err
+
+
+def test_rereview_writes_nothing_for_an_earlier_finding_still_there(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    client = mock_github_client.return_value
+
+    assert (
+        _rereview(tmp_path, monkeypatch, mock_github_client, mock_provider, still_applies=True) == 0
+    )
+
+    client.reply_to_review_comment.assert_not_called()
+    client.resolve_review_thread.assert_not_called()
+    assert "0 resolved, 1 still open" in capsys.readouterr().err
+
+
+def test_first_review_does_not_recheck_anything(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    client = mock_github_client.return_value
+
+    assert (
+        _rereview(
+            tmp_path,
+            monkeypatch,
+            mock_github_client,
+            mock_provider,
+            still_applies=False,
+            earlier_review=False,
+        )
+        == 0
+    )
+
+    client.list_review_threads.assert_not_called()
+    client.reply_to_review_comment.assert_not_called()
+    # Only the review's own generation call -- no re-check call.
+    assert mock_provider.return_value.generate_structured.await_count == 1
+
+
+def test_a_failed_recheck_never_fails_the_review(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    client = mock_github_client.return_value
+
+    exit_code = _rereview(
+        tmp_path,
+        monkeypatch,
+        mock_github_client,
+        mock_provider,
+        still_applies=False,
+        recheck_error=ProviderResponseError("bad output"),
+    )
+
+    assert exit_code == 0
+    client.reply_to_review_comment.assert_not_called()
+    assert "couldn't re-check earlier findings: bad output" in capsys.readouterr().err
+
+
+def test_rereview_json_stdout_stays_one_object(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    exit_code = _rereview(
+        tmp_path,
+        monkeypatch,
+        mock_github_client,
+        mock_provider,
+        still_applies=False,
+        extra_args=("--format", "json"),
+    )
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["pr_number"] == 42

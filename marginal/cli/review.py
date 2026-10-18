@@ -345,6 +345,17 @@ def run_review(
         except (PermissionDeniedError, GitHubAuthenticationError, GitHubAPIError) as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
             return 1
+        # Each later push also re-checks what marginal flagged before; only a
+        # resolved finding gets anything posted.
+        if already_reviewed and reviewed:
+            _close_resolved_findings(
+                client,
+                reviewer_model,
+                config.review.max_prompt_tokens,
+                pr_number,
+                files,
+                review_comments,
+            )
 
     if output_format == "json":
         result = _build_json_result(
@@ -360,6 +371,43 @@ def run_review(
         print(json.dumps(result, indent=2))
 
     return 0
+
+
+def _close_resolved_findings(
+    client: GitHubClient,
+    model_spec: ModelSpec,
+    max_prompt_tokens: int,
+    pr_number: int,
+    files: list[dict[str, object]],
+    review_comments: list[dict[str, object]],
+) -> None:
+    """Best-effort `marginal compact --comment` for a re-review: logs one line
+    to stderr and never fails the review or touches stdout."""
+    # Imported here: `marginal.cli.compact` imports helpers from this module.
+    from marginal.cli.compact import CompactSkipped, close_resolved_findings
+
+    try:
+        findings, verdicts = close_resolved_findings(
+            client,
+            model_spec,
+            pr_number,
+            files,
+            review_comments,
+            client.list_review_threads(pr_number),
+            max_prompt_tokens=max_prompt_tokens,
+            post=True,
+            log_prefix="marginal review",
+        )
+    except (CompactSkipped, ProviderError, GitHubAPIError, PermissionDeniedError) as exc:
+        print(f"marginal review: couldn't re-check earlier findings: {exc}", file=sys.stderr)
+        return
+    if findings:
+        resolved = sum(1 for v in verdicts.values() if not v.still_applies)
+        print(
+            f"marginal review: re-checked {len(findings)} earlier finding(s): "
+            f"{resolved} resolved, {len(findings) - resolved} still open",
+            file=sys.stderr,
+        )
 
 
 def _base_lines(
