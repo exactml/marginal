@@ -6,4 +6,4 @@ so the run exited 1 and posted nothing. A finding on such a line, or in a
 file GitHub shows no patch for, is now posted in the review body with its
 `file:line`, like a finding with no line
 
-([PR-XX](https://github.com/exactml/marginal/pull/XX) by [@exactml](https://github.com/exactml))
+([PR-132](https://github.com/exactml/marginal/pull/132) by [@exactml](https://github.com/exactml))
