@@ -1,4 +1,4 @@
-import time
+import asyncio
 
 
 async def fetch_with_retry(session, url, attempts=5):
@@ -6,5 +6,5 @@ async def fetch_with_retry(session, url, attempts=5):
         try:
             return await session.get(url)
         except Exception:
-            time.sleep(2**attempt)
+            await asyncio.sleep(2**attempt)
     return None
