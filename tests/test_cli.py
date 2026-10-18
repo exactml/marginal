@@ -78,6 +78,19 @@ def test_init_next_steps_name_both_providers_without_picking_one(tmp_path, capsy
     assert "provider: anthropic    # or: openai" in out
 
 
+def test_init_workflow_can_resolve_review_threads(tmp_path):
+    """GitHub refuses resolveReviewThread to an Actions token without
+    contents: write ("Resource not accessible by integration")."""
+    main(["init", str(tmp_path)])
+
+    workflow = yaml.safe_load((tmp_path / ".github" / "workflows" / "marginal.yml").read_text())
+
+    assert workflow["jobs"]["review"]["permissions"] == {
+        "pull-requests": "write",
+        "contents": "write",
+    }
+
+
 def test_init_workflow_passes_both_provider_keys(tmp_path):
     main(["init", str(tmp_path)])
 

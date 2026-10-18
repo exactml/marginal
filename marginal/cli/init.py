@@ -49,6 +49,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
+      # Resolving a review thread (marginal closes ones a later push fixed)
+      # needs contents: write; marginal never pushes.
+      contents: write
     steps:
       - uses: exactml/marginal-action@v1
         with:
