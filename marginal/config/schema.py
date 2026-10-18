@@ -38,6 +38,10 @@ class ReviewConfig(BaseModel):
     # huge prompt is skipped rather than paid for. Strict so a stray `true` or
     # `"100k"` is a config error instead of being coerced into a number.
     max_prompt_tokens: int = Field(default=100_000, gt=0, strict=True)
+    # Opt-in: a second model call that re-scores or drops findings before
+    # `confidence_threshold` and `max_comments` apply. Strict for the same
+    # reason as `max_prompt_tokens`: it spends the user's API key.
+    self_reflect: bool = Field(default=False, strict=True)
     tone: ReviewTone = ReviewTone.CONCISE
 
 

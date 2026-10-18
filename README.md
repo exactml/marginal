@@ -161,6 +161,7 @@ review:
   confidence_threshold: 0.85
   max_comments: 8
   max_prompt_tokens: 100000  # estimated; over this, the model is never called
+  self_reflect: false  # true: a second model call re-checks findings before they're filtered
   tone: concise
 
 context:

@@ -70,6 +70,7 @@ def test_missing_config_returns_defaults(tmp_path):
     assert config.review.confidence_threshold == 0.85
     assert config.review.max_comments == 8
     assert config.review.max_prompt_tokens == 100_000
+    assert config.review.self_reflect is False
     assert config.review.tone == ReviewTone.CONCISE
     assert config.context.cross_repository is False
     assert config.ownership.notify_responsible is False
@@ -193,6 +194,20 @@ def test_default_permissions_follow_least_privilege():
     assert permissions.write.approve is False
     assert permissions.write.push is False
     assert permissions.write.merge is False
+
+
+def test_self_reflect_can_be_turned_on(tmp_path):
+    write_config(tmp_path, "review:\n  self_reflect: true\n")
+
+    assert load_config(tmp_path).review.self_reflect is True
+
+
+@pytest.mark.parametrize("self_reflect", ["1", "'true'", "maybe"])
+def test_invalid_self_reflect_is_rejected(tmp_path, self_reflect):
+    write_config(tmp_path, f"review:\n  self_reflect: {self_reflect}\n")
+
+    with pytest.raises(ConfigValidationError, match="review.self_reflect"):
+        load_config(tmp_path)
 
 
 def test_max_prompt_tokens_can_be_overridden(tmp_path):
