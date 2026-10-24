@@ -165,7 +165,7 @@ _marginal is under active, in-the-open development. Jump into [Issues](https://g
 |---|---|
 | [`marginal-review`](https://pypi.org/project/marginal-review/) | This repo, on PyPI. The `marginal` CLI: `init`, `review`, `compact`, `doctor`. Install with `pip install marginal-review`. |
 | [`marginal-action`](https://github.com/exactml/marginal-action) | The GitHub Action that installs `marginal-review` and runs `marginal review --comment` on each pull request. `marginal init` sets it up for you. |
-| [`marginal-client`](https://github.com/exactml/marginal-client) | A small sample app with marginal installed exactly as this README describes. Every release is checked on real pull requests there, so its PRs show what marginal's reviews look like. |
+| [`marginal-client`](https://github.com/exactml/marginal-client) | A small sample app set up with `marginal init`, where marginal's latest `master` reviews real pull requests before each release. Its PRs show what marginal's reviews look like. |
 
 ## Configuration
 
