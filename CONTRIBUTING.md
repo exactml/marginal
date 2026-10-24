@@ -67,6 +67,28 @@ CI fails a PR that adds no fragment. For a change users won't notice (a
 typo fix, a CI tweak, a test-only refactor), a maintainer can add the
 `skip-changelog` label instead.
 
+## Before asking for a merge: prove it
+
+A PR is ready when there's evidence it works, not just a claim. Add an
+**Evidence** section to the PR body covering:
+
+| Check | Evidence |
+|---|---|
+| CI | every check green (`lint-and-test`, `fragment`, `review`) |
+| Tests | `make lint && make test` output |
+| marginal | each of marginal's findings on the PR is fixed or answered in its thread, none left open |
+| Cleanup | a pass over the diff for dead code and needless complexity, each point applied or dismissed |
+| E2E | for changes to what a team sees on a PR: a real review on [marginal-client](https://github.com/exactml/marginal-client) with your branch (a maintainer runs this if you lack access) |
+
+With [Claude Code](https://claude.com/claude-code), the `prove-it` skill in
+`.claude/skills/` runs every check and writes the section for you:
+
+```text
+/prove-it #123
+```
+
+The evidence is tied to the PR's latest commit, so run it again after a push.
+
 ## Package layout
 
 ```text
