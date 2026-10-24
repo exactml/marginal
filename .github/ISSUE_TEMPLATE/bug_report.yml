@@ -1,0 +1,43 @@
+name: Bug report
+description: marginal did something wrong or crashed
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: marginal version
+      description: Output of `pip show marginal-review | grep Version`, or the marginal-action tag you use.
+      placeholder: "0.2.8"
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Model provider
+      options: [anthropic, openai, ollama]
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The command you ran (or the workflow that ran it) and anything in `.marginal/config.yaml` that matters.
+      placeholder: |
+        1. marginal review --pr 12 --comment
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Paste the output or error. Remove any API keys or tokens first.
+      render: text
+    validations:
+      required: true
