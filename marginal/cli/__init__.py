@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 from typing import get_args
 
 from marginal.cli.compact import run_compact
@@ -16,9 +16,12 @@ from marginal.cli.review import OutputFormat, run_review
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="marginal")
-    parser.add_argument(
-        "--version", action="version", version=f"marginal {version('marginal-review')}"
-    )
+    try:
+        installed = version("marginal-review")
+    except PackageNotFoundError:
+        # Running from a checkout that isn't pip-installed; don't break every command.
+        installed = "unknown"
+    parser.add_argument("--version", action="version", version=f"marginal {installed}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init_parser = subparsers.add_parser("init", help="Scaffold a repository for marginal")
