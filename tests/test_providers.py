@@ -49,6 +49,14 @@ def test_require_env_raises_when_missing(monkeypatch):
         require_env("SOME_API_KEY", provider="acme")
 
 
+@pytest.mark.parametrize("value", ["", "  "])
+def test_require_env_says_when_the_variable_is_set_but_empty(monkeypatch, value):
+    monkeypatch.setenv("SOME_API_KEY", value)
+
+    with pytest.raises(MissingCredentialsError, match="SOME_API_KEY, but it is empty"):
+        require_env("SOME_API_KEY", provider="acme")
+
+
 # -- factory --------------------------------------------------------------
 
 
