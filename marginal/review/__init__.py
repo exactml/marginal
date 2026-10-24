@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from marginal.review.redact import redact_secrets
 
@@ -30,6 +31,22 @@ class Finding(BaseModel):
     severity: Severity
     confidence: float = Field(ge=0.0, le=1.0)
     message: str
+
+    @field_validator("message")
+    @classmethod
+    def _strip_leaked_structure(cls, message: str) -> str:
+        """Drop a trailing fragment of the tool call itself, which a model can
+        write into the string (seen: `...fractional cents.', 'file'] ,`)."""
+        return _LEAKED_STRUCTURE.sub("", message) or message
+
+
+# A closing quote, comma, a quoted field name, then only punctuation that
+# closes a list/object to the end. shortcut: matches the shapes seen so far;
+# widen it if a leak with a letter after the field name (`'severity': 'high'}`) shows up.
+_LEAKED_STRUCTURE = re.compile(
+    r"""\s*['"]\s*,\s*['"](?:file|line|severity|confidence|message)['"]?"""
+    r"""[^A-Za-z]*[\]}][^A-Za-z]*$"""
+)
 
 
 def filter_findings(

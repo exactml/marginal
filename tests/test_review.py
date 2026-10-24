@@ -52,6 +52,22 @@ def test_filter_findings_drops_low_confidence_before_capping():
     assert result == [kept]
 
 
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        (
+            "Will undercharge on fractional cents.', 'file'] ,",
+            "Will undercharge on fractional cents.",
+        ),
+        ('Off by one.", "line": 12}', "Off by one."),
+        ("The 'file' argument is unused.", "The 'file' argument is unused."),
+        ("Call `open('a', 'file')` instead.", "Call `open('a', 'file')` instead."),
+    ],
+)
+def test_finding_message_drops_a_leaked_tool_call_fragment(message, expected):
+    assert _finding(0.9, message=message).message == expected
+
+
 # -- redact_secrets --------------------------------------------------------
 
 
