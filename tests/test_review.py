@@ -61,6 +61,7 @@ def test_filter_findings_drops_low_confidence_before_capping():
         ),
         ('Off by one.", "line": 12}', "Off by one."),
         ("The 'file' argument is unused.", "The 'file' argument is unused."),
+        ("Wrong key, see 'line'],", "Wrong key, see 'line'],"),
         ("Call `open('a', 'file')` instead.", "Call `open('a', 'file')` instead."),
     ],
 )
