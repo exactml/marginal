@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from importlib.metadata import version
 from typing import get_args
 
 from marginal.cli.compact import run_compact
@@ -15,6 +16,9 @@ from marginal.cli.review import OutputFormat, run_review
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="marginal")
+    parser.add_argument(
+        "--version", action="version", version=f"marginal {version('marginal-review')}"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init_parser = subparsers.add_parser("init", help="Scaffold a repository for marginal")

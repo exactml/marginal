@@ -37,3 +37,13 @@ def test_help_unknown_command_exits_nonzero():
         main(["help", "not-a-command"])
 
     assert excinfo.value.code == 2
+
+
+def test_version_flag_prints_the_installed_version(capsys):
+    from importlib.metadata import version
+
+    with pytest.raises(SystemExit) as exc:
+        main(["--version"])
+
+    assert exc.value.code == 0
+    assert capsys.readouterr().out == f"marginal {version('marginal-review')}\n"
