@@ -39,8 +39,11 @@ _GENERIC_ASSIGNMENT = re.compile(
 
 
 # The `user:password@` part of a URL (`https://user:pass@mlflow.acme.io`).
-# Requires the `:` so a bare `user@` or a credential-free URL is left alone.
-_URL_CREDENTIALS = re.compile(r"(?P<scheme>\b[A-Za-z][A-Za-z0-9+.-]*://)[^\s/@:'\"]+:[^\s/@'\"]+@")
+# Requires the `:` so a bare `user@` or a credential-free URL is left alone;
+# `?`/`#` can't appear raw in a password, so a query's `@` doesn't match.
+_URL_CREDENTIALS = re.compile(
+    r"(?P<scheme>\b[A-Za-z][A-Za-z0-9+.-]*://)[^\s/@:'\"]+:[^\s/@?#'\"]+@"
+)
 
 
 def _redact_generic_assignment(match: re.Match[str]) -> str:

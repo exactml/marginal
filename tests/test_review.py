@@ -114,6 +114,7 @@ def test_redact_secrets_masks_credentials_inside_a_url(line, expected):
         '+url = "https://mlflow.acme.io/api"',
         '+url = "https://git@github.com/acme/shop"',
         '+url = "http://localhost:8080/health"',
+        '+url = "http://localhost:8080?email=a@b.com"',
     ],
 )
 def test_redact_secrets_leaves_a_url_without_credentials_alone(line):
