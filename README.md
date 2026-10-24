@@ -2,7 +2,7 @@
 <h3 align="center" style="border-bottom: none">The Open Source Engineering Intelligence Agent for Pull Requests</h3>
 
 <p align="center">
-marginal reviews pull requests the way a senior engineer who knows your whole codebase would — not just the diff. It reasons over your code graph, git history, engineering policies, ownership, and cross-repository impact to produce <b>high-confidence, actionable feedback</b>, and it runs entirely on infrastructure you control.
+marginal reviews pull requests the way a senior engineer who knows your codebase would — not just the diff. It reads the code your change touches, checks it against the rules your team has written down, and posts only <b>high-confidence, actionable feedback</b>, running entirely on infrastructure you control.
 </p>
 
 <div align="center">
@@ -14,9 +14,9 @@ marginal reviews pull requests the way a senior engineer who knows your whole co
 </div>
 
 <p align="center">
-   <a href="docs/REQUIREMENTS.md"><strong>Specification</strong></a> ·
+   <a href="#quickstart"><strong>Quickstart</strong></a> ·
+   <a href="#the-marginal-family"><strong>Packages</strong></a> ·
    <a href="#configuration"><strong>Configuration</strong></a> ·
-   <a href="#roadmap"><strong>Roadmap</strong></a> ·
    <a href="#contributing"><strong>Contributing</strong></a>
 </p>
 
@@ -24,53 +24,49 @@ marginal reviews pull requests the way a senior engineer who knows your whole co
 
 ## Why marginal
 
-Diff-only review tools comment on what changed without understanding what it touches. They miss the breaking change in a shared library three repos away, the architecture rule a new handler quietly violates, the technical debt a PR is about to make worse. And most of them require sending your source code to someone else's inference service.
+Diff-only review tools comment on what changed without understanding what it touches. They miss the caller in another file that a signature change just broke, or the rule a new handler quietly violates. And most of them require sending your source code to someone else's inference service.
 
 marginal is built around a different bet: **context beats volume**. One well-evidenced finding that traces a regression to its root cause is worth more than ten shallow comments — and a reviewer that runs on your own infrastructure, with your own model keys, is one you can actually trust with your whole codebase.
 
 ## How it works
 
 ```text
-                    GitHub
-                      |
-               GitHub Actions
+         pull request (GitHub Actions)
                       |
                       v
-              +---------------+
-              |   marginal    |
-              |     Agent     |
-              +-------+-------+
+        +---------------------------+
+        |     diff (lockfiles and   |
+        |   ignore_paths left out,  |
+        |    secrets redacted)      |
+        +-------------+-------------+
                       |
         +-------------+-------------+
         |             |             |
         v             v             v
-   Code Graph     Policy Engine   Git Context
+   Code graph      Policies    Earlier replies
+ (callers outside  & anti-     on marginal's
+   the diff)       policies    own comments
         |             |             |
         +-------------+-------------+
                       |
-                Agent / Planner
-                      |
-             +--------+--------+
-             |                 |
-             v                 v
-        Model Provider     Validation
-        (BYOK)             / Deduplication
-             |                 |
-             +--------+--------+
+                      v
+            Your model (BYOK or local)
                       |
                       v
-                 GitHub PR
+     confidence threshold · comment cap · dedup
+                      |
+                      v
+       inline comments + summary on the PR
 ```
 
-The agent inspects the PR, walks the code graph, checks it against your policies and ownership rules, and pulls in git history and dependency context — then validates, deduplicates, and ranks every candidate finding before anything reaches GitHub. Nothing ships to a comment unless it clears your confidence threshold.
+marginal builds one prompt from the diff and the context around it, asks your model for structured findings, and keeps only the ones that clear your confidence threshold. On later pushes it checks its earlier findings again and resolves the ones the new code fixed.
 
 ## What it reviews for
 
-- **Context over diff** — changed code is understood in terms of callers, callees, interfaces, tests, and the repositories that depend on it, not in isolation.
-- **Breaking changes** — signature changes, removed fields, schema changes, and incompatible library updates, flagged with the affected consumers as evidence.
-- **Dependency intelligence** — when a PR bumps a dependency, marginal correlates the upstream changelog against how your code actually uses it, and only speaks up when something you rely on actually changed.
-- **Architecture & policy drift** — deviations from the rules your team has written down in `.marginal/policies/`, evaluated against real repository relationships, not vibes.
-- **Ownership & technical debt** — findings are connected to CODEOWNERS and known debt items, without pinging anyone unless you've explicitly enabled it.
+- **Context over diff** — when a PR changes a function, marginal finds its callers outside the diff and shows them to the model, so a change that breaks one of them is flagged with that caller as evidence. (The caller index covers Python today.)
+- **Your team's rules** — Markdown policies in `.marginal/policies/` are checked against every diff, and anti-policies list the deliberate tradeoffs marginal must never re-litigate.
+- **Quiet by design** — a confidence threshold and a comment cap, no repeated findings across pushes, findings closed once a later push fixes them, and a maintainer's reply taken into account on the next review.
+- **Team-friendly defaults** — drafts, bot PRs, and PRs labelled `skip-review` are skipped, and lockfiles and minified assets never reach the model.
 
 ## Quickstart
 
@@ -161,7 +157,15 @@ marginal doctor --repo owner/name
 
 It exits 0 when every check passes and 1 when any fails, so it also works as a CI step.
 
-_marginal is under active, in-the-open development — this is the interface it's being built toward. Follow [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) for current scope, or jump into [Issues](https://github.com/exactml/marginal/issues) to help build it._
+_marginal is under active, in-the-open development. Jump into [Issues](https://github.com/exactml/marginal/issues) to help build it._
+
+## The marginal family
+
+| Package | What it is |
+|---|---|
+| [`marginal-review`](https://pypi.org/project/marginal-review/) | This repo, on PyPI. The `marginal` CLI: `init`, `review`, `compact`, `doctor`. Install with `pip install marginal-review`. |
+| [`marginal-action`](https://github.com/exactml/marginal-action) | The GitHub Action that installs `marginal-review` and runs `marginal review --comment` on each pull request. `marginal init` sets it up for you. |
+| [`marginal-client`](https://github.com/exactml/marginal-client) | A small sample app with marginal installed exactly as this README describes. Every release is checked on real pull requests there, so its PRs show what marginal's reviews look like. |
 
 ## Configuration
 
@@ -221,7 +225,7 @@ anti_policies:   # deliberate tradeoffs marginal must never flag
   - .marginal/anti-policies/accepted-tradeoffs.md
 ```
 
-API keys are never stored in configuration — only in your CI secrets or environment. See the full [specification](docs/REQUIREMENTS.md) for every option.
+API keys are never stored in configuration — only in your CI secrets or environment. `marginal init` writes every option with its default.
 
 ### Local models (Ollama)
 
@@ -242,27 +246,14 @@ models:
 The same core agent runs as:
 
 - **GitHub Actions** — the primary integration, zero infrastructure to operate
-- **Docker** — one image, the full runtime
 - **CLI** — `marginal review` for local runs
 - **Self-hosted runners** — for orgs that need everything on their own network
 
 No step requires code to leave your infrastructure, and no step requires a marginal-hosted service.
 
-## Roadmap
-
-marginal is being built in three horizons:
-
-```text
-Repository Intelligence  →  Organization Intelligence  →  Engineering Intelligence
-```
-
-Today's focus is getting the core loop right on a single repository: diff and repository context, code graph, policies, and high-signal inline review. From there: cross-repository impact analysis, architecture drift detection, an evaluation framework for benchmarking review quality across models, and a local UI for visibility into everything the agent does. The long-term goal is an agent that can answer not just "is this code correct?" but "does this PR actually satisfy the requirement it was written for?"
-
-See [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) for the full specification driving this.
-
 ## Contributing
 
-marginal is being designed in the open, and there's no ship deadline forcing shortcuts — it's built to grow with contributors, not around a single team's timeline. Design discussion, issues, and PRs against both the code and the specification are welcome. A good place to start is [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md).
+marginal is being designed in the open, and there's no ship deadline forcing shortcuts — it's built to grow with contributors, not around a single team's timeline. Design discussion, issues, and PRs are welcome. A good place to start is an issue labelled [`good first issue`](https://github.com/exactml/marginal/labels/good%20first%20issue) or [`help wanted`](https://github.com/exactml/marginal/labels/help%20wanted).
 
 ## License
 
