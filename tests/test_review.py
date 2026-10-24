@@ -92,6 +92,35 @@ def test_redact_secrets_masks_a_github_fine_grained_token():
     assert redact_secrets(f"+GITHUB_TOKEN={token}") == "+GITHUB_TOKEN=[REDACTED]"
 
 
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        (
+            '+registry_uri = "https://user:s3cr3tpass@mlflow.acme.io"',
+            '+registry_uri = "https://[REDACTED]@mlflow.acme.io"',
+        ),
+        ("+DB = postgres://app:hunter2@db:5432/shop", "+DB = postgres://[REDACTED]@db:5432/shop"),
+    ],
+)
+def test_redact_secrets_masks_credentials_inside_a_url(line, expected):
+    assert redact_secrets(line) == expected
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        '+MLFLOW_TRACKING_URI = "databricks"',
+        '+mlflow.set_registry_uri("databricks-uc")',
+        '+url = "https://mlflow.acme.io/api"',
+        '+url = "https://git@github.com/acme/shop"',
+        '+url = "http://localhost:8080/health"',
+        '+url = "http://localhost:8080?email=a@b.com"',
+    ],
+)
+def test_redact_secrets_leaves_a_url_without_credentials_alone(line):
+    assert redact_secrets(line) == line
+
+
 def test_redact_secrets_masks_a_jwt():
     jwt = (
         "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0."

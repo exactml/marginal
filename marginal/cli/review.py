@@ -941,11 +941,13 @@ def _clip(text: str, limit: int) -> str:
 
 
 def _read_snippet(repo_root: str, file: str, line: int) -> str | None:
-    """A few lines of `file` around `line` (1-indexed), or `None` if unreadable."""
+    """A few lines of `file` around `line` (1-indexed), secrets redacted, or
+    `None` if unreadable. The file is outside the diff, so nothing else
+    redacts it before it reaches the model."""
     try:
         lines = Path(repo_root, file).read_text().splitlines()
     except OSError:
         return None
     start = max(line - _GRAPH_CONTEXT_SNIPPET_RADIUS, 1)
     end = min(line + _GRAPH_CONTEXT_SNIPPET_RADIUS, len(lines))
-    return "\n".join(f"{n}: {lines[n - 1]}" for n in range(start, end + 1))
+    return redact_secrets("\n".join(f"{n}: {lines[n - 1]}" for n in range(start, end + 1)))

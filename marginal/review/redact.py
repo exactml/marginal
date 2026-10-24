@@ -38,6 +38,14 @@ _GENERIC_ASSIGNMENT = re.compile(
 )
 
 
+# The `user:password@` part of a URL (`https://user:pass@mlflow.acme.io`).
+# Requires the `:` so a bare `user@` or a credential-free URL is left alone;
+# `?`/`#` can't appear raw in a password, so a query's `@` doesn't match.
+_URL_CREDENTIALS = re.compile(
+    r"(?P<scheme>\b[A-Za-z][A-Za-z0-9+.-]*://)[^\s/@:'\"]+:[^\s/@?#'\"]+@"
+)
+
+
 def _redact_generic_assignment(match: re.Match[str]) -> str:
     quote = match["quote"] or ""
     return f"{match['key']}{match['sep']}{quote}{_REDACTED}{quote}"
@@ -47,7 +55,8 @@ def redact_secrets(text: str) -> str:
     """Mask likely secrets in `text`, preserving everything else unchanged.
 
     Runs a small, fixed set of high-confidence patterns over `text` -- PEM
-    private-key blocks, JWTs, GitHub tokens, AWS access keys, and generic
+    private-key blocks, JWTs, GitHub tokens, AWS access keys, credentials
+    inside a URL (`https://user:pass@host`), and generic
     `api_key=`/`token=`/`secret=` assignments -- replacing each match (just
     the secret value, for the assignment case) with `[REDACTED]`. Text with
     no matches passes through byte-for-byte unchanged. This is a fixed
@@ -59,5 +68,6 @@ def redact_secrets(text: str) -> str:
     text = _JWT.sub(_REDACTED, text)
     text = _GITHUB_TOKEN.sub(_REDACTED, text)
     text = _AWS_ACCESS_KEY.sub(_REDACTED, text)
+    text = _URL_CREDENTIALS.sub(rf"\g<scheme>{_REDACTED}@", text)
     text = _GENERIC_ASSIGNMENT.sub(_redact_generic_assignment, text)
     return text

@@ -1270,6 +1270,37 @@ def test_review_includes_graph_context_for_an_out_of_diff_caller(
     assert "return helper()" in prompt
 
 
+def test_review_redacts_secrets_in_an_out_of_diff_caller_snippet(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    """A caller's file isn't in the diff, so its snippet needs its own redaction."""
+    monkeypatch.chdir(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    _write_reviewer_config(tmp_path)
+    _write_cross_file_caller_fixture(tmp_path)
+    token = "ghp_" + "a" * 36
+    (tmp_path / "pkg" / "b.py").write_text(
+        f'def use_helper():\n    token = "{token}"\n    return helper()\n'
+    )
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {
+            "filename": "pkg/a.py",
+            "patch": "@@ -1,2 +1,2 @@\n def helper():\n-    return 1\n+    return 2\n",
+        }
+    ]
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(return_value=_FindingsResponse(findings=[]))
+
+    main(["review", "--repo", "acme/widgets", "--pr", "42"])
+
+    prompt = provider.generate_structured.call_args.args[0]
+    assert "return helper()" in prompt
+    assert token not in prompt
+    assert "[REDACTED]" in prompt
+
+
 def test_review_omits_graph_context_when_code_graph_is_disabled(
     tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
 ):
