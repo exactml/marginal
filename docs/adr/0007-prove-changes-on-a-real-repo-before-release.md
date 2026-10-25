@@ -1,4 +1,4 @@
-# ADR 0008: Prove every change on a real repo, before any release
+# ADR 0007: Prove every change on a real repo, before any release
 
 **Status:** Accepted · recorded 2026-10-25
 

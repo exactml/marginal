@@ -30,7 +30,7 @@ it sets up Python, runs `pip install marginal-review`, and calls the CLI.
   install.
 - The test repo deliberately doesn't use this action. It installs from git
   instead, so unreleased branches can be tested (see
-  [ADR 0008](0008-prove-changes-on-a-real-repo-before-release.md)).
+  [ADR 0007](0007-prove-changes-on-a-real-repo-before-release.md)).
 
 ## Accepted in
 

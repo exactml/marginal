@@ -1,4 +1,4 @@
-# ADR 0006: Finding lifecycle — post once, resolve only when fixed
+# ADR 0005: Finding lifecycle — post once, resolve only when fixed
 
 **Status:** Accepted · recorded 2026-10-25
 

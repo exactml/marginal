@@ -1,4 +1,4 @@
-# ADR 0007: Secret redaction — a few sure patterns, applied to every input
+# ADR 0006: Secret redaction — a few sure patterns, applied to every input
 
 **Status:** Accepted · recorded 2026-10-25
 
