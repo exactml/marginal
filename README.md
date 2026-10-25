@@ -68,6 +68,13 @@ marginal builds one prompt from the diff and the context around it, asks your mo
 - **Quiet by design** — a confidence threshold and a comment cap, no repeated findings across pushes, findings closed once a later push fixes them, and a maintainer's reply taken into account on the next review.
 - **Team-friendly defaults** — drafts, bot PRs, and PRs labelled `skip-review` are skipped, and lockfiles and minified assets never reach the model.
 
+## Safe to run on your code
+
+- **Your infrastructure, your keys** — marginal runs in your own GitHub Actions (or on your machine) and calls your model provider with your key, or a local model with none. There is no marginal service.
+- **Secrets stay out of the prompt** — likely secrets (API keys, tokens, private keys, passwords inside URLs) are replaced with `[REDACTED]` in the diff and in every code snippet before the model sees them, and the summary tells you when that happened.
+- **A PR can't rewrite its own rules** — config and policies always come from the PR's base branch, so a PR (or the agent that wrote it) can't switch its review off or add an anti-policy to silence a finding.
+- **Least privilege** — marginal reads the PR and posts review comments, nothing more. It never pushes code, and `permissions` in the config limits what it may read and write.
+
 ## Quickstart
 
 ```bash
@@ -159,6 +166,17 @@ It exits 0 when every check passes and 1 when any fails, so it also works as a C
 
 _marginal is under active, in-the-open development. Jump into [Issues](https://github.com/exactml/marginal/issues) to help build it._
 
+## Commands
+
+| Command | What it does |
+|---|---|
+| `marginal init` | Writes `.marginal/config.yaml`, a policies folder, and the GitHub Actions workflow. |
+| `marginal review --repo owner/name --pr 12` | Reviews a PR and prints the result. Posts nothing, so it's a safe local preview (drafts included). |
+| `marginal review ... --comment` | Same review, posted to the PR as inline comments plus a summary. This is what the workflow runs. Add `--format json` for machine-readable output. |
+| `marginal compact --repo owner/name --pr 12 --comment` | Re-checks marginal's open findings against the latest code and resolves the ones that are fixed. `review --comment` already does this on every later push. |
+| `marginal doctor` | Checks config, credentials, and GitHub access without calling a model. |
+| `marginal help [command]`, `marginal --version` | Usage, and the installed version. |
+
 ## The marginal family
 
 | Package | What it is |
@@ -190,7 +208,6 @@ version: 1
 
 review:
   enabled: true
-  inline_comments: true
   confidence_threshold: 0.85
   max_comments: 8
   max_prompt_tokens: 100000  # estimated; over this, the model is never called
@@ -202,24 +219,18 @@ review:
     - "*.min.js"
     - "*.min.css"
   self_reflect: false  # true: a second model call re-checks findings before they're filtered
-  tone: concise
   # With --comment, these PRs get no review and no model call
   skip_drafts: true
   skip_bots: true           # dependabot, renovate, any GitHub App author
   skip_labels: [skip-review]
 
 context:
-  git_history: true
-  code_graph: true
-  cross_repository: true
+  code_graph: true   # show the model callers outside the diff (Python)
 
 models:
-  planner:
-    provider: anthropic
-    model: claude-sonnet
   reviewer:
-    provider: openai
-    model: codex
+    provider: anthropic   # or: openai, ollama
+    model: claude-sonnet-5
 
 policies:        # rules the review checks the diff against
   - .marginal/policies/security.md
@@ -227,7 +238,22 @@ anti_policies:   # deliberate tradeoffs marginal must never flag
   - .marginal/anti-policies/accepted-tradeoffs.md
 ```
 
-API keys are never stored in configuration — only in your CI secrets or environment. `marginal init` writes every option with its default.
+API keys are never stored in configuration — only in your CI secrets or environment. `marginal init` writes every option with its default, including a few reserved for upcoming features (`tone`, `git_history`, `cross_repository`, `ownership`) that have no effect yet.
+
+### Policies
+
+A policy is plain Markdown: the rule, why it exists, and where it applies. List it under `policies` and every review checks the diff against it:
+
+```markdown
+<!-- .marginal/policies/money.md -->
+# Money
+
+- Every amount is a `decimal.Decimal`, never a `float`.
+- Round only once, at the end, with `ROUND_HALF_UP` to 2 places.
+- Discounts apply before tax.
+```
+
+A finding that breaks a policy says so, e.g. *"Changing rounding from ROUND_HALF_UP to ROUND_DOWN violates the money policy."* Anti-policies work the same way for things marginal must never flag, such as a tradeoff your team made on purpose.
 
 ### Local models (Ollama)
 
