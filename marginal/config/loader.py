@@ -25,27 +25,34 @@ def load_config(repo_root: str | Path = ".") -> MarginalConfig:
     config_path = Path(repo_root) / CONFIG_RELATIVE_PATH
     if not config_path.is_file():
         return MarginalConfig()
+    return parse_config(config_path.read_text(), str(config_path))
 
+
+def parse_config(text: str, source: str) -> MarginalConfig:
+    """Parse and validate config `text`; `source` names it in error messages.
+
+    Raises `ConfigParseError` or `ConfigValidationError`, as `load_config` does.
+    """
     try:
-        raw = yaml.safe_load(config_path.read_text())
+        raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:
-        raise ConfigParseError(f"{config_path}: invalid YAML\n{exc}") from exc
+        raise ConfigParseError(f"{source}: invalid YAML\n{exc}") from exc
 
     if raw is None:
         raw = {}
     if not isinstance(raw, dict):
         raise ConfigParseError(
-            f"{config_path}: expected a YAML mapping at the top level, got {type(raw).__name__}"
+            f"{source}: expected a YAML mapping at the top level, got {type(raw).__name__}"
         )
 
     try:
         return MarginalConfig.model_validate(raw)
     except ValidationError as exc:
-        raise ConfigValidationError(_format_validation_error(config_path, exc)) from exc
+        raise ConfigValidationError(_format_validation_error(source, exc)) from exc
 
 
-def _format_validation_error(config_path: Path, exc: ValidationError) -> str:
-    lines = [f"{config_path}: invalid configuration"]
+def _format_validation_error(source: str, exc: ValidationError) -> str:
+    lines = [f"{source}: invalid configuration"]
     for error in exc.errors():
         field = ".".join(str(part) for part in error["loc"]) or "<root>"
         lines.append(f"  - {field}: {error['msg']}")
