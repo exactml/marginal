@@ -15,8 +15,8 @@ from typing import Literal, get_args
 from pydantic import BaseModel, ConfigDict, Field
 
 from marginal.config.errors import ConfigError
-from marginal.config.loader import load_config
-from marginal.config.schema import ModelSpec, ReviewConfig
+from marginal.config.loader import CONFIG_RELATIVE_PATH, load_config, parse_config
+from marginal.config.schema import MarginalConfig, ModelSpec, PermissionsConfig, ReviewConfig
 from marginal.github.client import GitHubClient
 from marginal.github.errors import (
     GitHubAPIError,
@@ -120,9 +120,12 @@ def run_review(
 ) -> int:
     """Fetch `pr_number` from `repo` and print a summary in `output_format`.
 
-    Loads `.marginal/config.yaml` under `path` and builds a `GitHubClient`
-    gated by its `permissions`, then fetches the pull request's metadata and
-    changed files. With the default `output_format="text"`, prints its
+    Fetches the pull request, then loads `.marginal/config.yaml` and its
+    policy files as of the PR's base commit (`_load_base_config`), so the PR
+    can't change the rules it's reviewed by; only when the base has no config
+    yet does it fall back to the one under `path`. It builds a `GitHubClient`
+    gated by that config's `permissions` and fetches the changed files.
+    With the default `output_format="text"`, prints its
     title, state, base/head SHA, and the changed file list (collapsed behind
     a Markdown `<details>` block so it doesn't dominate the output on larger
     PRs).
@@ -241,16 +244,27 @@ def run_review(
     if output_format not in get_args(OutputFormat):
         raise ValueError(f"unknown output format: {output_format!r}")
 
+    # Config and policies come from the PR's base commit, not its checkout:
+    # otherwise the PR could rewrite the rules it's reviewed by.
+    base_client = GitHubClient(repo, PermissionsConfig())
     try:
-        config = load_config(path)
+        pull_request = base_client.get_pull_request(pr_number)
+        config, base_sha = _load_base_config(base_client, pull_request, path)
+        reviewer_model = config.models.get("reviewer")
+        policies: list[tuple[str, str]] = []
+        anti_policies: list[tuple[str, str]] = []
+        if reviewer_model is not None:
+            policies = _load_base_policies(base_client, base_sha, path, config.policies)
+            anti_policies = _load_base_policies(base_client, base_sha, path, config.anti_policies)
     except ConfigError as exc:
+        print(f"marginal review: {exc}", file=sys.stderr)
+        return 1
+    except (PermissionDeniedError, GitHubAuthenticationError, GitHubAPIError) as exc:
         print(f"marginal review: {exc}", file=sys.stderr)
         return 1
     client = GitHubClient(repo, config.permissions)
 
-    reviewer_model = config.models.get("reviewer")
     try:
-        pull_request = client.get_pull_request(pr_number)
         files = client.get_pull_request_files(pr_number)
         # Read once, up front: the prompt needs maintainer replies before
         # generating, and `--comment` needs the posted markers for dedup.
@@ -280,8 +294,6 @@ def run_review(
         coverage_lines += _coverage_warning_lines(pull_request, files, ignore_paths)
     # Every changed file is ignored: there's no diff to send, so no model call.
     if reviewer_model is not None and reviewed_files:
-        policies = load_policies(path, config.policies)
-        anti_policies = load_policies(path, config.anti_policies)
         redacted = _redact_patches(reviewed_files)
         redacted_files = _redacted_filenames(reviewed_files, redacted)
         graph_context = _build_graph_context(
@@ -338,6 +350,7 @@ def run_review(
     )
     warning_lines = (
         (["", NO_REVIEWER_NOTICE] if reviewer_model is None else [])
+        + _config_change_lines(filenames, base_sha)
         + _budget_warning_lines(over_budget)
         + _redaction_warning_lines(redacted_files)
         + coverage_lines
@@ -426,6 +439,51 @@ def run_review(
         print(json.dumps(result, indent=2))
 
     return 0
+
+
+def _load_base_config(
+    client: GitHubClient, pull_request: dict[str, object], path: str
+) -> tuple[MarginalConfig, str | None]:
+    """`.marginal/config.yaml` as of the PR's base commit, and that commit.
+
+    When the base has no config yet -- the PR that first sets marginal up --
+    falls back to the one under `path` and returns `None` for the commit.
+    """
+    base_sha = str(pull_request["base"]["sha"])
+    text = client.get_file(CONFIG_RELATIVE_PATH.as_posix(), base_sha)
+    if text is None:
+        return load_config(path), None
+    return parse_config(text, f"{CONFIG_RELATIVE_PATH.as_posix()} at {base_sha[:7]}"), base_sha
+
+
+def _load_base_policies(
+    client: GitHubClient, base_sha: str | None, path: str, policy_paths: list[str]
+) -> list[tuple[str, str]]:
+    """`policy_paths` as of `base_sha`, like `load_policies` reads them under `path`."""
+    if base_sha is None:
+        return load_policies(path, policy_paths)
+    policies = []
+    for policy_path in policy_paths:
+        content = client.get_file(policy_path, base_sha)
+        if content is None:
+            print(
+                f"marginal review: warning: policy file not found, skipping: {policy_path}",
+                file=sys.stderr,
+            )
+            continue
+        policies.append((policy_path, content))
+    return policies
+
+
+def _config_change_lines(filenames: list[str], base_sha: str | None) -> list[str]:
+    """Say so when the PR edits `.marginal/`, since this review didn't use its edits."""
+    if base_sha is None or not any(name.startswith(".marginal/") for name in filenames):
+        return []
+    return [
+        "",
+        "ℹ️ This PR changes `.marginal/`. Review settings and policies come from the base "
+        "branch, so the changes apply after it merges.",
+    ]
 
 
 def _skip_reason(review: ReviewConfig, pull_request: dict[str, object]) -> str | None:

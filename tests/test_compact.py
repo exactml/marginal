@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from conftest import working_tree_file
 
 from marginal.cli import main
 from marginal.cli.compact import COMPACT_HEADING, _Recheck, _RecheckResponse
@@ -22,6 +23,7 @@ def client(tmp_path, monkeypatch):
         "version: 1\nmodels:\n  reviewer:\n    provider: anthropic\n    model: claude-sonnet-5\n"
     )
     with patch("marginal.cli.compact.GitHubClient") as cls:
+        cls.return_value.get_file.side_effect = working_tree_file
         cls.return_value.get_pull_request_files.return_value = FILES
         cls.return_value.list_review_comments.return_value = []
         cls.return_value.list_review_threads.return_value = []

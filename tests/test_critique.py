@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from conftest import working_tree_file
 
 from marginal.cli import main
 from marginal.cli.critique import _build_critique_prompt, _Critique, _CritiqueResponse
@@ -47,6 +48,7 @@ def provider(tmp_path, monkeypatch):
         patch("marginal.cli.critique.get_provider", get_provider),
     ):
         client = client_cls.return_value
+        client.get_file.side_effect = working_tree_file
         client.get_pull_request.return_value = {
             "title": "Retry",
             "state": "open",

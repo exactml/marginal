@@ -7,10 +7,9 @@ import sys
 
 from pydantic import BaseModel, ConfigDict
 
-from marginal.cli.review import _estimate_tokens, _redact_patches
+from marginal.cli.review import _estimate_tokens, _load_base_config, _redact_patches
 from marginal.config.errors import ConfigError
-from marginal.config.loader import load_config
-from marginal.config.schema import ModelSpec
+from marginal.config.schema import ModelSpec, PermissionsConfig
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubAPIError, GitHubAuthenticationError, PermissionDeniedError
 from marginal.providers.errors import MissingCredentialsError, ProviderError, ProviderResponseError
@@ -82,9 +81,14 @@ def run_compact(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
     or exit 3 when the reviewer's credentials are missing. A prompt over
     `review.max_prompt_tokens` re-checks nothing and exits 0.
     """
+    # From the PR's base commit, like `marginal review`: the PR can't change it.
+    base_client = GitHubClient(repo, PermissionsConfig())
     try:
-        config = load_config(path)
+        config, _ = _load_base_config(base_client, base_client.get_pull_request(pr_number), path)
     except ConfigError as exc:
+        print(f"marginal compact: {exc}", file=sys.stderr)
+        return 1
+    except _GITHUB_ERRORS as exc:
         print(f"marginal compact: {exc}", file=sys.stderr)
         return 1
     reviewer_model = config.models.get("reviewer")
