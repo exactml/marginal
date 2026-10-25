@@ -9,7 +9,7 @@ import math
 import sys
 from collections import Counter
 from collections.abc import Sequence
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -245,7 +245,8 @@ def run_review(
         raise ValueError(f"unknown output format: {output_format!r}")
 
     # Config and policies come from the PR's base commit, not its checkout:
-    # otherwise the PR could rewrite the rules it's reviewed by.
+    # otherwise the PR could rewrite the rules it's reviewed by. Read with
+    # default permissions, since the config's own `permissions` aren't known yet.
     base_client = GitHubClient(repo, PermissionsConfig())
     try:
         pull_request = base_client.get_pull_request(pr_number)
@@ -464,7 +465,8 @@ def _load_base_policies(
         return load_policies(path, policy_paths)
     policies = []
     for policy_path in policy_paths:
-        content = client.get_file(policy_path, base_sha)
+        # The contents API 404s on `./x`, which a local read accepted.
+        content = client.get_file(PurePosixPath(policy_path).as_posix(), base_sha)
         if content is None:
             print(
                 f"marginal review: warning: policy file not found, skipping: {policy_path}",

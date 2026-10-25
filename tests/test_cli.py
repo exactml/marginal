@@ -2040,13 +2040,14 @@ def test_review_ignores_an_anti_policy_the_pr_adds_and_says_so(
     assert "This PR changes `.marginal/`" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("listed_as", [".marginal/security.md", "./.marginal/security.md"])
 def test_review_reads_policy_content_from_the_base_commit(
-    tmp_path, monkeypatch, mock_github_client, mock_provider
+    tmp_path, monkeypatch, mock_github_client, mock_provider, listed_as
 ):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".marginal").mkdir()
     (tmp_path / ".marginal" / "security.md").write_text("Anything goes.")
-    config = _BASE_CONFIG + "policies: [.marginal/security.md]\n"
+    config = _BASE_CONFIG + f"policies: [{listed_as}]\n"
 
     prompt = _review_prompt(
         mock_github_client,
