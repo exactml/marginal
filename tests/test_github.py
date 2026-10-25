@@ -1,3 +1,4 @@
+import base64
 from unittest.mock import MagicMock
 
 import pytest
@@ -186,6 +187,31 @@ def test_get_pull_request_returns_json_and_sends_bearer_token(monkeypatch):
     assert args[0] == "GET"
     assert args[1] == "https://api.github.com/repos/acme/widgets/pulls/1"
     assert kwargs["headers"]["Authorization"] == "Bearer ghp_secret"
+
+
+def test_get_file_decodes_a_file_at_a_ref(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    content = base64.b64encode(b"version: 1\n").decode()
+    session.request.return_value = _response(200, {"content": content, "encoding": "base64"})
+    client = _client(session=session)
+
+    assert client.get_file(".marginal/config.yaml", "abc123") == "version: 1\n"
+    args, kwargs = session.request.call_args
+    assert args[1] == "https://api.github.com/repos/acme/widgets/contents/.marginal/config.yaml"
+    assert kwargs["params"] == {"ref": "abc123"}
+
+
+@pytest.mark.parametrize(
+    "response",
+    [_response(404, {"message": "Not Found"}), _response(200, [{"name": "a.md"}])],
+)
+def test_get_file_is_none_for_a_missing_path_or_a_directory(monkeypatch, response):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = response
+
+    assert _client(session=session).get_file(".marginal/policies", "abc123") is None
 
 
 def test_get_pull_request_files_returns_json_list(monkeypatch):

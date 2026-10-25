@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from typing import Literal
 
 import requests
@@ -67,6 +68,18 @@ class GitHubClient:
         """Return the repository's metadata -- a cheap, read-only reachability check."""
         self._require_read("repository")
         return self._request("GET", f"/repos/{self._repo}")
+
+    def get_file(self, path: str, ref: str) -> str | None:
+        """Return the text of `path` as of commit `ref`, or `None` if it isn't
+        a file there."""
+        self._require_read("repository")
+        try:
+            data = self._request("GET", f"/repos/{self._repo}/contents/{path}", params={"ref": ref})
+        except GitHubNotFoundError:
+            return None
+        if not isinstance(data, dict) or "content" not in data:
+            return None
+        return base64.b64decode(str(data["content"])).decode()
 
     def get_pull_request(self, number: int) -> dict[str, object]:
         """Return the pull request's title, body, base/head SHAs, and state."""
