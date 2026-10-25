@@ -183,6 +183,8 @@ Everything lives in your repository, version-controlled alongside your code:
 └── ...
 ```
 
+A review always uses the config and policies on the PR's **base branch**, so a pull request can't change the rules it's reviewed by. Edits to `.marginal/` apply once they merge.
+
 ```yaml
 version: 1
 
