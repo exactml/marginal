@@ -75,7 +75,7 @@
   password inside a URL (`https://user:pass@host` is sent as
   `https://[REDACTED]@host`), and anything in the snippets of out-of-diff
   callers that the code graph adds to the prompt. URLs without credentials,
-  such as Databricks MLflow URIs like `databricks`, are unchanged
+  and plain profile names like `local`, are unchanged
 
   ([ISSUE-170](https://github.com/exactml/marginal/issues/170),
   [PR-171](https://github.com/exactml/marginal/pull/171) by [@exactml](https://github.com/exactml))

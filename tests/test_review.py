@@ -109,8 +109,8 @@ def test_redact_secrets_masks_credentials_inside_a_url(line, expected):
 @pytest.mark.parametrize(
     "line",
     [
-        '+MLFLOW_TRACKING_URI = "databricks"',
-        '+mlflow.set_registry_uri("databricks-uc")',
+        '+TRACKING_URI = "local"',
+        '+registry.connect("default-profile")',
         '+url = "https://mlflow.acme.io/api"',
         '+url = "https://git@github.com/acme/shop"',
         '+url = "http://localhost:8080/health"',
