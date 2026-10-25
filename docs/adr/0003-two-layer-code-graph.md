@@ -1,53 +1,60 @@
-# ADR 0003: Two-layer code graph -- per-language symbol graphs plus a separate contract-linking layer
+# ADR 0003: Two-layer code graph
 
-**Choice:** Build the code-graph context feature (`config.context.code_graph`) as
-two independent layers behind one shared interface (`SymbolGraph`, `Definition`,
-`CallSite`): (1) one symbol graph per language, each populated by whatever
-indexing method suits that language, merged into the shared interface; (2) a
-separate layer above that links *across* those per-language graphs wherever the
-dependency is a contract -- an HTTP route, a protobuf/OpenAPI/GraphQL schema --
-rather than a shared symbol name. #82 ships layer 1's first slice (Python only,
-via the stdlib `ast` module); #90 investigates the per-language indexing
-methodology for the general case; #91 scopes layer 2.
+**Status:** Accepted · 2026-09-19 · updated 2026-10-25
 
-**Why:** A same-repo Python call resolves by name -- `Widget().render()` and
-`class Widget: def render(...)` share the string `render` somewhere in the
-graph, however indirectly. A cross-language dependency usually doesn't: a
-Python `def get_order(...)` and a TypeScript `fetch("/api/orders/:id")` share
-no symbol name at all, however good the parser is on either side. No amount of
-per-language parsing precision closes that gap -- it needs a second mechanism
-entirely, matching on the contract (the route string, the schema field) both
-sides actually agree on. Keeping that as its own layer, rather than trying to
-stretch symbol resolution to cover it, keeps each layer's job well-defined and
-lets them be worked on independently.
+## Context
 
-This also reconciles with [ADR 0001](0001-language-and-runtime.md), which
-anticipated `tree-sitter`'s Python bindings for code graph parsing specifically.
-#82 shipped with stdlib `ast` instead -- zero new dependencies, enough to prove
-the concept and unblock #83/#84's prompt-wiring work immediately. That
-substitution is safe only because the public interface (`SymbolGraph`,
-`Definition`, `CallSite`) was designed to be resolver-agnostic from the start:
-swapping `ast` for `tree-sitter`, `SCIP`, or anything else #90 recommends is an
-internal change to `marginal/graph/symbols.py`, not a break to anything
-downstream. `tree-sitter` (or SCIP, which uses tree-sitter-based indexers under
-the hood for several languages) remains the leading candidate for layer 1's
-general, multi-language case -- #90 is where that gets decided against
-evidence rather than assumed upfront.
+A diff shows what changed, not what depends on it. If a PR changes
+`total(order)` to `total(order, currency)`, the call in `checkout.py` that
+still passes one argument is outside the diff, and a diff-only reviewer never
+sees it. marginal's "context over diff" promise needs a map of who calls what.
 
-This is also a deliberate point of difference from the other PR-review tools
-in this space (`pr-agent`, `octopus`, `roborev` -- all evaluated directly,
-local checkouts under `~/workspaces/open-source/`). None of them build a real
-structural code or call graph: `pr-agent` and `roborev` are diff-text-only
-(`roborev`'s own config goes as far as stating it doesn't attempt structural
-claims and trusts the build instead); `octopus` has a UI feature literally
-named "code graph," but its nodes are files, not symbols, and its edges come
-from a single import-statement regex plus embedding cosine-similarity, not
-call resolution. All three achieve "works across any language" specifically by
-not attempting real structural understanding at all -- diff text and
-embeddings are language-agnostic because neither one parses syntax. marginal's
-bet is the opposite: real per-language structural resolution, merged behind
-one interface, with cross-language contract edges as an explicit additional
-layer rather than a gap nobody names. The tradeoff is real engineering cost
-layer 1 alone doesn't pay for itself on: the advantage stays Python-only until
-#90 and #91 land, and a polyglot repo gets partial coverage in the meantime,
-same as it does today.
+There are two kinds of dependency:
+
+- **Same-language calls** share a name. Python's `checkout.py` calls
+  `pricing.total`, and a parser can match the two by name.
+- **Cross-language dependencies** usually share no name at all. A Python
+  `def get_order(...)` behind the route `/api/orders/:id` and a TypeScript
+  `fetch("/api/orders/:id")` only agree on the route string. No parser,
+  however good, links them by symbol name.
+
+## Decision
+
+Build the code graph as **two layers behind one interface** (`SymbolGraph`,
+`Definition`, `CallSite`):
+
+1. **Per-language symbol graphs.** Each language is indexed by whatever method
+   suits it, and all of them produce the same `Definition` / `CallSite` shapes.
+   Python came first, using the standard library's `ast` module: no new
+   dependency, and enough to prove the idea.
+2. **A contract layer on top.** It links the per-language graphs where the
+   dependency is a contract (an HTTP route, an OpenAPI, protobuf or GraphQL
+   schema) rather than a shared name.
+
+Because the interface doesn't depend on the parser, swapping `ast` for
+tree-sitter or SCIP-style indexers later is an internal change, not a break
+for anything that uses the graph.
+
+## Trade-offs
+
+| Option | Pros | Cons |
+|---|---|---|
+| **Per-language symbol graphs + a contract layer** (chosen) | Real call resolution: finds the actual broken caller, with its line as evidence. Each layer has one clear job and can grow on its own. | Real engineering cost per language. Until more languages are indexed, other languages get a diff-only review. |
+| Diff text only | Works on every language with zero effort. | Can't see a caller outside the diff, which is the main thing diff reviewers miss. |
+| File-level graph from import regexes + embeddings | Cheap and language-agnostic. | Nodes are files, not functions, and similarity isn't a call. It can't say *which* caller breaks. |
+| One universal parser for cross-language links | One mechanism for everything. | Cross-language dependencies share no symbol names, so better parsing alone can't link them. |
+
+## What this means
+
+- Caller context is real call resolution, not similarity, so a finding can cite
+  the exact caller line.
+- Adding a language means adding an indexer behind the same interface. The
+  prompt and review code don't change.
+- A repo in several languages gets caller context for the indexed languages
+  and a diff-only review for the rest, until they're added.
+
+## Accepted in
+
+- [#89 Add a Python symbol graph indexer to marginal/graph](https://github.com/exactml/marginal/pull/89)
+- [#92 Add ADR 0003 for the two-layer code graph architecture](https://github.com/exactml/marginal/pull/92)
+- [#94 Resolve a diff's changed functions to their out-of-diff callers](https://github.com/exactml/marginal/pull/94)
