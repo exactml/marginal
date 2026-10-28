@@ -41,7 +41,7 @@ _METRICS = [
 ]
 # One plain sentence per metric, shown next to it in the run summary.
 _MEANING = {
-    "recall": "Known bugs marginal posted a finding for",
+    "recall": "Known bugs the reviewer posted a finding for",
     "recall_before_filter": "Known bugs the model raised, including ones the filter dropped",
     "precision": "Posted findings that point at a known bug, not at clean code",
     "accuracy": "PRs judged right: a bug PR with a hit, a clean PR with no findings",
@@ -73,8 +73,12 @@ class Location(_Strict):
             raise ValueError(f"lines must be [start, end] with 1 <= start <= end, got {lines}")
         return lines
 
-    def contains(self, file: str, line: int | None) -> bool:
-        return line is not None and file == self.file and self.lines[0] <= line <= self.lines[1]
+    def contains(self, file: str, line: int | None, end_line: int | None = None) -> bool:
+        """Whether a finding at `line` (through `end_line`, for a tool that
+        flags a range) touches this location."""
+        if line is None or file != self.file:
+            return False
+        return line <= self.lines[1] and (end_line or line) >= self.lines[0]
 
 
 class Expected(Location):
@@ -105,7 +109,7 @@ class Attempt(_Strict):
     """One reviewer every case is reviewed with: a review tool, and the
     provider and model it calls."""
 
-    tool: Literal["marginal"]
+    tool: Literal["marginal", "pr-agent"]
     provider: Literal["anthropic", "openai", "ollama"]
     model: str = Field(min_length=1)
 
@@ -155,15 +159,17 @@ def score_review(case: Case, review: dict) -> dict:
     false_positives = duplicates = 0
     unlabeled = []
     for finding in review["findings"]:
-        file, line = finding["file"], finding["line"]
-        matched = [i for i, entry in enumerate(case.must_find) if entry.contains(file, line)]
+        file, line, end = finding["file"], finding["line"], finding.get("end_line")
+        matched = [i for i, entry in enumerate(case.must_find) if entry.contains(file, line, end)]
         if matched:
             free = [i for i in matched if hit_by[i] is None]
             if free:
                 hit_by[free[0]] = finding
             else:
                 duplicates += 1
-        elif case.kind == "clean" or any(loc.contains(file, line) for loc in case.must_not_flag):
+        elif case.kind == "clean" or any(
+            loc.contains(file, line, end) for loc in case.must_not_flag
+        ):
             false_positives += 1
         else:
             unlabeled.append(finding)
@@ -175,11 +181,15 @@ def score_review(case: Case, review: dict) -> dict:
         "expected": len(case.must_find),
         "hits": len(hits),
         "hits_before_filter": sum(
-            any(entry.contains(f["file"], f["line"]) for f in raised) for entry in case.must_find
+            any(entry.contains(f["file"], f["line"], f.get("end_line")) for f in raised)
+            for entry in case.must_find
         ),
+        # A tool that rates no severity is left out, never guessed.
+        "rated": sum(f.get("severity") is not None for f, _ in hits),
         "severe_enough": sum(
             _SEVERITY_RANK[f["severity"]] >= _SEVERITY_RANK[entry.severity.value]
             for f, entry in hits
+            if f.get("severity") is not None
         ),
         "false_positives": false_positives,
         "duplicates": duplicates,
@@ -205,7 +215,9 @@ def run_metrics(scores: list[dict]) -> dict[str, float | None]:
         ),
         "precision": _ratio(hits, hits + sum(s["false_positives"] for s in scores)),
         "accuracy": _ratio(sum(s["correct"] for s in scores), len(scores)),
-        "severity_accuracy": _ratio(sum(s["severe_enough"] for s in scores), hits),
+        "severity_accuracy": _ratio(
+            sum(s["severe_enough"] for s in scores), sum(s["rated"] for s in scores)
+        ),
         "seconds": statistics.median(s["seconds"] for s in scores),
         "cost_usd": None if None in costs else sum(costs),
         "duplicates": sum(s["duplicates"] for s in scores),

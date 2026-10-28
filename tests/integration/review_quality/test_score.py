@@ -84,6 +84,20 @@ def test_recall_before_filter_counts_findings_the_filter_dropped():
     assert score_review(bug_case(), review())["hits_before_filter"] == 0
 
 
+def test_a_finding_with_a_line_range_hits_when_the_range_overlaps():
+    # The answer key is app.py lines 10-20.
+    assert score_review(bug_case(), review(finding(line=5) | {"end_line": 12}))["hits"] == 1
+    assert score_review(bug_case(), review(finding(line=21) | {"end_line": 30}))["hits"] == 0
+
+
+def test_a_hit_without_severity_is_left_out_of_severity_accuracy():
+    result = score_review(bug_case(), review(finding(severity=None)))
+
+    assert result["hits"] == 1
+    assert result["rated"] == 0
+    assert result["severe_enough"] == 0
+
+
 def test_bug_case_without_a_hit_is_wrong():
     assert not score_review(bug_case(), review(finding(line=40)))["correct"]
 
@@ -183,7 +197,7 @@ def test_markdown_colors_and_explains_each_metric_without_a_baseline():
     text = markdown(result_with(1.0, 10.0), {}, tolerance=0.05)
 
     assert f"| Metric | `{ATTEMPT_ID}` (3 runs) | What it means |" in text
-    assert "| **Recall** | 🟢 1.00 | Known bugs marginal posted a finding for |" in text
+    assert "| **Recall** | 🟢 1.00 | Known bugs the reviewer posted a finding for |" in text
     assert "| **Severity accuracy** | ⚪ n/a |" in text
     # Time has no good-or-bad line, so no dot.
     assert "| **Time** | 10.0 | Median seconds per review |" in text
@@ -296,4 +310,7 @@ def test_shipped_cases_are_valid():
     suite = load_suite(HERE / "cases.yml")
 
     assert (HERE / suite.config).is_file()
-    assert [attempt.id for attempt in suite.attempts] == [ATTEMPT_ID]
+    assert [attempt.id for attempt in suite.attempts] == [
+        ATTEMPT_ID,
+        "pr-agent/anthropic/claude-opus-5-5",
+    ]
