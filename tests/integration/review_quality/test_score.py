@@ -4,7 +4,17 @@ import json
 
 import pytest
 from pydantic import ValidationError
-from score import HERE, Case, load_suite, main, markdown, review_cost, score, score_review
+from score import (
+    HERE,
+    Case,
+    _case_cell,
+    load_suite,
+    main,
+    markdown,
+    review_cost,
+    score,
+    score_review,
+)
 
 # $4 / $20 per million input / output tokens.
 MODEL = "anthropic:claude-opus-5-5"
@@ -169,52 +179,77 @@ def result_with(recall: float, seconds: float, runs: int = 3) -> dict:
     return {"attempts": {ATTEMPT_ID: attempt}}
 
 
-def test_markdown_without_baseline_explains_and_colors_each_metric():
+def test_markdown_colors_and_explains_each_metric_without_a_baseline():
     text = markdown(result_with(1.0, 10.0), {}, tolerance=0.05)
 
+    assert f"| Metric | `{ATTEMPT_ID}` (3 runs) | What it means |" in text
+    assert "| **Recall** | 🟢 1.00 | Known bugs marginal posted a finding for |" in text
+    assert "| **Severity accuracy** | ⚪ n/a |" in text
+    # Time has no good-or-bad line, so no dot.
+    assert "| **Time** | 10.0 | Median seconds per review |" in text
     assert "No baseline yet." in text
-    assert "| 🟢 | **Recall** | 1.00 | — | 1.00–1.00 | Known bugs marginal posted" in text
-    assert "| ⚪ | **Severity accuracy** | n/a | — |" in text
-    # Time has no good-or-bad threshold, so no dot.
-    assert "|  | **Time** | 10.0 | — |" in text
+    assert "| Recall | 1.00 | — | 1.00–1.00 |" in text  # the folded details
 
 
-def test_markdown_drops_the_range_column_for_a_single_run():
+def test_markdown_drops_the_range_for_a_single_run():
     text = markdown(result_with(0.4, 10.0, runs=1), {}, tolerance=0.05)
 
-    assert "**1 cases × 1 run** No baseline yet." in text
+    assert f"`{ATTEMPT_ID}` (1 run)" in text
     assert "Range" not in text
-    assert "| 🔴 | **Recall** | 0.40 | — | Known bugs marginal posted" in text
+    assert "| **Recall** | 🔴 0.40 |" in text
 
 
 def test_markdown_warns_only_on_regressions_beyond_tolerance():
     old = result_with(1.0, 10.0)
 
     text = markdown(result_with(0.5, 20.0), old, tolerance=0.05)
-    assert "| 🟡 | **Recall** | 0.50 ⚠ | 1.00 |" in text
-    assert "| **Time** | 20.0 ⚠ | 10.0 |" in text
+    assert "| **Recall** | 🟡 0.50 ⚠ |" in text
+    assert "| **Time** | 20.0 ⚠ |" in text
+    assert "| Recall | 0.50 | 1.00 |" in text  # baseline in the folded details
 
     text = markdown(result_with(0.97, 11.0), old, tolerance=0.05)
-    assert "⚠ worse than the baseline" in text  # the legend
-    assert "⚠ |" not in text
+    assert " ⚠ |" not in text
 
 
-def test_markdown_shows_each_case_caught_raised_or_quiet():
-    result = result_with(0.0, 10.0, runs=2)
-    result["attempts"][ATTEMPT_ID]["by_case"] = {
-        "unchecked-path": {"kind": "security", "runs": 2, "correct": 0, "raised": 2, "posted": 0},
-        "off-by-one": {"kind": "logic", "runs": 2, "correct": 1, "raised": 1, "posted": 1},
-        "clean-refactor": {"kind": "clean", "runs": 2, "correct": 1, "raised": 0, "posted": 3},
-    }
+def test_markdown_puts_attempts_side_by_side_against_their_own_baselines():
+    other = "marginal/openai/gpt-5.5"
+    result = result_with(0.5, 10.0)
+    result["attempts"][other] = result_with(1.0, 5.0, runs=1)["attempts"][ATTEMPT_ID]
+    for attempt_id, outcome in ((ATTEMPT_ID, (0, 2)), (other, (1, 1))):
+        correct, raised = outcome
+        runs = result["attempts"][attempt_id]["runs"]
+        result["attempts"][attempt_id]["by_case"] = {
+            "unchecked-path": {
+                "kind": "security",
+                "runs": runs,
+                "correct": correct,
+                "raised": raised,
+                "posted": correct,
+            }
+        }
 
-    text = markdown(result, {}, tolerance=0.05)
+    text = markdown(result, result_with(1.0, 10.0), tolerance=0.05)
 
-    assert (
-        "| `unchecked-path` | security | ❌ caught in 0/2 runs | "
-        "✅ raised in 2/2 runs (all below the confidence threshold) |"
-    ) in text
-    assert "| `off-by-one` | logic | 🟡 caught in 1/2 runs | 🟡 raised in 1/2 runs |" in text
-    assert "| `clean-refactor` | clean | 🟡 3 findings posted, quiet in 1/2 runs | — |" in text
+    assert f"| Metric | `{ATTEMPT_ID}` (3 runs) | `{other}` (1 run) | What it means |" in text
+    # Only the first attempt has a baseline, and it dropped.
+    assert "| **Recall** | 🟡 0.50 ⚠ | 🟢 1.00 |" in text
+    assert f"| Case | Kind | `{ATTEMPT_ID}` | `{other}` |" in text
+    assert "| `unchecked-path` | security | 🟡 raised 2/3, filtered | ✅ caught |" in text
+
+
+def test_case_cells_say_caught_raised_missed_or_quiet():
+    def case(kind="logic", runs=1, correct=0, raised=0, posted=0):
+        return {"kind": kind, "runs": runs, "correct": correct, "raised": raised, "posted": posted}
+
+    assert _case_cell(None) == "—"
+    assert _case_cell(case(correct=1, raised=1, posted=1)) == "✅ caught"
+    assert _case_cell(case(runs=3, correct=1, raised=1)) == "🟡 caught 1/3"
+    assert _case_cell(case(raised=1)) == "🟡 raised, filtered"
+    assert _case_cell(case()) == "❌ missed"
+    assert _case_cell(case(kind="clean", correct=1)) == "✅ quiet"
+    assert _case_cell(case(kind="clean", runs=2, correct=1, posted=3)) == (
+        "❌ 3 findings, quiet 1/2"
+    )
 
 
 def test_main_writes_score_and_fails_only_on_broken_input(suite, tmp_path, capsys):
@@ -246,18 +281,6 @@ def test_each_attempt_is_scored_on_its_own_and_one_without_results_is_left_out(s
 
     write_raw(tmp_path / "only-one", "unchecked-path", 1, review(finding()))
     assert list(score(suite, tmp_path / "only-one")["attempts"]) == [ATTEMPT_ID]
-
-
-def test_markdown_compares_each_attempt_with_its_own_baseline():
-    other = "marginal/openai/gpt-5.5"
-    result = result_with(0.5, 10.0)
-    result["attempts"][other] = result["attempts"][ATTEMPT_ID]
-
-    text = markdown(result, result_with(1.0, 10.0), tolerance=0.05)
-
-    mine, theirs = text.split(f"### `{other}`")
-    assert f"### `{ATTEMPT_ID}`" in mine and "| 0.50 ⚠ | 1.00 |" in mine
-    assert "No baseline yet." in theirs
 
 
 def test_answer_key_must_fit_the_kind():
