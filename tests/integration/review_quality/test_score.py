@@ -142,13 +142,17 @@ def test_score_reports_median_and_range_across_runs(suite, tmp_path):
     # Run 3 has a review without usage: its cost is unknown, not zero.
     assert result["overall"]["cost_usd"] == {"median": 8.0, "min": 8.0, "max": 8.0}
     assert result["by_kind"]["clean"]["recall"] is None
+    assert result["by_case"] == {
+        "clean-refactor": {"kind": "clean", "runs": 3, "correct": 2, "raised": 0, "posted": 1},
+        "unchecked-path": {"kind": "security", "runs": 3, "correct": 2, "raised": 2, "posted": 3},
+    }
     assert result["by_kind"]["clean"]["accuracy"]["min"] == 0.0
     assert result["unlabeled"] == [
         {"case": "unchecked-path", "run": "2"} | finding(line=40),
     ]
 
 
-def result_with(recall: float, seconds: float) -> dict:
+def result_with(recall: float, seconds: float, runs: int = 3) -> dict:
     spread = lambda v: {"median": v, "min": v, "max": v}  # noqa: E731
     metrics = {
         "recall": spread(recall),
@@ -161,26 +165,56 @@ def result_with(recall: float, seconds: float) -> dict:
         "duplicates": spread(0),
         "unlabeled": spread(0),
     }
-    attempt = {"runs": 3, "cases": ["x"], "overall": metrics, "by_kind": {}, "unlabeled": []}
+    attempt = {"runs": runs, "cases": ["x"], "overall": metrics, "by_kind": {}, "unlabeled": []}
     return {"attempts": {ATTEMPT_ID: attempt}}
 
 
-def test_markdown_without_baseline():
+def test_markdown_without_baseline_explains_and_colors_each_metric():
     text = markdown(result_with(1.0, 10.0), {}, tolerance=0.05)
 
     assert "No baseline yet." in text
-    assert "| Recall | 1.00 | 1.00–1.00 |" in text
+    assert "| 🟢 | **Recall** | 1.00 | — | 1.00–1.00 | Known bugs marginal posted" in text
+    assert "| ⚪ | **Severity accuracy** | n/a | — |" in text
+    # Time has no good-or-bad threshold, so no dot.
+    assert "|  | **Time** | 10.0 | — |" in text
+
+
+def test_markdown_drops_the_range_column_for_a_single_run():
+    text = markdown(result_with(0.4, 10.0, runs=1), {}, tolerance=0.05)
+
+    assert "**1 cases × 1 run** No baseline yet." in text
+    assert "Range" not in text
+    assert "| 🔴 | **Recall** | 0.40 | — | Known bugs marginal posted" in text
 
 
 def test_markdown_warns_only_on_regressions_beyond_tolerance():
     old = result_with(1.0, 10.0)
 
     text = markdown(result_with(0.5, 20.0), old, tolerance=0.05)
-    assert "| Recall | 1.00 → 0.50 ⚠ |" in text
-    assert "| Time (median s per review) | 10.0 → 20.0 ⚠ |" in text
+    assert "| 🟡 | **Recall** | 0.50 ⚠ | 1.00 |" in text
+    assert "| **Time** | 20.0 ⚠ | 10.0 |" in text
 
     text = markdown(result_with(0.97, 11.0), old, tolerance=0.05)
-    assert "⚠" not in text
+    assert "⚠ worse than the baseline" in text  # the legend
+    assert "⚠ |" not in text
+
+
+def test_markdown_shows_each_case_caught_raised_or_quiet():
+    result = result_with(0.0, 10.0, runs=2)
+    result["attempts"][ATTEMPT_ID]["by_case"] = {
+        "unchecked-path": {"kind": "security", "runs": 2, "correct": 0, "raised": 2, "posted": 0},
+        "off-by-one": {"kind": "logic", "runs": 2, "correct": 1, "raised": 1, "posted": 1},
+        "clean-refactor": {"kind": "clean", "runs": 2, "correct": 1, "raised": 0, "posted": 3},
+    }
+
+    text = markdown(result, {}, tolerance=0.05)
+
+    assert (
+        "| `unchecked-path` | security | ❌ caught in 0/2 runs | "
+        "✅ raised in 2/2 runs (all below the confidence threshold) |"
+    ) in text
+    assert "| `off-by-one` | logic | 🟡 caught in 1/2 runs | 🟡 raised in 1/2 runs |" in text
+    assert "| `clean-refactor` | clean | 🟡 3 findings posted, quiet in 1/2 runs | — |" in text
 
 
 def test_main_writes_score_and_fails_only_on_broken_input(suite, tmp_path, capsys):
@@ -222,7 +256,7 @@ def test_markdown_compares_each_attempt_with_its_own_baseline():
     text = markdown(result, result_with(1.0, 10.0), tolerance=0.05)
 
     mine, theirs = text.split(f"### `{other}`")
-    assert f"### `{ATTEMPT_ID}`" in mine and "1.00 → 0.50 ⚠" in mine
+    assert f"### `{ATTEMPT_ID}`" in mine and "| 0.50 ⚠ | 1.00 |" in mine
     assert "No baseline yet." in theirs
 
 
