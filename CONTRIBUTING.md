@@ -36,7 +36,7 @@ pre-commit install
 `make review-quality` runs the review-quality benchmark in
 `tests/integration/review_quality/`: every **attempt** in `cases.yml` (a
 review tool with one provider and model, today marginal with Claude Opus 5.5)
-reviews every case 3 times, and `score.py` compares each attempt with its own
+reviews every case once (`make review-quality RUNS=3` for more), and `score.py` compares each attempt with its own
 line in `baseline.json`. It needs each attempt's provider key (and
 `GITHUB_TOKEN` for the GitHub API), and it **costs money**. You don't need to
 run it for a normal PR: it runs on every release PR, one GitHub Actions job

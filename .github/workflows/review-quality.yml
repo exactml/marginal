@@ -13,6 +13,9 @@ on:
       ref:
         description: Branch, tag, or SHA of marginal to benchmark
         default: master
+      runs:
+        description: Reviews per case (more runs give a steadier median, and cost more)
+        default: "1"
 
 permissions:
   contents: read
@@ -64,7 +67,8 @@ jobs:
 
       # A crash here fails the job, so a broken run is never mistaken for a score.
       - name: Review every case
-        run: python "$BENCH/run.py" --attempt "${{ matrix.attempt.id }}"
+        # A release PR has no inputs, so it runs once per case.
+        run: python "$BENCH/run.py" --attempt "${{ matrix.attempt.id }}" --runs "${{ inputs.runs || 1 }}"
         env:
           GITHUB_TOKEN: ${{ github.token }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

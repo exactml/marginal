@@ -68,7 +68,7 @@ def review(case: Case, checkout: Path) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--runs", type=int, default=3, help="reviews per case (default 3)")
+    parser.add_argument("--runs", type=int, default=1, help="reviews per case (default 1)")
     parser.add_argument(
         "--case", action="append", metavar="ID", help="run only this case (repeatable)"
     )

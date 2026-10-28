@@ -29,8 +29,9 @@ at every release, and numbers anyone can compare.
   expected range. Any finding on a clean case is a false positive. A finding
   elsewhere on a bug case is listed as unlabeled for a person to judge, and
   left out of precision.
-- **Each case runs 3 times**, and each metric reports the median and the
-  min-max: recall, precision, per-PR accuracy, severity accuracy, time, and
+- **Each case runs once by default** (`--runs`, `RUNS`, or the workflow's
+  `runs` input for more). With several runs, each metric reports the median
+  and the min-max: recall, precision, per-PR accuracy, severity accuracy, time, and
   cost.
 - **Scored per attempt.** An attempt is one review tool with one provider and
   model, listed in `cases.yml`. Each attempt is scored and compared with its
@@ -55,7 +56,7 @@ Anyone can propose a case with the **Benchmark case** issue form.
 | Sandbox fork with real PRs opened against it | Runs the full path, posting included. | Every case is a fork and a PR to keep alive. Re-running means re-opening PRs. Slow to grow. |
 | Hand-written synthetic cases | Full control over each bug. | Bugs written to be found are easier than real ones. Scores would look better than they are. |
 | An LLM judge matches findings to the answer key | Credits a correct finding phrased differently or placed a few lines off. | Adds a second model's noise to every score, and costs more. Location is enough for the first cases. |
-| Hard gate: fail the release PR when scores drop | A regression can't ship unnoticed. | Three runs of a model still vary. A noisy drop would block releases, and people learn to ignore a red check. |
+| Hard gate: fail the release PR when scores drop | A regression can't ship unnoticed. | Runs of a model vary. A noisy drop would block releases, and people learn to ignore a red check. |
 
 ## What this means
 
