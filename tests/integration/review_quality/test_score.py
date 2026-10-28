@@ -62,6 +62,18 @@ def test_classifies_hit_duplicate_false_positive_and_unlabeled():
     assert result["correct"]
 
 
+def test_recall_before_filter_counts_findings_the_filter_dropped():
+    dropped = review() | {"filtered_findings": [finding(line=12, severity="low")]}
+
+    result = score_review(bug_case(), dropped)
+
+    assert result["hits"] == 0
+    assert result["hits_before_filter"] == 1
+    assert not result["correct"]  # only posted findings count as a catch
+    assert score_review(bug_case(), review(finding(line=12)))["hits_before_filter"] == 1
+    assert score_review(bug_case(), review())["hits_before_filter"] == 0
+
+
 def test_bug_case_without_a_hit_is_wrong():
     assert not score_review(bug_case(), review(finding(line=40)))["correct"]
 
@@ -140,6 +152,7 @@ def result_with(recall: float, seconds: float) -> dict:
     spread = lambda v: {"median": v, "min": v, "max": v}  # noqa: E731
     metrics = {
         "recall": spread(recall),
+        "recall_before_filter": spread(recall),
         "precision": spread(1.0),
         "accuracy": spread(1.0),
         "severity_accuracy": None,

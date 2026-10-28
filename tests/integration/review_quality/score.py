@@ -30,6 +30,7 @@ _SEVERITY_RANK = {severity.value: rank for rank, severity in enumerate(Severity)
 # (key, label, how it's formatted and when a change counts as a regression)
 _METRICS = [
     ("recall", "Recall", "ratio"),
+    ("recall_before_filter", "Recall before filter", "ratio"),
     ("precision", "Precision", "ratio"),
     ("accuracy", "Accuracy (per PR)", "ratio"),
     ("severity_accuracy", "Severity accuracy", "ratio"),
@@ -155,9 +156,15 @@ def score_review(case: Case, review: dict) -> dict:
         else:
             unlabeled.append(finding)
     hits = [(f, entry) for f, entry in zip(hit_by, case.must_find, strict=True) if f is not None]
+    # Also counting what the confidence filter dropped tells a model that
+    # missed the bug apart from a threshold that hid it.
+    raised = review["findings"] + review.get("filtered_findings", [])
     return {
         "expected": len(case.must_find),
         "hits": len(hits),
+        "hits_before_filter": sum(
+            any(entry.contains(f["file"], f["line"]) for f in raised) for entry in case.must_find
+        ),
         "severe_enough": sum(
             _SEVERITY_RANK[f["severity"]] >= _SEVERITY_RANK[entry.severity.value]
             for f, entry in hits
@@ -181,6 +188,9 @@ def run_metrics(scores: list[dict]) -> dict[str, float | None]:
     costs = [s["cost_usd"] for s in scores]
     return {
         "recall": _ratio(hits, sum(s["expected"] for s in scores)),
+        "recall_before_filter": _ratio(
+            sum(s["hits_before_filter"] for s in scores), sum(s["expected"] for s in scores)
+        ),
         "precision": _ratio(hits, hits + sum(s["false_positives"] for s in scores)),
         "accuracy": _ratio(sum(s["correct"] for s in scores), len(scores)),
         "severity_accuracy": _ratio(sum(s["severe_enough"] for s in scores), hits),

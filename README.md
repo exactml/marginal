@@ -75,6 +75,7 @@ Every release is scored on a fixed set of real PRs from public repos: PRs that i
 | Metric | What it measures | marginal · Claude Opus 5.5 |
 |---|---|---|
 | Recall | known bugs found | — |
+| Recall before filter | known bugs the model raised, counting ones below the confidence threshold | — |
 | Precision | findings that point at a real bug | — |
 | Accuracy per PR | bug PRs with at least one hit, clean PRs with no findings | — |
 | Severity accuracy | hits rated at or above the expected severity | — |
