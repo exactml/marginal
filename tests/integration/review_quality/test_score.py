@@ -29,6 +29,7 @@ def bug_case(**overrides) -> Case:
         "base": "a" * 40,
         "head": "b" * 40,
         "kind": "security",
+        "merged": "2026-07-01",
         "source": "https://github.com/owner/repo/pull/1",
         "must_find": [{"file": "app.py", "lines": [10, 20], "severity": "high"}],
         "must_not_flag": [{"file": "app.py", "lines": [1, 5]}],

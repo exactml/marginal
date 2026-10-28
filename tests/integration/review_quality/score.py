@@ -14,6 +14,7 @@ import argparse
 import json
 import statistics
 import sys
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
@@ -91,8 +92,12 @@ class Case(_Strict):
     base: str = Field(min_length=7)
     head: str = Field(min_length=7)
     kind: Literal["security", "dependency", "caller", "logic", "test", "clean"]
+    # When the source PR merged, so scores can be split by a model's training cutoff.
+    merged: date
     source: str
     evidence: str | None = None
+    # One line naming the bug, so a person can check a reviewer's finding against it.
+    why: str | None = None
     must_find: list[Expected] = Field(default_factory=list)
     must_not_flag: list[Location] = Field(default_factory=list)
 

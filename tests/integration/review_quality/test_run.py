@@ -25,6 +25,7 @@ def test_run_attempt_reviews_with_the_attempts_model_and_saves_under_its_id(tmp_
         base="a" * 40,
         head="b" * 40,
         kind="clean",
+        merged="2026-07-01",
         source="https://github.com/owner/repo/pull/1",
     )
 
@@ -108,6 +109,7 @@ def test_pr_agent_never_reads_an_earlier_runs_review(tmp_path, monkeypatch):
         base="a" * 40,
         head="b" * 40,
         kind="clean",
+        merged="2026-07-01",
         source="https://github.com/owner/repo/pull/1",
     )
 
