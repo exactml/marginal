@@ -68,6 +68,21 @@ marginal builds one prompt from the diff and the context around it, asks your mo
 - **Quiet by design** — a confidence threshold and a comment cap, no repeated findings across pushes, findings closed once a later push fixes them, and a maintainer's reply taken into account on the next review.
 - **Team-friendly defaults** — drafts, bot PRs, and PRs labelled `skip-review` are skipped, and lockfiles and minified assets never reach the model.
 
+## Review quality
+
+Every release is scored on a fixed set of real PRs from public repos: PRs that introduced a bug someone later fixed, and clean PRs with nothing to flag. Each case runs 3 times; the table shows the median.
+
+| Metric | What it measures | Latest release |
+|---|---|---|
+| Recall | known bugs found | — |
+| Precision | findings that point at a real bug | — |
+| Accuracy per PR | bug PRs with at least one hit, clean PRs with no findings | — |
+| Severity accuracy | hits rated at or above the expected severity | — |
+| Time | seconds per review | — |
+| Cost | model cost per review | — |
+
+Numbers are filled in at the next release. The cases are in [`cases.yml`](tests/integration/review_quality/cases.yml). Know a PR that belongs there? Propose it with the [Benchmark case](https://github.com/exactml/marginal/issues/new?template=benchmark_case.yml) form.
+
 ## Safe to run on your code
 
 - **Your infrastructure, your keys** — marginal runs in your own GitHub Actions (or on your machine) and calls your model provider with your key, or a local model with none. There is no marginal service.
