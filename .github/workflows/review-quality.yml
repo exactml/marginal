@@ -58,6 +58,21 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      # PR-Agent needs Python 3.12 and gets its own environment, since its pinned
+      # dependencies would clash with marginal's. The 3.10 setup below stays the default.
+      - id: py312
+        if: ${{ matrix.attempt.tool == 'pr-agent' }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install PR-Agent
+        if: ${{ matrix.attempt.tool == 'pr-agent' }}
+        run: |
+          "${{ steps.py312.outputs.python-path }}" -m venv "$RUNNER_TEMP/pr-agent"
+          "$RUNNER_TEMP/pr-agent/bin/pip" install "pr-agent==0.49.0"
+          echo "PR_AGENT_PYTHON=$RUNNER_TEMP/pr-agent/bin/python" >> "$GITHUB_ENV"
+
       - uses: actions/setup-python@v7
         with:
           python-version: "3.10"

@@ -8,6 +8,8 @@ config: marginal-config.yaml
 # it calls. Scores are kept per attempt.
 attempts:
   - {tool: marginal, provider: anthropic, model: claude-opus-5-5}
+  # PR-Agent (MIT) on the same model and key, in its plain-diff mode.
+  - {tool: pr-agent, provider: anthropic, model: claude-opus-5-5}
 
 cases:
   - id: missing-auth-on-camelcase-alias
