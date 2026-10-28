@@ -2,8 +2,11 @@ name: Review quality
 
 on:
   # Runs only on release PRs (release/v*), see the job's `if`: the benchmark
-  # calls the model and costs money, so it doesn't run on every PR.
+  # calls the model and costs money, so it doesn't run on every PR. Not on
+  # synchronize: cut-release pushes the new baseline.json to the release PR,
+  # and that push shouldn't pay for a second run.
   pull_request:
+    types: [opened, reopened]
   workflow_dispatch:
     inputs:
       ref:
