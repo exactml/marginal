@@ -1,39 +1,68 @@
 {
   "attempts": {
     "marginal/anthropic/claude-opus-5-5": {
-      "runs": 3,
+      "runs": 1,
       "cases": [
+        "async-login-leaves-stale-request-user",
+        "clean-bytes-password-hashing",
+        "clean-close-transport-on-base-exception",
+        "clean-default-thread-minimum-size",
         "clean-from-proto-classmethods",
+        "clean-indexable-keeps-native-frames",
+        "clean-sqlite-ensure-connection",
+        "db-default-pk-treated-as-unset-on-save",
+        "db-pool-closed-after-each-task-in-thread-pools",
+        "deprecated-module-imported-eagerly",
+        "disable-prefetch-assumes-virtual-channel-qos",
+        "eager-optional-numpy-import-in-approx-eq",
+        "fish-completion-splits-on-unquoted-newline",
+        "hardcoded-kwarg-collides-with-user-option",
+        "hostname-regex-rejects-multi-label-domains",
+        "indexable-hands-wrapped-frames-to-estimators",
+        "limit-read-before-connection-opened",
         "missing-auth-on-camelcase-alias",
+        "new-required-kwarg-breaks-direct-responder-use",
+        "parser-cancellation-leaves-connection-open",
+        "password-hasher-decodes-bytes-as-utf8",
+        "sync-wrapper-hides-async-view",
+        "tar-filter-kwarg-needs-newer-python-patch",
         "unset-proto-field-treated-as-zero"
       ],
       "overall": {
         "recall": {
-          "median": 0.0,
-          "min": 0.0,
-          "max": 0.0
+          "median": 0.4090909090909091,
+          "min": 0.4090909090909091,
+          "max": 0.4090909090909091
         },
         "recall_before_filter": {
+          "median": 0.8181818181818182,
+          "min": 0.8181818181818182,
+          "max": 0.8181818181818182
+        },
+        "precision": {
           "median": 1.0,
           "min": 1.0,
           "max": 1.0
         },
-        "precision": null,
         "accuracy": {
-          "median": 0.3333333333333333,
-          "min": 0.3333333333333333,
-          "max": 0.3333333333333333
+          "median": 0.625,
+          "min": 0.625,
+          "max": 0.625
         },
-        "severity_accuracy": null,
+        "severity_accuracy": {
+          "median": 1.0,
+          "min": 1.0,
+          "max": 1.0
+        },
         "seconds": {
-          "median": 28.26,
-          "min": 25.03,
-          "max": 32.41
+          "median": 16.740000000000002,
+          "min": 16.740000000000002,
+          "max": 16.740000000000002
         },
         "cost_usd": {
-          "median": 0.15504,
-          "min": 0.15064,
-          "max": 0.16174
+          "median": 1.0011079999999999,
+          "min": 1.0011079999999999,
+          "max": 1.0011079999999999
         },
         "duplicates": {
           "median": 0,
@@ -41,12 +70,59 @@
           "max": 0
         },
         "unlabeled": {
-          "median": 0,
-          "min": 0,
-          "max": 0
+          "median": 1,
+          "min": 1,
+          "max": 1
         }
       },
       "by_kind": {
+        "caller": {
+          "recall": {
+            "median": 0.3333333333333333,
+            "min": 0.3333333333333333,
+            "max": 0.3333333333333333
+          },
+          "recall_before_filter": {
+            "median": 0.6666666666666666,
+            "min": 0.6666666666666666,
+            "max": 0.6666666666666666
+          },
+          "precision": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "accuracy": {
+            "median": 0.3333333333333333,
+            "min": 0.3333333333333333,
+            "max": 0.3333333333333333
+          },
+          "severity_accuracy": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "seconds": {
+            "median": 14.06,
+            "min": 14.06,
+            "max": 14.06
+          },
+          "cost_usd": {
+            "median": 0.13178,
+            "min": 0.13178,
+            "max": 0.13178
+          },
+          "duplicates": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "unlabeled": {
+            "median": 1,
+            "min": 1,
+            "max": 1
+          }
+        },
         "clean": {
           "recall": null,
           "recall_before_filter": null,
@@ -58,14 +134,61 @@
           },
           "severity_accuracy": null,
           "seconds": {
-            "median": 21.26,
-            "min": 20.8,
-            "max": 21.49
+            "median": 12.155000000000001,
+            "min": 12.155000000000001,
+            "max": 12.155000000000001
           },
           "cost_usd": {
-            "median": 0.024652,
-            "min": 0.024532,
-            "max": 0.026172
+            "median": 0.13636,
+            "min": 0.13636,
+            "max": 0.13636
+          },
+          "duplicates": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "unlabeled": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          }
+        },
+        "dependency": {
+          "recall": {
+            "median": 0.25,
+            "min": 0.25,
+            "max": 0.25
+          },
+          "recall_before_filter": {
+            "median": 0.75,
+            "min": 0.75,
+            "max": 0.75
+          },
+          "precision": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "accuracy": {
+            "median": 0.3333333333333333,
+            "min": 0.3333333333333333,
+            "max": 0.3333333333333333
+          },
+          "severity_accuracy": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "seconds": {
+            "median": 25.02,
+            "min": 25.02,
+            "max": 25.02
+          },
+          "cost_usd": {
+            "median": 0.24119199999999996,
+            "min": 0.24119199999999996,
+            "max": 0.24119199999999996
           },
           "duplicates": {
             "median": 0,
@@ -80,31 +203,39 @@
         },
         "logic": {
           "recall": {
-            "median": 0.0,
-            "min": 0.0,
-            "max": 0.0
+            "median": 0.42857142857142855,
+            "min": 0.42857142857142855,
+            "max": 0.42857142857142855
           },
           "recall_before_filter": {
+            "median": 0.8571428571428571,
+            "min": 0.8571428571428571,
+            "max": 0.8571428571428571
+          },
+          "precision": {
             "median": 1.0,
             "min": 1.0,
             "max": 1.0
           },
-          "precision": null,
           "accuracy": {
-            "median": 0.0,
-            "min": 0.0,
-            "max": 0.0
+            "median": 0.5454545454545454,
+            "min": 0.5454545454545454,
+            "max": 0.5454545454545454
           },
-          "severity_accuracy": null,
+          "severity_accuracy": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
           "seconds": {
-            "median": 28.26,
-            "min": 25.03,
-            "max": 32.41
+            "median": 17.39,
+            "min": 17.39,
+            "max": 17.39
           },
           "cost_usd": {
-            "median": 0.074564,
-            "min": 0.069824,
-            "max": 0.082564
+            "median": 0.44339199999999995,
+            "min": 0.44339199999999995,
+            "max": 0.44339199999999995
           },
           "duplicates": {
             "median": 0,
@@ -119,31 +250,39 @@
         },
         "security": {
           "recall": {
-            "median": 0.0,
-            "min": 0.0,
-            "max": 0.0
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
           },
           "recall_before_filter": {
             "median": 1.0,
             "min": 1.0,
             "max": 1.0
           },
-          "precision": null,
-          "accuracy": {
-            "median": 0.0,
-            "min": 0.0,
-            "max": 0.0
+          "precision": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
           },
-          "severity_accuracy": null,
+          "accuracy": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "severity_accuracy": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
           "seconds": {
-            "median": 33.31,
-            "min": 32.26,
-            "max": 33.78
+            "median": 26.85,
+            "min": 26.85,
+            "max": 26.85
           },
           "cost_usd": {
-            "median": 0.055944,
-            "min": 0.053004,
-            "max": 0.056164
+            "median": 0.048384,
+            "min": 0.048384,
+            "max": 0.048384
           },
           "duplicates": {
             "median": 0,
@@ -158,29 +297,716 @@
         }
       },
       "by_case": {
+        "async-login-leaves-stale-request-user": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "clean-bytes-password-hashing": {
+          "kind": "clean",
+          "runs": 1,
+          "correct": 1,
+          "raised": 0,
+          "posted": 0
+        },
+        "clean-close-transport-on-base-exception": {
+          "kind": "clean",
+          "runs": 1,
+          "correct": 1,
+          "raised": 0,
+          "posted": 0
+        },
+        "clean-default-thread-minimum-size": {
+          "kind": "clean",
+          "runs": 1,
+          "correct": 1,
+          "raised": 0,
+          "posted": 0
+        },
         "clean-from-proto-classmethods": {
           "kind": "clean",
-          "runs": 3,
-          "correct": 3,
+          "runs": 1,
+          "correct": 1,
           "raised": 0,
+          "posted": 0
+        },
+        "clean-indexable-keeps-native-frames": {
+          "kind": "clean",
+          "runs": 1,
+          "correct": 1,
+          "raised": 0,
+          "posted": 0
+        },
+        "clean-sqlite-ensure-connection": {
+          "kind": "clean",
+          "runs": 1,
+          "correct": 1,
+          "raised": 0,
+          "posted": 0
+        },
+        "db-default-pk-treated-as-unset-on-save": {
+          "kind": "caller",
+          "runs": 1,
+          "correct": 0,
+          "raised": 0,
+          "posted": 1
+        },
+        "db-pool-closed-after-each-task-in-thread-pools": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 0,
+          "raised": 1,
+          "posted": 0
+        },
+        "deprecated-module-imported-eagerly": {
+          "kind": "dependency",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "disable-prefetch-assumes-virtual-channel-qos": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "eager-optional-numpy-import-in-approx-eq": {
+          "kind": "dependency",
+          "runs": 1,
+          "correct": 0,
+          "raised": 0,
+          "posted": 0
+        },
+        "fish-completion-splits-on-unquoted-newline": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "hardcoded-kwarg-collides-with-user-option": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 0,
+          "raised": 1,
+          "posted": 0
+        },
+        "hostname-regex-rejects-multi-label-domains": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "indexable-hands-wrapped-frames-to-estimators": {
+          "kind": "caller",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "limit-read-before-connection-opened": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 0,
+          "raised": 1,
           "posted": 0
         },
         "missing-auth-on-camelcase-alias": {
           "kind": "security",
-          "runs": 3,
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "new-required-kwarg-breaks-direct-responder-use": {
+          "kind": "caller",
+          "runs": 1,
           "correct": 0,
-          "raised": 3,
+          "raised": 1,
+          "posted": 0
+        },
+        "parser-cancellation-leaves-connection-open": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 0,
+          "raised": 1,
+          "posted": 0
+        },
+        "password-hasher-decodes-bytes-as-utf8": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 0,
+          "raised": 1,
+          "posted": 0
+        },
+        "sync-wrapper-hides-async-view": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "tar-filter-kwarg-needs-newer-python-patch": {
+          "kind": "dependency",
+          "runs": 1,
+          "correct": 0,
+          "raised": 1,
           "posted": 0
         },
         "unset-proto-field-treated-as-zero": {
           "kind": "logic",
-          "runs": 3,
-          "correct": 0,
-          "raised": 3,
-          "posted": 0
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
         }
       },
-      "unlabeled": []
+      "unlabeled": [
+        {
+          "case": "db-default-pk-treated-as-unset-on-save",
+          "run": "1",
+          "file": "tests/inline_formsets/tests.py",
+          "line": 119,
+          "severity": "medium",
+          "confidence": 0.7,
+          "message": "The default prefix for this inline formset comes from the FK accessor name, which is `childuuidpk_set`, not `child_set`. With the wrong prefix the management form data is missing, so the formset is invalid no matter what, and `assertIs(formset.is_valid(), False)` passes even without the fix. Use the correct prefix, or pass `prefix=`, and assert the specific error so the test actually checks the regression."
+        }
+      ]
+    },
+    "pr-agent/anthropic/claude-opus-5-5": {
+      "runs": 1,
+      "cases": [
+        "async-login-leaves-stale-request-user",
+        "clean-bytes-password-hashing",
+        "clean-close-transport-on-base-exception",
+        "clean-default-thread-minimum-size",
+        "clean-from-proto-classmethods",
+        "clean-indexable-keeps-native-frames",
+        "clean-sqlite-ensure-connection",
+        "db-default-pk-treated-as-unset-on-save",
+        "db-pool-closed-after-each-task-in-thread-pools",
+        "deprecated-module-imported-eagerly",
+        "disable-prefetch-assumes-virtual-channel-qos",
+        "eager-optional-numpy-import-in-approx-eq",
+        "fish-completion-splits-on-unquoted-newline",
+        "hardcoded-kwarg-collides-with-user-option",
+        "hostname-regex-rejects-multi-label-domains",
+        "indexable-hands-wrapped-frames-to-estimators",
+        "limit-read-before-connection-opened",
+        "missing-auth-on-camelcase-alias",
+        "new-required-kwarg-breaks-direct-responder-use",
+        "parser-cancellation-leaves-connection-open",
+        "password-hasher-decodes-bytes-as-utf8",
+        "sync-wrapper-hides-async-view",
+        "tar-filter-kwarg-needs-newer-python-patch",
+        "unset-proto-field-treated-as-zero"
+      ],
+      "overall": {
+        "recall": {
+          "median": 0.8181818181818182,
+          "min": 0.8181818181818182,
+          "max": 0.8181818181818182
+        },
+        "recall_before_filter": {
+          "median": 0.8181818181818182,
+          "min": 0.8181818181818182,
+          "max": 0.8181818181818182
+        },
+        "precision": {
+          "median": 1.0,
+          "min": 1.0,
+          "max": 1.0
+        },
+        "accuracy": {
+          "median": 0.875,
+          "min": 0.875,
+          "max": 0.875
+        },
+        "severity_accuracy": null,
+        "seconds": {
+          "median": 16.740000000000002,
+          "min": 16.740000000000002,
+          "max": 16.740000000000002
+        },
+        "cost_usd": {
+          "median": 1.1839879999999998,
+          "min": 1.1839879999999998,
+          "max": 1.1839879999999998
+        },
+        "duplicates": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "unlabeled": {
+          "median": 9,
+          "min": 9,
+          "max": 9
+        }
+      },
+      "by_kind": {
+        "caller": {
+          "recall": {
+            "median": 0.6666666666666666,
+            "min": 0.6666666666666666,
+            "max": 0.6666666666666666
+          },
+          "recall_before_filter": {
+            "median": 0.6666666666666666,
+            "min": 0.6666666666666666,
+            "max": 0.6666666666666666
+          },
+          "precision": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "accuracy": {
+            "median": 0.6666666666666666,
+            "min": 0.6666666666666666,
+            "max": 0.6666666666666666
+          },
+          "severity_accuracy": null,
+          "seconds": {
+            "median": 19.77,
+            "min": 19.77,
+            "max": 19.77
+          },
+          "cost_usd": {
+            "median": 0.17262,
+            "min": 0.17262,
+            "max": 0.17262
+          },
+          "duplicates": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "unlabeled": {
+            "median": 3,
+            "min": 3,
+            "max": 3
+          }
+        },
+        "clean": {
+          "recall": null,
+          "recall_before_filter": null,
+          "precision": null,
+          "accuracy": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "severity_accuracy": null,
+          "seconds": {
+            "median": 10.399999999999999,
+            "min": 10.399999999999999,
+            "max": 10.399999999999999
+          },
+          "cost_usd": {
+            "median": 0.14962,
+            "min": 0.14962,
+            "max": 0.14962
+          },
+          "duplicates": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "unlabeled": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          }
+        },
+        "dependency": {
+          "recall": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "recall_before_filter": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "precision": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "accuracy": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "severity_accuracy": null,
+          "seconds": {
+            "median": 19.42,
+            "min": 19.42,
+            "max": 19.42
+          },
+          "cost_usd": {
+            "median": 0.261164,
+            "min": 0.261164,
+            "max": 0.261164
+          },
+          "duplicates": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "unlabeled": {
+            "median": 1,
+            "min": 1,
+            "max": 1
+          }
+        },
+        "logic": {
+          "recall": {
+            "median": 0.7857142857142857,
+            "min": 0.7857142857142857,
+            "max": 0.7857142857142857
+          },
+          "recall_before_filter": {
+            "median": 0.7857142857142857,
+            "min": 0.7857142857142857,
+            "max": 0.7857142857142857
+          },
+          "precision": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "accuracy": {
+            "median": 0.8181818181818182,
+            "min": 0.8181818181818182,
+            "max": 0.8181818181818182
+          },
+          "severity_accuracy": null,
+          "seconds": {
+            "median": 18.24,
+            "min": 18.24,
+            "max": 18.24
+          },
+          "cost_usd": {
+            "median": 0.5392119999999999,
+            "min": 0.5392119999999999,
+            "max": 0.5392119999999999
+          },
+          "duplicates": {
+            "median": 2,
+            "min": 2,
+            "max": 2
+          },
+          "unlabeled": {
+            "median": 5,
+            "min": 5,
+            "max": 5
+          }
+        },
+        "security": {
+          "recall": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "recall_before_filter": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "precision": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "accuracy": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "severity_accuracy": null,
+          "seconds": {
+            "median": 21.85,
+            "min": 21.85,
+            "max": 21.85
+          },
+          "cost_usd": {
+            "median": 0.061372,
+            "min": 0.061372,
+            "max": 0.061372
+          },
+          "duplicates": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "unlabeled": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          }
+        }
+      },
+      "by_case": {
+        "async-login-leaves-stale-request-user": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 3
+        },
+        "clean-bytes-password-hashing": {
+          "kind": "clean",
+          "runs": 1,
+          "correct": 1,
+          "raised": 0,
+          "posted": 0
+        },
+        "clean-close-transport-on-base-exception": {
+          "kind": "clean",
+          "runs": 1,
+          "correct": 1,
+          "raised": 0,
+          "posted": 0
+        },
+        "clean-default-thread-minimum-size": {
+          "kind": "clean",
+          "runs": 1,
+          "correct": 1,
+          "raised": 0,
+          "posted": 0
+        },
+        "clean-from-proto-classmethods": {
+          "kind": "clean",
+          "runs": 1,
+          "correct": 1,
+          "raised": 0,
+          "posted": 0
+        },
+        "clean-indexable-keeps-native-frames": {
+          "kind": "clean",
+          "runs": 1,
+          "correct": 1,
+          "raised": 0,
+          "posted": 0
+        },
+        "clean-sqlite-ensure-connection": {
+          "kind": "clean",
+          "runs": 1,
+          "correct": 1,
+          "raised": 0,
+          "posted": 0
+        },
+        "db-default-pk-treated-as-unset-on-save": {
+          "kind": "caller",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 2
+        },
+        "db-pool-closed-after-each-task-in-thread-pools": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "deprecated-module-imported-eagerly": {
+          "kind": "dependency",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "disable-prefetch-assumes-virtual-channel-qos": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 2
+        },
+        "eager-optional-numpy-import-in-approx-eq": {
+          "kind": "dependency",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 2
+        },
+        "fish-completion-splits-on-unquoted-newline": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 3
+        },
+        "hardcoded-kwarg-collides-with-user-option": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "hostname-regex-rejects-multi-label-domains": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "indexable-hands-wrapped-frames-to-estimators": {
+          "kind": "caller",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 2
+        },
+        "limit-read-before-connection-opened": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "missing-auth-on-camelcase-alias": {
+          "kind": "security",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "new-required-kwarg-breaks-direct-responder-use": {
+          "kind": "caller",
+          "runs": 1,
+          "correct": 0,
+          "raised": 0,
+          "posted": 1
+        },
+        "parser-cancellation-leaves-connection-open": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 0,
+          "raised": 0,
+          "posted": 1
+        },
+        "password-hasher-decodes-bytes-as-utf8": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 0,
+          "raised": 0,
+          "posted": 0
+        },
+        "sync-wrapper-hides-async-view": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "tar-filter-kwarg-needs-newer-python-patch": {
+          "kind": "dependency",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 2
+        },
+        "unset-proto-field-treated-as-zero": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 2
+        }
+      },
+      "unlabeled": [
+        {
+          "case": "unset-proto-field-treated-as-zero",
+          "run": "1",
+          "file": "mlflow/store/tracking/sqlalchemy_store.py",
+          "line": 1036,
+          "severity": null,
+          "confidence": null,
+          "message": "Unvalidated max_results: Nothing validates `max_results`, either here or in the handler schema. A negative value such as `-1` produces `LIMIT 0`, and `len(metrics) == max_results + 1` becomes `0 == 0`. The store then emits a token for offset `-1`. Following that token sends `OFFSET -1` to the database, which fails with a DB error (500) rather than a clean `INVALID_PARAMETER_VALUE`.\n\n`max_results=0` similarly returns an empty page with a token that points back to the same offset. Reject non-positive values, or treat `0` as \"no limit\"."
+        },
+        {
+          "case": "fish-completion-splits-on-unquoted-newline",
+          "run": "1",
+          "file": "tests/test_shell_completion.py",
+          "line": 564,
+          "severity": null,
+          "confidence": null,
+          "message": "Test Gap: The new tests only check the Python-side output format. They never exercise the Fish source script, which is why the incompatibility between the new 3-line format and the script's per-line loop goes undetected.\n\nA test that runs the generated Fish script, or at least asserts the script's parsing logic matches the new format, would catch this regression."
+        },
+        {
+          "case": "eager-optional-numpy-import-in-approx-eq",
+          "run": "1",
+          "file": "changelog/13047.bugfix.rst",
+          "line": 8,
+          "severity": null,
+          "confidence": null,
+          "message": "Doc Example Error: The example imports `approx` with `from pytest import approx` but then calls `pytest.approx(...)`. As written, the pycon snippet raises `NameError: name 'pytest' is not defined`. Use `approx(...)` or `import pytest` instead."
+        },
+        {
+          "case": "indexable-hands-wrapped-frames-to-estimators",
+          "run": "1",
+          "file": "sklearn/model_selection/tests/test_validation.py",
+          "line": 660,
+          "severity": null,
+          "confidence": null,
+          "message": "Weakened Test: The previous tests asserted that estimators receive exactly the native input type. The new `check_df`/`check_series` also accept any object whose `to_native()` returns that type, so the tests no longer catch a regression where native dataframes are replaced by narwhals wrappers before reaching user estimators.\n\nIn addition, if `x` is a numpy array (for example, after an unintended conversion), `x.to_native()` raises `AttributeError` instead of the intended clear check failure. The same pattern is in `test_search.py`."
+        },
+        {
+          "case": "disable-prefetch-assumes-virtual-channel-qos",
+          "run": "1",
+          "file": "celery/worker/consumer/tasks.py",
+          "line": 58,
+          "severity": null,
+          "confidence": null,
+          "message": "ETA Tasks Block: The gate compares `len(state.reserved_requests)` with the pool size. That set also holds tasks waiting for their ETA/countdown in the timer, not just tasks running or ready to run. So a worker holding `num_processes` ETA tasks would stop pulling new messages even though every process is idle. This contradicts the documented \"only when a process is available\" behavior and can stall throughput when ETA tasks are common.\n\nUncertainty: this depends on ETA requests being added to `reserved_requests` by the strategy, which this diff doesn't show. Consider counting active or ready requests, or excluding ETA requests."
+        },
+        {
+          "case": "parser-cancellation-leaves-connection-open",
+          "run": "1",
+          "file": "aiohttp/worker.py",
+          "line": 125,
+          "severity": null,
+          "confidence": null,
+          "message": "Cleanup skipped: Narrowing the handler from `BaseException` to `Exception` changes shutdown behavior. Since Python 3.8, `asyncio.CancelledError` subclasses `BaseException`, as do `KeyboardInterrupt` and `SystemExit`. None of these are caught anymore.\n\nIf the `_run` task is cancelled, or the worker is interrupted while awaiting `_wait_next_notify()`, the exception now skips `await runner.cleanup()`. The previous code always reached that call.\n\nAs a result, the server would not shut down gracefully: the site stays bound, open connections are not drained, and the app's `on_shutdown`/`on_cleanup` hooks do not run.\n\nIf cleanup must always happen, wrap the loop in `try/finally` so cleanup runs on every exit path. Alternatively, catch `asyncio.CancelledError` explicitly."
+        },
+        {
+          "case": "new-required-kwarg-breaks-direct-responder-use",
+          "run": "1",
+          "file": "starlette/middleware/gzip.py",
+          "line": 138,
+          "severity": null,
+          "confidence": null,
+          "message": "Signature Change: `IdentityResponder.apply_compression` and `GZipResponder.apply_compression` changed from sync to `async`, and every call site now `await`s the result. Code outside this PR that subclasses these responders and overrides `apply_compression` with a plain `def` will now fail at runtime with `TypeError: object bytes can't be used in 'await' expression`. Code that calls the method directly will get a coroutine instead of `bytes`.\n\nThis only affects users who extend these classes. Starlette documents them as non-public, so the risk is limited. If compatibility matters, consider one of these options:\n- Keep `apply_compression` sync, and add a separate async wrapper (e.g. `apply_compression_async`) that `send_with_compression` awaits.\n- Note the break in the changelog."
+        },
+        {
+          "case": "async-login-leaves-stale-request-user",
+          "run": "1",
+          "file": "tests/auth_tests/test_middleware.py",
+          "line": 63,
+          "severity": null,
+          "confidence": null,
+          "message": "Incomplete tests: The new tests check only `request.auser()` after `alogin`/`alogout`. They do not check `request.user`, so the regression in `request.user` described above goes undetected. Add assertions on `self.request.user` after each call."
+        },
+        {
+          "case": "db-default-pk-treated-as-unset-on-save",
+          "run": "1",
+          "file": "tests/inline_formsets/tests.py",
+          "line": 116,
+          "severity": null,
+          "confidence": null,
+          "message": "Ineffective Test: The formset data uses the `child_set-` prefix. The default inline formset prefix for `ChildUUIDPk` is its accessor name, `childuuidpk_set`, so the management form data is never found. `formset.is_valid()` therefore returns `False` because the ManagementForm data is missing, not because of the `DatabaseDefault` pk handling. The test passes with or without the fix in `base.py`. Use the `childuuidpk_set-` prefix, or pass `prefix=\"child_set\"`. Then assert on the behavior the fix targets, such as no crash or an empty queryset for the unsaved parent."
+        }
+      ]
     }
   }
 }

@@ -70,19 +70,21 @@ marginal builds one prompt from the diff and the context around it, asks your mo
 
 ## Review quality
 
-Every release is scored on a fixed set of real PRs from public repos: PRs that introduced a bug someone later fixed, and clean PRs with nothing to flag. Each case is reviewed once per model by default; with more runs, the table shows the median.
+Every release is scored on a fixed set of real PRs from public repos: PRs that introduced a bug someone later fixed, and clean PRs with nothing to flag. **24 cases from 9 repos** (mlflow, Django, scikit-learn, celery, aiohttp, Starlette, click, pytest, setuptools): 18 bugs and 6 clean PRs, each answer key checked against the upstream fix. [PR-Agent](https://github.com/qodo-ai/pr-agent) runs on the same cases, model and key, for comparison.
 
 | Metric | What it measures | marginal · Claude Opus 5.5 | PR-Agent · Claude Opus 5.5 |
 |---|---|--:|--:|
-| Recall | known bugs the reviewer posted a finding for | 🔴 0.00 | — |
-| Recall before filter | known bugs the model raised, including ones below the confidence threshold | 🟢 1.00 | — |
-| Precision | posted findings that point at a known bug | ⚪ n/a | — |
-| Accuracy per PR | bug PRs with a hit, clean PRs with no findings | 🔴 0.33 | — |
-| Severity accuracy | hits rated at or above the expected severity | ⚪ n/a | — |
-| Time | median seconds per review | 28.3 | — |
-| Cost | model cost in USD of reviewing every case once | $0.1550 | — |
+| Recall | known bugs the reviewer posted a finding for | 🔴 0.41 | 🟢 0.82 |
+| Recall before filter | known bugs the model raised, including ones below the confidence threshold | 🟢 0.82 | 🟢 0.82 |
+| Precision | posted findings that point at a known bug | 🟢 1.00 | 🟢 1.00 |
+| Accuracy per PR | bug PRs with a hit, clean PRs with no findings | 🟡 0.62 | 🟢 0.88 |
+| Severity accuracy | hits rated at or above the expected severity | 🟢 1.00 | ⚪ n/a |
+| Time | median seconds per review | 16.7 | 16.7 |
+| Cost | model cost in USD of reviewing all 24 cases once | $1.00 | $1.18 |
 
-Scores for **v0.2.10**: 3 cases, 3 runs each (PR-Agent joins at the next release), the median of each metric; 🟢 0.80 or more, 🟡 0.50 or more, 🔴 below 0.50, ⚪ not measured. With marginal's default `confidence_threshold` (0.85), the model raised both known bugs but rated them below it, so nothing was posted: that's the gap between Recall and Recall before filter, and why Precision and Severity accuracy have nothing to measure. From the next release, mlflow's cases are reviewed with a confidence threshold of 0.6, as a team running marginal on mlflow would set it (`repos` in `cases.yml`). The cases are in [`cases.yml`](tests/integration/review_quality/cases.yml). Know a PR that belongs there? Propose it with the [Benchmark case](https://github.com/exactml/marginal/issues/new?template=benchmark_case.yml) form.
+🟢 0.80 or more, 🟡 0.50 or more, 🔴 below 0.50, ⚪ not measured (PR-Agent rates no severity). One run per case ([run 40698115733](https://github.com/exactml/marginal/actions/runs/40698115733), 2026-10-28). marginal is scored with a confidence threshold of 0.6 for each of these repos (`repos` in `cases.yml`), the value a team running marginal on mlflow uses, not tuned per repo on these cases; the run itself used it on mlflow only, and marginal's reviews are re-scored at 0.6 from that run's saved output, since the threshold only filters what the model already returned. At marginal's 0.85 default, its Recall on the same run is 0.05.
+
+Neither tool posted a finding on any clean PR. The model raises the same share of the known bugs in both tools; marginal posts fewer of them because it rates them below its threshold. The cases are in [`cases.yml`](tests/integration/review_quality/cases.yml). Know a PR that belongs there? Propose it with the [Benchmark case](https://github.com/exactml/marginal/issues/new?template=benchmark_case.yml) form.
 
 ## Safe to run on your code
 
