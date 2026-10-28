@@ -113,13 +113,20 @@ class _FindingsResponse(BaseModel):
 
 def run_review(
     repo: str,
-    pr_number: int,
+    pr_number: int | None,
     path: str = ".",
     *,
+    base: str | None = None,
+    head: str | None = None,
     comment: bool = False,
     output_format: OutputFormat = "text",
 ) -> int:
     """Fetch `pr_number` from `repo` and print a summary in `output_format`.
+
+    With `pr_number=None`, reviews the diff between commits `base` and `head`
+    instead (`GitHubClient.get_compare_files`), with config and policies as of
+    `base`. Nothing PR-only happens then: no earlier comments are read, so no
+    maintainer replies or dedup, and `comment` must be off.
 
     Fetches the pull request, then loads `.marginal/config.yaml` and its
     policy files as of the PR's base commit (`_load_base_config`), so the PR
@@ -251,7 +258,12 @@ def run_review(
     # default permissions, since the config's own `permissions` aren't known yet.
     base_client = GitHubClient(repo, PermissionsConfig())
     try:
-        pull_request = base_client.get_pull_request(pr_number)
+        pull_request = (
+            base_client.get_pull_request(pr_number)
+            if pr_number is not None
+            # Just enough of a PR's shape for the shared code below.
+            else {"base": {"sha": base, "repo": {"full_name": repo}}, "head": {"sha": head}}
+        )
         config, base_sha = _load_base_config(base_client, pull_request, path)
         reviewer_model = config.models.get("reviewer")
         policies: list[tuple[str, str]] = []
@@ -268,11 +280,17 @@ def run_review(
     client = GitHubClient(repo, config.permissions)
 
     try:
-        files = client.get_pull_request_files(pr_number)
+        files = (
+            client.get_pull_request_files(pr_number)
+            if pr_number is not None
+            else client.get_compare_files(base, head)
+        )
         # Read once, up front: the prompt needs maintainer replies before
         # generating, and `--comment` needs the posted markers for dedup.
         review_comments = (
-            client.list_review_comments(pr_number) if reviewer_model is not None or comment else []
+            client.list_review_comments(pr_number)
+            if pr_number is not None and (reviewer_model is not None or comment)
+            else []
         )
     except (PermissionDeniedError, GitHubAuthenticationError, GitHubAPIError) as exc:
         print(f"marginal review: {exc}", file=sys.stderr)
@@ -549,7 +567,7 @@ def _close_resolved_findings(
 
 
 def _base_lines(
-    pr_number: int,
+    pr_number: int | None,
     pull_request: dict[str, object],
     filenames: list[str],
     verdict: str | None = None,
@@ -566,11 +584,16 @@ def _base_lines(
     lines = [REVIEW_HEADING, ""]
     if verdict is not None:
         lines += [verdict, ""]
-    lines.append(
-        f"**PR #{pr_number}: {pull_request['title']}** · {pull_request['state']} · "
-        f"`{str(pull_request['base']['sha'])[:7]}` → `{str(pull_request['head']['sha'])[:7]}` · "
-        f"{len(filenames)} {file_word} changed"
-    )
+    base_sha = str(pull_request["base"]["sha"])[:7]
+    head_sha = str(pull_request["head"]["sha"])[:7]
+    if pr_number is None:
+        repo = pull_request["base"]["repo"]["full_name"]
+        lines.append(f"**{repo} {base_sha}...{head_sha}** · {len(filenames)} {file_word} changed")
+    else:
+        lines.append(
+            f"**PR #{pr_number}: {pull_request['title']}** · {pull_request['state']} · "
+            f"`{base_sha}` → `{head_sha}` · {len(filenames)} {file_word} changed"
+        )
     if filenames:
         lines += [
             "",
@@ -704,7 +727,7 @@ def _identity(
 
 def _build_json_result(
     repo: str,
-    pr_number: int,
+    pr_number: int | None,
     pull_request: dict[str, object],
     filenames: list[str],
     findings: list[Finding],
@@ -724,13 +747,15 @@ def _build_json_result(
     prompt exceeded `review.max_prompt_tokens` (so empty `findings` mean
     "not reviewed", not "nothing found").
     A finding's `line` being `None` means what it does for
-    `_build_inline_comments`.
+    `_build_inline_comments`. Reviewing two commits (`pr_number=None`) leaves
+    `title` and `state` `None`.
     """
+    is_pr = pr_number is not None
     return {
         "repo": repo,
         "pr_number": pr_number,
-        "title": str(pull_request["title"]),
-        "state": str(pull_request["state"]),
+        "title": str(pull_request["title"]) if is_pr else None,
+        "state": str(pull_request["state"]) if is_pr else None,
         "base_sha": str(pull_request["base"]["sha"]),
         "head_sha": str(pull_request["head"]["sha"]),
         "changed_files": filenames,

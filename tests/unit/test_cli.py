@@ -134,7 +134,7 @@ def test_readme_quickstart_matches_what_init_prints_and_writes(tmp_path, capsys)
     so the two can't drift apart again."""
     main(["init", str(tmp_path)])
     out = capsys.readouterr().out.replace(str(tmp_path), ".")
-    readme = (Path(__file__).parent.parent / "README.md").read_text()
+    readme = (Path(__file__).parents[2] / "README.md").read_text()
 
     assert f"```text\n{out}```" in readme
     assert f"```yaml\n# .github/workflows/marginal.yml\n{WORKFLOW_TEMPLATE}```" in readme
@@ -2123,6 +2123,90 @@ def test_build_json_result_serializes_a_finding_as_plain_json():
     assert json.loads(json.dumps(result)) == result
     assert result["findings"][0]["severity"] == "high"
     assert result["findings"][0]["line"] is None
+
+
+# -- review: two commits instead of a PR -----------------------------------
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        [],
+        ["--pr", "42", "--base", "abc123", "--head", "def456"],
+        ["--base", "abc123"],
+        ["--pr", "42", "--head", "def456"],
+        ["--base", "abc123", "--head", "def456", "--comment"],
+    ],
+    ids=["neither", "pr-and-commits", "base-alone", "pr-and-head", "comment"],
+)
+def test_review_rejects_a_bad_target_as_a_usage_error(mock_github_client, target):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["review", "--repo", "acme/widgets", *target])
+
+    assert exc_info.value.code == 2
+    mock_github_client.assert_not_called()
+
+
+def test_review_of_two_commits_reviews_the_compare_diff_with_base_config(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_compare_files.return_value = [
+        {"filename": "marginal/retry.py", "status": "modified", "patch": _RETRY_PATCH}
+    ]
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=_FindingsResponse(findings=[_finding_at(2, "Blocks the retry loop.")])
+    )
+
+    exit_code = main(
+        ["review", "--repo", "acme/widgets", "--base", "abc123", "--head", "def456"]
+        + ["--format", "json"]
+    )
+
+    assert exit_code == 0
+    client.get_compare_files.assert_called_once_with("abc123", "def456")
+    client.get_file.assert_any_call(".marginal/config.yaml", "abc123")
+    client.get_pull_request.assert_not_called()
+    client.list_review_comments.assert_not_called()
+    client.create_review.assert_not_called()
+    result = json.loads(capsys.readouterr().out)
+    assert result == {
+        "repo": "acme/widgets",
+        "pr_number": None,
+        "title": None,
+        "state": None,
+        "base_sha": "abc123",
+        "head_sha": "def456",
+        "changed_files": ["marginal/retry.py"],
+        "findings": [
+            {
+                "file": "marginal/retry.py",
+                "line": 2,
+                "severity": "high",
+                "confidence": 0.9,
+                "message": "Blocks the retry loop.",
+            }
+        ],
+        "redacted_files": [],
+        "comment_posted": False,
+        "prompt_over_budget": False,
+    }
+
+
+def test_review_of_two_commits_says_what_it_reviewed(
+    tmp_path, capsys, monkeypatch, mock_github_client
+):
+    monkeypatch.chdir(tmp_path)
+    mock_github_client.return_value.get_compare_files.return_value = [{"filename": "a.py"}]
+
+    exit_code = main(
+        ["review", "--repo", "acme/widgets", "--base", "22e1206abc", "--head", "f6bbd55def"]
+    )
+
+    assert exit_code == 0
+    assert "**acme/widgets 22e1206...f6bbd55** · 1 file changed" in capsys.readouterr().out
 
 
 # -- review: dedup across re-runs ------------------------------------------
