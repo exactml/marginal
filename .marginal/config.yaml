@@ -15,7 +15,7 @@ ownership:
 models:
   reviewer:
     provider: anthropic
-    model: claude-sonnet-5
+    model: claude-opus-5-5
 policies: []
 permissions:
   read:

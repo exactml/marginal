@@ -230,7 +230,7 @@ context:
 models:
   reviewer:
     provider: anthropic   # or: openai, ollama
-    model: claude-sonnet-5
+    model: claude-opus-5-5
 
 policies:        # rules the review checks the diff against
   - .marginal/policies/security.md
