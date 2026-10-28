@@ -27,6 +27,7 @@ from marginal.github.errors import (
 from marginal.graph import ChangedDefinition, build_symbol_graph, find_out_of_diff_callers
 from marginal.graph.diff import _hunk_ranges
 from marginal.policy import load_policies
+from marginal.providers.base import reset_usage, usage
 from marginal.providers.errors import MissingCredentialsError, ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
 from marginal.review import Finding, Severity, filter_findings
@@ -243,6 +244,7 @@ def run_review(
     """
     if output_format not in get_args(OutputFormat):
         raise ValueError(f"unknown output format: {output_format!r}")
+    reset_usage()
 
     # Config and policies come from the PR's base commit, not its checkout:
     # otherwise the PR could rewrite the rules it's reviewed by. Read with
@@ -437,6 +439,9 @@ def run_review(
             comment_posted=comment_posted,
             prompt_over_budget=over_budget is not None,
         )
+        # Summed over every model call above: findings, retry, self-critique, re-check.
+        model = f"{reviewer_model.provider}:{reviewer_model.model}" if reviewer_model else None
+        result["usage"] = {"model": model, **usage()}
         print(json.dumps(result, indent=2))
 
     return 0

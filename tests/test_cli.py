@@ -1710,6 +1710,8 @@ def test_review_format_json_prints_parseable_json_with_pr_metadata(
         "redacted_files": [],
         "comment_posted": False,
         "prompt_over_budget": False,
+        # No reviewer configured, so no model call.
+        "usage": {"model": None, "input_tokens": 0, "output_tokens": 0},
     }
     # The markdown summary is replaced, not appended to, under --format json.
     assert "### 🤖 marginal review" not in out
