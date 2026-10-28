@@ -38,7 +38,11 @@ pre-commit install
 review tool with one provider and model: today marginal and
 [PR-Agent](https://github.com/qodo-ai/pr-agent), both with Claude Opus 5.5)
 reviews every case once (`make review-quality RUNS=3` for more), and
-`score.py` compares each attempt with its own line in `baseline.json`. It needs each attempt's provider key (and
+`score.py` compares each attempt with its own line in `baseline.json`.
+`repos` in `cases.yml` sets marginal's settings per upstream repo (today
+`mlflow/mlflow: {confidence_threshold: 0.6}`); other repos use the defaults.
+PR-Agent has no confidence threshold, so it ignores them. It needs each
+attempt's provider key (and
 `GITHUB_TOKEN` for the GitHub API), and it **costs money**. You don't need to
 run it for a normal PR: it runs on every release PR, one GitHub Actions job
 per attempt. To benchmark another model, add an attempt to `cases.yml`; to run

@@ -82,7 +82,7 @@ Every release is scored on a fixed set of real PRs from public repos: PRs that i
 | Time | median seconds per review | 28.3 | — |
 | Cost | model cost in USD of reviewing every case once | $0.1550 | — |
 
-Scores for **v0.2.10**: 3 cases, 3 runs each (PR-Agent joins at the next release), the median of each metric; 🟢 0.80 or more, 🟡 0.50 or more, 🔴 below 0.50, ⚪ not measured. With marginal's default `confidence_threshold` (0.85), the model raised both known bugs but rated them below it, so nothing was posted: that's the gap between Recall and Recall before filter, and why Precision and Severity accuracy have nothing to measure. The cases are in [`cases.yml`](tests/integration/review_quality/cases.yml). Know a PR that belongs there? Propose it with the [Benchmark case](https://github.com/exactml/marginal/issues/new?template=benchmark_case.yml) form.
+Scores for **v0.2.10**: 3 cases, 3 runs each (PR-Agent joins at the next release), the median of each metric; 🟢 0.80 or more, 🟡 0.50 or more, 🔴 below 0.50, ⚪ not measured. With marginal's default `confidence_threshold` (0.85), the model raised both known bugs but rated them below it, so nothing was posted: that's the gap between Recall and Recall before filter, and why Precision and Severity accuracy have nothing to measure. From the next release, mlflow's cases are reviewed with a confidence threshold of 0.6, as a team running marginal on mlflow would set it (`repos` in `cases.yml`). The cases are in [`cases.yml`](tests/integration/review_quality/cases.yml). Know a PR that belongs there? Propose it with the [Benchmark case](https://github.com/exactml/marginal/issues/new?template=benchmark_case.yml) form.
 
 ## Safe to run on your code
 
