@@ -383,15 +383,6 @@ cases:
   source: https://github.com/scikit-learn/scikit-learn/pull/34605
   must_find: []
   must_not_flag: []
-- id: clean-yaml-sort-keys-default
-  upstream: django/django
-  base: 8c34887b1ad8bb3ec61c6e713442dab3c643d557
-  head: a269574f1bcf4716502b9ba8c3492abf15dc93eb
-  kind: clean
-  merged: '2026-10-07'
-  source: https://github.com/django/django/pull/22096
-  must_find: []
-  must_not_flag: []
 - id: clean-sqlite-ensure-connection
   upstream: django/django
   base: 0def695e3cbaa9ede9ae4040a24cfed7417f9065
