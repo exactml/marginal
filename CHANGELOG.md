@@ -2,6 +2,47 @@
 
 <!-- towncrier release notes start -->
 
+## marginal v0.2.10, 2026-10-28
+
+### Breaking Changes
+
+### New Features
+
+- `marginal review` can now review the diff between two commits without a pull
+  request: `marginal review --repo owner/name --base <sha> --head <sha>` uses the
+  config and policies as of `--base` and posts nothing, so `--comment` isn't
+  allowed with it
+
+  ([ISSUE-179](https://github.com/exactml/marginal/issues/179), [PR-181](https://github.com/exactml/marginal/pull/181) by [@exactml](https://github.com/exactml))
+
+### Improvements
+
+- `marginal review --format json` now reports the tokens the review used, in a
+  top-level `usage` object with the model and the input and output token counts
+  summed over every model call, including a retry and the self-critique pass.
+  A count is `null` when the provider doesn't report usage, as some local
+  Ollama servers don't
+
+  ([ISSUE-179](https://github.com/exactml/marginal/issues/179), [PR-182](https://github.com/exactml/marginal/pull/182) by [@exactml](https://github.com/exactml))
+
+- `marginal review --format json` now lists `filtered_findings`: the findings the
+  model returned that `review.confidence_threshold` or `review.max_comments`
+  dropped. They're never posted, but their confidence shows how close they came,
+  so "the model missed it" and "the threshold dropped it" can be told apart
+
+  ([ISSUE-188](https://github.com/exactml/marginal/issues/188), [PR-189](https://github.com/exactml/marginal/pull/189) by [@exactml](https://github.com/exactml))
+
+### Fixes
+
+- Reviews work with Claude Opus 5.5 and Fable 5.1: marginal no longer
+  forces the structured-output tool call, which these models reject with a 400,
+  and asks for it instead. A reply without the tool call is retried once, and
+  structured output gets room for the thinking these models always do
+
+  ([ISSUE-185](https://github.com/exactml/marginal/issues/185), [PR-186](https://github.com/exactml/marginal/pull/186) by [@exactml](https://github.com/exactml))
+
+### Warnings
+
 ## marginal v0.2.9, 2026-10-25
 
 ### Breaking Changes
