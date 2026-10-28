@@ -5,42 +5,38 @@
 config: marginal-config.yaml
 
 # USD per million tokens, keyed by the model id in the review's `usage`.
-# PLACEHOLDER: verify against the provider's current price list before
-# trusting the cost metric.
+# Anthropic list prices as of 2026-06; update when a price changes.
 prices:
-  claude-sonnet-5: {input: 3.0, output: 15.0}
+  claude-sonnet-5: {input: 2.0, output: 10.0}
 
 cases:
-  # PLACEHOLDER: not a real case yet -- replace upstream, SHAs and answer key.
-  - id: placeholder-unchecked-path-join
-    upstream: example-owner/example-repo
-    base: "0000000000000000000000000000000000000000"
-    head: "1111111111111111111111111111111111111111"
+  - id: missing-auth-on-camelcase-alias
+    upstream: mlflow/mlflow
+    base: 51846bf4363a9206d3bc22c8bc87188b66e920fe
+    head: 4bb7474771c3be808cd9e129defef9305f2869be
     kind: security
-    source: https://github.com/example-owner/example-repo/pull/1
-    evidence: https://github.com/example-owner/example-repo/pull/2
+    source: https://github.com/mlflow/mlflow/pull/24293
+    evidence: https://github.com/mlflow/mlflow/pull/25892
     must_find:
-      - {file: src/handlers.py, lines: [10, 20], severity: high}
+      - {file: mlflow/server/auth/__init__.py, lines: [1184, 1192], severity: high}
     must_not_flag: []
 
-  # PLACEHOLDER: not a real case yet -- replace upstream, SHAs and answer key.
-  - id: placeholder-off-by-one-pagination
-    upstream: example-owner/example-repo
-    base: "2222222222222222222222222222222222222222"
-    head: "3333333333333333333333333333333333333333"
+  - id: unset-proto-field-treated-as-zero
+    upstream: mlflow/mlflow
+    base: f4f92549e194a80746d85b1e869fe552457525e6
+    head: bf9147937e2648af5f1740a388edd52b2bc20592
     kind: logic
-    source: https://github.com/example-owner/example-repo/pull/3
-    evidence: https://github.com/example-owner/example-repo/pull/4
+    source: https://github.com/mlflow/mlflow/pull/16325
+    evidence: https://github.com/mlflow/mlflow/pull/23917
     must_find:
-      - {file: src/pagination.py, lines: [30, 35], severity: medium}
-    must_not_flag:
-      - {file: src/pagination.py, lines: [1, 10]}
+      - {file: mlflow/server/handlers.py, lines: [1172, 1177], severity: medium}
+    must_not_flag: []
 
-  # PLACEHOLDER: not a real case yet -- replace upstream and SHAs.
-  - id: placeholder-clean-refactor
-    upstream: example-owner/example-repo
-    base: "4444444444444444444444444444444444444444"
-    head: "5555555555555555555555555555555555555555"
+  - id: clean-from-proto-classmethods
+    upstream: mlflow/mlflow
+    base: 2aec126dafd5728ce82e3069b3cd913a983a7697
+    head: 469939287d617631896902f363555d84df2c2860
     kind: clean
-    source: https://github.com/example-owner/example-repo/pull/5
+    source: https://github.com/mlflow/mlflow/pull/23722
     must_find: []
+    must_not_flag: []
