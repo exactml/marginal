@@ -255,6 +255,27 @@ def test_get_pull_request_files_follows_every_full_page(monkeypatch):
     assert second_call.kwargs["params"] == {"per_page": 100, "page": 2}
 
 
+def test_get_compare_files_returns_the_compare_files_list(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    files = [{"filename": "a.py", "status": "modified", "patch": "@@ -1 +1 @@"}]
+    session.request.return_value = _response(200, {"status": "ahead", "files": files})
+
+    assert _client(session=session).get_compare_files("abc123", "def456") == files
+    args, _ = session.request.call_args
+    assert args == ("GET", "https://api.github.com/repos/acme/widgets/compare/abc123...def456")
+
+
+def test_get_compare_files_denied_without_read_repository(monkeypatch):
+    monkeypatch.delenv(GITHUB_TOKEN_ENV_VAR, raising=False)
+    session = MagicMock()
+    client = _client(PermissionsConfig(read=PermissionsRead(repository=False)), session)
+
+    with pytest.raises(PermissionDeniedError, match="permissions.read.repository"):
+        client.get_compare_files("abc123", "def456")
+    session.request.assert_not_called()
+
+
 @pytest.mark.parametrize(
     ("method", "path"),
     [

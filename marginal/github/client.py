@@ -96,6 +96,17 @@ class GitHubClient:
         self._require_read("pull_requests")
         return self._get_all_pages(f"/repos/{self._repo}/pulls/{number}/files")
 
+    def get_compare_files(self, base: str, head: str) -> list[dict[str, object]]:
+        """Return the files changed between commits `base` and `head`, in the
+        same shape as `get_pull_request_files`.
+
+        One request: GitHub's compare API returns at most 300 files and
+        doesn't page them.
+        """
+        self._require_read("repository")
+        data = self._request("GET", f"/repos/{self._repo}/compare/{base}...{head}")
+        return data.get("files", [])
+
     def list_review_comments(self, number: int) -> list[dict[str, object]]:
         """Return every inline review comment on the PR, across all pages."""
         self._require_read("pull_requests")

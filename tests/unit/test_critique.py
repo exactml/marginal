@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -11,6 +12,7 @@ from marginal.cli.review import (
     _FindingsResponse,
     _redact_patches,
 )
+from marginal.providers.base import record_usage
 from marginal.providers.errors import ProviderResponseError
 from marginal.review import Finding, Severity
 
@@ -168,3 +170,22 @@ def test_the_critique_prompt_numbers_each_finding_and_carries_the_diff(tmp_path,
     assert "--- finding 3 at retry.py:1 · medium · 60% confidence ---\nImport is" in prompt
     assert f"--- retry.py ---\n{PATCH}" in prompt
     assert "code between hunks" in prompt
+
+
+def test_json_usage_sums_generation_and_critique(tmp_path, provider, capsys):
+    _config(tmp_path, self_reflect=True)
+    answers = iter([_FindingsResponse(findings=FINDINGS), _verdicts()])
+
+    async def call(*args, **kwargs):
+        record_usage(100, 20)
+        return next(answers)
+
+    provider.side_effect = call
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--format", "json"]) == 0
+
+    assert json.loads(capsys.readouterr().out)["usage"] == {
+        "model": "anthropic:claude-sonnet-5",
+        "input_tokens": 200,
+        "output_tokens": 40,
+    }

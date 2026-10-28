@@ -7,12 +7,17 @@ from collections.abc import AsyncIterator
 import anthropic
 from pydantic import BaseModel
 
-from marginal.providers.base import retry_once_on_validation_error
+from marginal.providers.base import record_usage, retry_once_on_validation_error
 from marginal.providers.credentials import require_env
 from marginal.providers.errors import ProviderAPIError, ProviderResponseError
 
 DEFAULT_MAX_TOKENS = 4096
 _STRUCTURED_OUTPUT_TOOL = "emit_structured_output"
+
+
+def _record_usage(response: object) -> None:
+    usage = getattr(response, "usage", None)
+    record_usage(getattr(usage, "input_tokens", None), getattr(usage, "output_tokens", None))
 
 
 def _find_tool_input(response: object, tool_name: str) -> dict | None:
@@ -158,6 +163,7 @@ class AnthropicProvider:
             )
         except anthropic.APIError as exc:
             raise ProviderAPIError("anthropic", str(exc)) from exc
+        _record_usage(response)
         return "".join(
             block.text for block in response.content if getattr(block, "type", None) == "text"
         )
@@ -187,6 +193,7 @@ class AnthropicProvider:
                 )
             except anthropic.APIError as exc:
                 raise ProviderAPIError("anthropic", str(exc)) from exc
+            _record_usage(response)
             tool_input = _find_tool_input(response, _STRUCTURED_OUTPUT_TOOL)
             if tool_input is None:
                 raise ProviderResponseError(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextvars import ContextVar
 from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ValidationError
@@ -50,3 +51,35 @@ async def retry_once_on_validation_error(
         f"{provider} structured output failed schema validation after retrying once: "
         f"{validation_error}"
     ) from validation_error
+
+
+# Tokens summed over every model call since the last `reset_usage()`. A count
+# stays None once any call didn't report it (e.g. an Ollama server that omits
+# usage), since a partial sum would understate the cost. Held in a context
+# variable, so reviews in different threads or asyncio tasks keep their own
+# totals; tasks a review starts share its dict, so their calls count too.
+_usage: ContextVar[dict[str, int | None]] = ContextVar("marginal_usage")
+
+
+def _totals() -> dict[str, int | None]:
+    totals = _usage.get(None)
+    if totals is None:
+        totals = {"input_tokens": 0, "output_tokens": 0}
+        _usage.set(totals)
+    return totals
+
+
+def reset_usage() -> None:
+    _usage.set({"input_tokens": 0, "output_tokens": 0})
+
+
+def record_usage(input_tokens: int | None, output_tokens: int | None) -> None:
+    totals = _totals()
+    for key, value in (("input_tokens", input_tokens), ("output_tokens", output_tokens)):
+        total = totals[key]
+        totals[key] = None if value is None or total is None else total + value
+
+
+def usage() -> dict[str, int | None]:
+    """`{"input_tokens": ..., "output_tokens": ...}` since the last `reset_usage()`."""
+    return dict(_totals())

@@ -1,3 +1,4 @@
+import asyncio
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -17,6 +18,7 @@ from marginal.providers import (
     get_provider,
 )
 from marginal.providers.anthropic import AnthropicProvider, _strict_input_schema
+from marginal.providers.base import record_usage, reset_usage, usage
 from marginal.providers.credentials import require_env
 from marginal.providers.openai import OllamaProvider, OpenAIProvider
 
@@ -623,3 +625,79 @@ async def test_ollama_errors_name_the_ollama_provider():
         await provider.generate("say hi")
 
     assert excinfo.value.provider == "ollama"
+
+
+# -- token usage --------------------------------------------------------
+
+
+async def test_anthropic_usage_is_summed_across_a_validation_retry():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    invalid = _anthropic_tool_response({"approved": "not-a-bool"})
+    valid = _anthropic_tool_response({"approved": True, "reason": "ok"})
+    invalid.usage = SimpleNamespace(input_tokens=100, output_tokens=10)
+    valid.usage = SimpleNamespace(input_tokens=120, output_tokens=15)
+    client.messages.create.side_effect = [invalid, valid]
+    reset_usage()
+
+    await _anthropic_provider(client).generate_structured("review this", Verdict)
+
+    assert usage() == {"input_tokens": 220, "output_tokens": 25}
+
+
+async def test_openai_usage_reads_prompt_and_completion_tokens():
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock())))
+    client.chat.completions.create.return_value = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="hi"))],
+        usage=SimpleNamespace(prompt_tokens=7, completion_tokens=3),
+    )
+    reset_usage()
+
+    await _openai_provider(client).generate("say hi")
+    await _openai_provider(client).generate("say hi")
+
+    assert usage() == {"input_tokens": 14, "output_tokens": 6}
+
+
+async def test_usage_is_null_once_a_call_reports_none():
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock())))
+    client.chat.completions.create.side_effect = [
+        SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="hi"))],
+            usage=SimpleNamespace(prompt_tokens=7, completion_tokens=3),
+        ),
+        # An Ollama server that omits usage.
+        SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="hi"))], usage=None
+        ),
+    ]
+    provider = OllamaProvider("llama3", client=client)
+    reset_usage()
+
+    await provider.generate("say hi")
+    await provider.generate("say hi")
+
+    assert usage() == {"input_tokens": None, "output_tokens": None}
+
+
+async def test_concurrent_reviews_keep_their_own_usage():
+    async def review(tokens: int) -> dict[str, int | None]:
+        reset_usage()
+        await asyncio.sleep(0)  # let the other review record in between
+        record_usage(tokens, tokens)
+        await asyncio.sleep(0)
+        return usage()
+
+    first, second = await asyncio.gather(review(5), review(7))
+
+    assert first == {"input_tokens": 5, "output_tokens": 5}
+    assert second == {"input_tokens": 7, "output_tokens": 7}
+
+
+def test_usage_recorded_inside_asyncio_run_reaches_the_caller():
+    async def call_model() -> None:
+        record_usage(3, 2)
+
+    reset_usage()
+    asyncio.run(call_model())
+
+    assert usage() == {"input_tokens": 3, "output_tokens": 2}

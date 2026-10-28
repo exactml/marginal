@@ -32,11 +32,16 @@ def main(argv: list[str] | None = None) -> int:
         "--force", action="store_true", help="Overwrite existing scaffolded files"
     )
 
-    review_parser = subparsers.add_parser("review", help="Fetch and summarize a pull request")
-    review_parser.add_argument("--repo", required=True, help="GitHub repository as owner/name")
-    review_parser.add_argument(
-        "--pr", type=int, required=True, dest="pr_number", help="Pull request number"
+    review_parser = subparsers.add_parser(
+        "review", help="Fetch and summarize a pull request, or the diff between two commits"
     )
+    review_parser.add_argument("--repo", required=True, help="GitHub repository as owner/name")
+    review_target = review_parser.add_mutually_exclusive_group(required=True)
+    review_target.add_argument("--pr", type=int, dest="pr_number", help="Pull request number")
+    review_target.add_argument(
+        "--base", help="Base commit SHA; with --head, review base...head instead of a PR"
+    )
+    review_parser.add_argument("--head", help="Head commit SHA, used with --base")
     review_parser.add_argument(
         "--comment", action="store_true", help="Post the summary as a PR comment"
     )
@@ -82,8 +87,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "init":
         return run_init(args.path, force=args.force)
     if args.command == "review":
+        if (args.base is None) != (args.head is None):
+            review_parser.error("--base and --head must be given together")
+        if args.base is not None and args.comment:
+            review_parser.error("--comment needs --pr: there's no pull request to post to")
         return run_review(
-            args.repo, args.pr_number, comment=args.comment, output_format=args.output_format
+            args.repo,
+            args.pr_number,
+            base=args.base,
+            head=args.head,
+            comment=args.comment,
+            output_format=args.output_format,
         )
 
     parser.error(f"unknown command: {args.command}")

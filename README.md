@@ -173,6 +173,7 @@ _marginal is under active, in-the-open development. Jump into [Issues](https://g
 | `marginal init` | Writes `.marginal/config.yaml`, a policies folder, and the GitHub Actions workflow. |
 | `marginal review --repo owner/name --pr 12` | Reviews a PR and prints the result. Posts nothing, so it's a safe local preview (drafts included). |
 | `marginal review ... --comment` | Same review, posted to the PR as inline comments plus a summary. This is what the workflow runs. Add `--format json` for machine-readable output. |
+| `marginal review --repo owner/name --base <sha> --head <sha>` | Reviews the diff between two commits instead of a PR, with the config as of `--base`. Prints only; `--comment` isn't allowed. |
 | `marginal compact --repo owner/name --pr 12 --comment` | Re-checks marginal's open findings against the latest code and resolves the ones that are fixed. `review --comment` already does this on every later push. |
 | `marginal doctor` | Checks config, credentials, and GitHub access without calling a model. |
 | `marginal help [command]`, `marginal --version` | Usage, and the installed version. |
