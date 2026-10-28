@@ -114,8 +114,16 @@ class Attempt(_Strict):
         return f"{self.tool}/{self.provider}/{self.model}"
 
 
+class RepoSettings(_Strict):
+    """How a team running marginal on one upstream repo would tune it."""
+
+    confidence_threshold: float = Field(ge=0.0, le=1.0)
+
+
 class Suite(_Strict):
     config: str
+    # Per upstream repo ("owner/name"), applied to marginal's config for its cases.
+    repos: dict[str, RepoSettings] = Field(default_factory=dict)
     attempts: list[Attempt] = Field(min_length=1)
     cases: list[Case]
 

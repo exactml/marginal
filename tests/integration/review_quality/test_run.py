@@ -4,7 +4,7 @@ import json
 
 import run
 import yaml
-from score import Attempt, Case
+from score import Attempt, Case, RepoSettings
 
 
 def test_run_attempt_reviews_with_the_attempts_model_and_saves_under_its_id(tmp_path, monkeypatch):
@@ -37,3 +37,13 @@ def test_run_attempt_reviews_with_the_attempts_model_and_saves_under_its_id(tmp_
     saved = tmp_path / "raw" / "marginal" / "openai" / "gpt-5.5" / "clean-refactor"
     assert sorted(p.name for p in saved.iterdir()) == ["1.json", "2.json"]
     assert json.loads((saved / "1.json").read_text())["seconds"] == 1.0
+
+
+def test_repo_config_applies_a_repos_threshold_and_keeps_the_rest():
+    config = {"version": 1, "review": {"max_comments": 5}}
+
+    tuned = run.repo_config(config, RepoSettings(confidence_threshold=0.6))
+
+    assert tuned == {"version": 1, "review": {"max_comments": 5, "confidence_threshold": 0.6}}
+    assert config == {"version": 1, "review": {"max_comments": 5}}  # not mutated
+    assert run.repo_config(config, None) is config

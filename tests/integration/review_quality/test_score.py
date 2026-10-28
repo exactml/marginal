@@ -296,4 +296,5 @@ def test_shipped_cases_are_valid():
     suite = load_suite(HERE / "cases.yml")
 
     assert (HERE / suite.config).is_file()
+    assert suite.repos["mlflow/mlflow"].confidence_threshold == 0.6
     assert [attempt.id for attempt in suite.attempts] == [ATTEMPT_ID]

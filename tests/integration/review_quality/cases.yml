@@ -4,6 +4,11 @@
 # positive; anything else is unlabeled and listed for a person to judge.
 config: marginal-config.yaml
 
+# Per upstream repo: marginal's settings for that repo's cases, as a team
+# running marginal on it would tune them. Other repos use marginal's defaults.
+repos:
+  mlflow/mlflow: {confidence_threshold: 0.6}
+
 # Every attempt reviews every case: a review tool, and the provider and model
 # it calls. Scores are kept per attempt.
 attempts:
