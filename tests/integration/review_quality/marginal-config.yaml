@@ -1,0 +1,9 @@
+# The config every benchmark case is reviewed with. The upstream repos have no
+# .marginal/config.yaml, so run.py places this one in each case's snapshot.
+# Everything but the reviewer model stays at marginal's defaults, so the
+# benchmark measures what a new user gets.
+version: 1
+models:
+  reviewer:
+    provider: anthropic
+    model: claude-sonnet-5

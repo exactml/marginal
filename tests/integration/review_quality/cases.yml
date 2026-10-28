@@ -1,0 +1,46 @@
+# Benchmark cases: real upstream PRs pinned by SHA, each with an answer key.
+# A hit is a finding in a must_find file with its line inside `lines`; a
+# finding inside must_not_flag, or anywhere on a `clean` case, is a false
+# positive; anything else is unlabeled and listed for a person to judge.
+config: marginal-config.yaml
+
+# USD per million tokens, keyed by the model id in the review's `usage`.
+# PLACEHOLDER: verify against the provider's current price list before
+# trusting the cost metric.
+prices:
+  claude-sonnet-5: {input: 3.0, output: 15.0}
+
+cases:
+  # PLACEHOLDER: not a real case yet -- replace upstream, SHAs and answer key.
+  - id: placeholder-unchecked-path-join
+    upstream: example-owner/example-repo
+    base: "0000000000000000000000000000000000000000"
+    head: "1111111111111111111111111111111111111111"
+    kind: security
+    source: https://github.com/example-owner/example-repo/pull/1
+    evidence: https://github.com/example-owner/example-repo/pull/2
+    must_find:
+      - {file: src/handlers.py, lines: [10, 20], severity: high}
+    must_not_flag: []
+
+  # PLACEHOLDER: not a real case yet -- replace upstream, SHAs and answer key.
+  - id: placeholder-off-by-one-pagination
+    upstream: example-owner/example-repo
+    base: "2222222222222222222222222222222222222222"
+    head: "3333333333333333333333333333333333333333"
+    kind: logic
+    source: https://github.com/example-owner/example-repo/pull/3
+    evidence: https://github.com/example-owner/example-repo/pull/4
+    must_find:
+      - {file: src/pagination.py, lines: [30, 35], severity: medium}
+    must_not_flag:
+      - {file: src/pagination.py, lines: [1, 10]}
+
+  # PLACEHOLDER: not a real case yet -- replace upstream and SHAs.
+  - id: placeholder-clean-refactor
+    upstream: example-owner/example-repo
+    base: "4444444444444444444444444444444444444444"
+    head: "5555555555555555555555555555555555555555"
+    kind: clean
+    source: https://github.com/example-owner/example-repo/pull/5
+    must_find: []
