@@ -70,9 +70,9 @@ marginal builds one prompt from the diff and the context around it, asks your mo
 
 ## Review quality
 
-Every release is scored on a fixed set of real PRs from public repos: PRs that introduced a bug someone later fixed, and clean PRs with nothing to flag. Each case runs 3 times; the table shows the median.
+Every release is scored on a fixed set of real PRs from public repos: PRs that introduced a bug someone later fixed, and clean PRs with nothing to flag. Each case runs 3 times per model; the table shows the median.
 
-| Metric | What it measures | Latest release |
+| Metric | What it measures | marginal · Claude Opus 5.5 |
 |---|---|---|
 | Recall | known bugs found | — |
 | Precision | findings that point at a real bug | — |

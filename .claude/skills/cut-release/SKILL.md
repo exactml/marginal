@@ -109,8 +109,8 @@ cp "$OUT/score.json" tests/integration/review_quality/baseline.json
 ```
 
 Update the **Review quality** table in `README.md` from `baseline.json`:
-the median of each metric in the "Latest release" column, and the line
-under the table naming `v<new>`. Don't round numbers into something
+one column per attempt (`attempts.<tool>/<provider>/<model>.overall`), the
+median of each metric, and the line under the table naming `v<new>`. Don't round numbers into something
 `baseline.json` doesn't say.
 
 ```bash

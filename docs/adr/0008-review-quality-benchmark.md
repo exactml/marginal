@@ -32,6 +32,11 @@ at every release, and numbers anyone can compare.
 - **Each case runs 3 times**, and each metric reports the median and the
   min-max: recall, precision, per-PR accuracy, severity accuracy, time, and
   cost.
+- **Scored per attempt.** An attempt is one review tool with one provider and
+  model, listed in `cases.yml`. Each attempt is scored and compared with its
+  own baseline, and the workflow runs one job per attempt from that list. The
+  first attempt is marginal with Claude Opus 5.5; other models, and later
+  other review tools, are new attempts on the same cases.
 - **A soft gate on the release PR.** The `Review quality` workflow runs on
   `release/*` PRs and on demand. It writes the comparison with the last
   release's `baseline.json` to the run summary. It warns, and never fails the
