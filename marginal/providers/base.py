@@ -50,3 +50,26 @@ async def retry_once_on_validation_error(
         f"{provider} structured output failed schema validation after retrying once: "
         f"{validation_error}"
     ) from validation_error
+
+
+# Tokens summed over every model call since the last `reset_usage()`. A count
+# stays None once any call didn't report it (e.g. an Ollama server that omits
+# usage), since a partial sum would understate the cost.
+# shortcut: process-wide, fine for one review per CLI run; move onto the
+# provider instance if calls for different reviews ever run in one process.
+_usage: dict[str, int | None] = {"input_tokens": 0, "output_tokens": 0}
+
+
+def reset_usage() -> None:
+    _usage.update(input_tokens=0, output_tokens=0)
+
+
+def record_usage(input_tokens: int | None, output_tokens: int | None) -> None:
+    for key, value in (("input_tokens", input_tokens), ("output_tokens", output_tokens)):
+        total = _usage[key]
+        _usage[key] = None if value is None or total is None else total + value
+
+
+def usage() -> dict[str, int | None]:
+    """`{"input_tokens": ..., "output_tokens": ...}` since the last `reset_usage()`."""
+    return dict(_usage)

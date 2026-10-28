@@ -7,11 +7,16 @@ from collections.abc import AsyncIterator
 import openai
 from pydantic import BaseModel
 
-from marginal.providers.base import retry_once_on_validation_error
+from marginal.providers.base import record_usage, retry_once_on_validation_error
 from marginal.providers.credentials import require_env
 from marginal.providers.errors import ProviderAPIError, ProviderResponseError
 
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
+
+
+def _record_usage(response: object) -> None:
+    usage = getattr(response, "usage", None)
+    record_usage(getattr(usage, "prompt_tokens", None), getattr(usage, "completion_tokens", None))
 
 
 class OpenAIProvider:
@@ -40,6 +45,7 @@ class OpenAIProvider:
             )
         except openai.APIError as exc:
             raise ProviderAPIError(self._name, str(exc)) from exc
+        _record_usage(response)
         return response.choices[0].message.content or ""
 
     async def generate_structured(
@@ -62,6 +68,7 @@ class OpenAIProvider:
                 )
             except openai.APIError as exc:
                 raise ProviderAPIError(self._name, str(exc)) from exc
+            _record_usage(response)
             content = response.choices[0].message.content
             if content is None:
                 raise ProviderResponseError(
