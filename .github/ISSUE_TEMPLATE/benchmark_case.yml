@@ -1,0 +1,46 @@
+name: Benchmark case
+description: Propose a real PR for the review-quality benchmark
+labels: [test]
+body:
+  - type: input
+    id: repository
+    attributes:
+      label: Repository
+      description: The public repository the PR is in.
+      placeholder: owner/repo
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: PR that introduced the bug
+      description: Or, for a clean case, a PR with no bug in it.
+      placeholder: https://github.com/owner/repo/pull/123
+    validations:
+      required: true
+  - type: input
+    id: evidence
+    attributes:
+      label: Later fix or revert that proves it
+      description: Leave empty for a clean case.
+      placeholder: https://github.com/owner/repo/pull/456
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options: [security, dependency, caller, logic, test, clean]
+    validations:
+      required: true
+  - type: textarea
+    id: location
+    attributes:
+      label: Where the bug is
+      description: File, line range in the PR's head commit, and the severity marginal should give it. Leave empty for a clean case.
+      placeholder: "server/handlers.py, lines 210-224, critical"
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it's a bug
+      description: What goes wrong, and for a clean case, why there's nothing to flag.
+    validations:
+      required: true
