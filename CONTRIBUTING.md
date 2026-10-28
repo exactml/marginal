@@ -18,8 +18,12 @@ make format   # auto-fix
 ## Test
 
 ```bash
-make test
+make test     # tests/unit/, free: no model calls
+make bench    # tests/integration/review_quality/, calls the model
 ```
+
+`make test` runs the unit tests in `tests/unit/`. They mock GitHub and the
+model, so they're fast and free. Run them before every push.
 
 Optionally, install the pre-commit hooks so lint runs automatically before
 each commit:
@@ -28,6 +32,26 @@ each commit:
 pip install pre-commit
 pre-commit install
 ```
+
+`make bench` runs the review-quality benchmark in
+`tests/integration/review_quality/`: marginal reviews every case in
+`cases.yml` 3 times, and `score.py` compares the result with `baseline.json`.
+It needs `ANTHROPIC_API_KEY` (and `GITHUB_TOKEN` for the GitHub API), and it
+**costs money**. You don't need to run it for a normal PR: it runs on every
+release PR.
+
+### Adding a benchmark case
+
+A case is a real PR from a public repo: one that introduced a bug someone
+later fixed or reverted, or a clean PR with nothing to flag.
+
+- **Propose one** with the
+  [Benchmark case](https://github.com/exactml/marginal/issues/new?template=benchmark_case.yml)
+  issue form. A maintainer checks it and adds it.
+- **Or add it to `cases.yml` directly** in a PR: pin the base and head SHAs,
+  link the PR that introduced the bug (`source`) and the fix or revert that
+  proves it (`evidence`), and give the file, line range, and expected
+  severity. A case without evidence won't be merged.
 
 ## Changelog
 
