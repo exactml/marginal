@@ -1,0 +1,50 @@
+name: Review quality
+
+on:
+  # Runs only on release PRs (release/v*), see the job's `if`: the benchmark
+  # calls the model and costs money, so it doesn't run on every PR.
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or SHA of marginal to benchmark
+        default: master
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'release/') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Empty on pull_request, so the PR's own commit is checked out.
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      # A crash here fails the job, so a broken run is never mistaken for a score.
+      - name: Run benchmark
+        run: make bench
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      # Soft gate: a drop in scores warns in the summary, never fails the job.
+      - name: Compare with baseline
+        continue-on-error: true
+        run: python tests/integration/review_quality/score.py >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: review-quality
+          path: tests/integration/review_quality/score.json
+          if-no-files-found: warn
