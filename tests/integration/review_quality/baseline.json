@@ -1,1 +1,186 @@
-{}
+{
+  "attempts": {
+    "marginal/anthropic/claude-opus-5-5": {
+      "runs": 3,
+      "cases": [
+        "clean-from-proto-classmethods",
+        "missing-auth-on-camelcase-alias",
+        "unset-proto-field-treated-as-zero"
+      ],
+      "overall": {
+        "recall": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "recall_before_filter": {
+          "median": 1.0,
+          "min": 1.0,
+          "max": 1.0
+        },
+        "precision": null,
+        "accuracy": {
+          "median": 0.3333333333333333,
+          "min": 0.3333333333333333,
+          "max": 0.3333333333333333
+        },
+        "severity_accuracy": null,
+        "seconds": {
+          "median": 28.26,
+          "min": 25.03,
+          "max": 32.41
+        },
+        "cost_usd": {
+          "median": 0.15504,
+          "min": 0.15064,
+          "max": 0.16174
+        },
+        "duplicates": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "unlabeled": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        }
+      },
+      "by_kind": {
+        "clean": {
+          "recall": null,
+          "recall_before_filter": null,
+          "precision": null,
+          "accuracy": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "severity_accuracy": null,
+          "seconds": {
+            "median": 21.26,
+            "min": 20.8,
+            "max": 21.49
+          },
+          "cost_usd": {
+            "median": 0.024652,
+            "min": 0.024532,
+            "max": 0.026172
+          },
+          "duplicates": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "unlabeled": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          }
+        },
+        "logic": {
+          "recall": {
+            "median": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "recall_before_filter": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "precision": null,
+          "accuracy": {
+            "median": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "severity_accuracy": null,
+          "seconds": {
+            "median": 28.26,
+            "min": 25.03,
+            "max": 32.41
+          },
+          "cost_usd": {
+            "median": 0.074564,
+            "min": 0.069824,
+            "max": 0.082564
+          },
+          "duplicates": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "unlabeled": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          }
+        },
+        "security": {
+          "recall": {
+            "median": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "recall_before_filter": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "precision": null,
+          "accuracy": {
+            "median": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "severity_accuracy": null,
+          "seconds": {
+            "median": 33.31,
+            "min": 32.26,
+            "max": 33.78
+          },
+          "cost_usd": {
+            "median": 0.055944,
+            "min": 0.053004,
+            "max": 0.056164
+          },
+          "duplicates": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "unlabeled": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          }
+        }
+      },
+      "by_case": {
+        "clean-from-proto-classmethods": {
+          "kind": "clean",
+          "runs": 3,
+          "correct": 3,
+          "raised": 0,
+          "posted": 0
+        },
+        "missing-auth-on-camelcase-alias": {
+          "kind": "security",
+          "runs": 3,
+          "correct": 0,
+          "raised": 3,
+          "posted": 0
+        },
+        "unset-proto-field-treated-as-zero": {
+          "kind": "logic",
+          "runs": 3,
+          "correct": 0,
+          "raised": 3,
+          "posted": 0
+        }
+      },
+      "unlabeled": []
+    }
+  }
+}
