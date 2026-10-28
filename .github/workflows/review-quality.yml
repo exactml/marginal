@@ -6,6 +6,7 @@ on:
   # synchronize: cut-release pushes the new baseline.json to the release PR,
   # and that push shouldn't pay for a second run.
   pull_request:
+    branches: [master]
     types: [opened, reopened]
   workflow_dispatch:
     inputs:
