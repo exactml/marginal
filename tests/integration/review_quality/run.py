@@ -29,7 +29,8 @@ from score import HERE, Attempt, Case, load_suite
 
 
 def download_snapshot(upstream: str, sha: str, dest: Path) -> Path:
-    """Extract the tarball of `upstream` at `sha` into `dest`; return its root."""
+    """Extract the tarball of `upstream` at `sha` into `dest` as a git
+    repository; return its root."""
     url = f"https://codeload.github.com/{upstream}/tar.gz/{sha}"
     with (
         urllib.request.urlopen(url, timeout=300) as response,
@@ -37,6 +38,9 @@ def download_snapshot(upstream: str, sha: str, dest: Path) -> Path:
     ):
         archive.extractall(dest, filter="data")
     (root,) = dest.iterdir()  # the archive's single <repo>-<sha>/ directory
+    # The code graph lists files with `git ls-files`, which needs a repository;
+    # untracked files are enough, so nothing is committed.
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     return root
 
 
@@ -99,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 checkout = download_snapshot(case.upstream, case.head, Path(tmp))
-            except (OSError, tarfile.TarError) as error:
+            except (OSError, tarfile.TarError, subprocess.CalledProcessError) as error:
                 print(f"{case.id}: download failed: {error}", file=sys.stderr)
                 failures += args.runs * len(attempts)
                 continue
