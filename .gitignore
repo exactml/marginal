@@ -193,6 +193,6 @@ pyrightconfig.json
 # graphify skill output
 graphify-out/
 
-# review-quality benchmark output (make bench)
+# review-quality benchmark output (make review-quality)
 tests/integration/review_quality/raw/
 tests/integration/review_quality/score.json

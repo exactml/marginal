@@ -1,6 +1,6 @@
-.PHONY: lint format test bench
+.PHONY: lint format test review-quality
 
-BENCH := tests/integration/review_quality
+REVIEW_QUALITY := tests/integration/review_quality
 
 lint:
 	ruff check .
@@ -14,6 +14,6 @@ test:
 	pytest
 
 # Calls the reviewer model (needs its API key and GITHUB_TOKEN); `test` never does.
-bench:
-	python $(BENCH)/run.py
-	python $(BENCH)/score.py
+review-quality:
+	python $(REVIEW_QUALITY)/run.py
+	python $(REVIEW_QUALITY)/score.py
