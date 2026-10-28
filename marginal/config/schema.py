@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SUPPORTED_CONFIG_VERSION = 1
 
@@ -26,12 +26,33 @@ class ReviewTone(str, Enum):
     EDUCATIONAL = "educational"
 
 
+# Settings a config may still carry from an older release, and why each went.
+_REMOVED_REVIEW_SETTINGS = {
+    "confidence_threshold": (
+        "findings no longer carry a self-rated confidence; each one quotes its "
+        "evidence, and a finding is posted only if marginal finds a quote at its "
+        "line and the trigger names real code"
+    ),
+    "self_reflect": "it was a second model call that only lowered confidence",
+}
+
+
 class ReviewConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_settings(cls, data: object) -> object:
+        if isinstance(data, dict):
+            for key, why in _REMOVED_REVIEW_SETTINGS.items():
+                if key in data:
+                    raise ValueError(
+                        f"review.{key} was removed: {why}. Delete it from .marginal/config.yaml"
+                    )
+        return data
+
     enabled: bool = True
     inline_comments: bool = True
-    confidence_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
     max_comments: int = Field(default=8, gt=0)
     # Ceiling on the built review prompt's estimated size, checked before any
     # model call -- marginal bills the user's own API key, so an unexpectedly
@@ -52,10 +73,6 @@ class ReviewConfig(BaseModel):
             "*.min.css",
         ]
     )
-    # Opt-in: a second model call that re-scores or drops findings before
-    # `confidence_threshold` and `max_comments` apply. Strict for the same
-    # reason as `max_prompt_tokens`: it spends the user's API key.
-    self_reflect: bool = Field(default=False, strict=True)
     tone: ReviewTone = ReviewTone.CONCISE
     # With `--comment`, these PRs get no review posted and no model call:
     # unfinished (drafts), machine-written (bot authors), or opted out by

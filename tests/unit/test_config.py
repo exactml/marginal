@@ -16,7 +16,6 @@ version: 1
 review:
   enabled: true
   inline_comments: true
-  confidence_threshold: 0.85
   max_comments: 8
   tone: concise
 
@@ -70,10 +69,8 @@ def test_missing_config_returns_defaults(tmp_path):
 
     assert config == MarginalConfig()
     assert config.review.enabled is True
-    assert config.review.confidence_threshold == 0.85
     assert config.review.max_comments == 8
     assert config.review.max_prompt_tokens == 100_000
-    assert config.review.self_reflect is False
     assert config.review.tone == ReviewTone.CONCISE
     assert config.context.cross_repository is False
     assert config.ownership.notify_responsible is False
@@ -130,12 +127,23 @@ def test_unsupported_version_is_rejected(tmp_path):
         load_config(tmp_path)
 
 
-@pytest.mark.parametrize("threshold", [-0.1, 1.1])
-def test_confidence_threshold_out_of_range_is_rejected(tmp_path, threshold):
-    write_config(tmp_path, f"review:\n  confidence_threshold: {threshold}\n")
+@pytest.mark.parametrize(
+    ("setting", "replaced_by"),
+    [
+        ("confidence_threshold: 0.6", "quotes its evidence"),
+        ("self_reflect: true", "second model call"),
+    ],
+)
+def test_a_removed_review_setting_fails_with_what_replaced_it(tmp_path, setting, replaced_by):
+    write_config(tmp_path, f"review:\n  {setting}\n")
 
-    with pytest.raises(ConfigValidationError):
+    with pytest.raises(ConfigValidationError) as error:
         load_config(tmp_path)
+
+    message = str(error.value)
+    assert f"review.{setting.split(':')[0]} was removed" in message
+    assert replaced_by in message
+    assert "Delete it from .marginal/config.yaml" in message
 
 
 @pytest.mark.parametrize("max_comments", [0, -1])
@@ -206,20 +214,6 @@ def test_default_permissions_follow_least_privilege():
     assert permissions.write.approve is False
     assert permissions.write.push is False
     assert permissions.write.merge is False
-
-
-def test_self_reflect_can_be_turned_on(tmp_path):
-    write_config(tmp_path, "review:\n  self_reflect: true\n")
-
-    assert load_config(tmp_path).review.self_reflect is True
-
-
-@pytest.mark.parametrize("self_reflect", ["1", "'true'", "maybe"])
-def test_invalid_self_reflect_is_rejected(tmp_path, self_reflect):
-    write_config(tmp_path, f"review:\n  self_reflect: {self_reflect}\n")
-
-    with pytest.raises(ConfigValidationError, match="review.self_reflect"):
-        load_config(tmp_path)
 
 
 def test_max_prompt_tokens_can_be_overridden(tmp_path):
