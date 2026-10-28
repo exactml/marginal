@@ -17,33 +17,396 @@ attempts:
   - {tool: pr-agent, provider: anthropic, model: claude-opus-5-5}
 
 cases:
-  - id: missing-auth-on-camelcase-alias
-    upstream: mlflow/mlflow
-    base: 51846bf4363a9206d3bc22c8bc87188b66e920fe
-    head: 4bb7474771c3be808cd9e129defef9305f2869be
-    kind: security
-    source: https://github.com/mlflow/mlflow/pull/24293
-    evidence: https://github.com/mlflow/mlflow/pull/25892
-    must_find:
-      - {file: mlflow/server/auth/__init__.py, lines: [1184, 1192], severity: high}
-    must_not_flag: []
-
-  - id: unset-proto-field-treated-as-zero
-    upstream: mlflow/mlflow
-    base: f4f92549e194a80746d85b1e869fe552457525e6
-    head: bf9147937e2648af5f1740a388edd52b2bc20592
-    kind: logic
-    source: https://github.com/mlflow/mlflow/pull/16325
-    evidence: https://github.com/mlflow/mlflow/pull/23917
-    must_find:
-      - {file: mlflow/server/handlers.py, lines: [1172, 1177], severity: medium}
-    must_not_flag: []
-
-  - id: clean-from-proto-classmethods
-    upstream: mlflow/mlflow
-    base: 2aec126dafd5728ce82e3069b3cd913a983a7697
-    head: 469939287d617631896902f363555d84df2c2860
-    kind: clean
-    source: https://github.com/mlflow/mlflow/pull/23722
-    must_find: []
-    must_not_flag: []
+- id: missing-auth-on-camelcase-alias
+  upstream: mlflow/mlflow
+  base: 51846bf4363a9206d3bc22c8bc87188b66e920fe
+  head: 4bb7474771c3be808cd9e129defef9305f2869be
+  kind: security
+  merged: '2026-07-06'
+  source: https://github.com/mlflow/mlflow/pull/24293
+  evidence: https://github.com/mlflow/mlflow/pull/25892
+  why: The new source-read check only looks for run_id/model_id under their snake_case keys, but the handler
+    also accepts runId/modelId, so a camelCase body skips the READ check.
+  must_find:
+  - file: mlflow/server/auth/__init__.py
+    lines:
+    - 1184
+    - 1192
+    severity: high
+  must_not_flag: []
+- id: unset-proto-field-treated-as-zero
+  upstream: mlflow/mlflow
+  base: f4f92549e194a80746d85b1e869fe552457525e6
+  head: bf9147937e2648af5f1740a388edd52b2bc20592
+  kind: logic
+  merged: '2025-06-20'
+  source: https://github.com/mlflow/mlflow/pull/16325
+  evidence: https://github.com/mlflow/mlflow/pull/23917
+  why: An unset proto2 int reads as 0, never None, so the `is not None` check always passes and a request without max_results
+    sends max_results=0 to the store.
+  must_find:
+  - file: mlflow/server/handlers.py
+    lines:
+    - 1172
+    - 1177
+    severity: medium
+  must_not_flag: []
+- id: clean-from-proto-classmethods
+  upstream: mlflow/mlflow
+  base: 2aec126dafd5728ce82e3069b3cd913a983a7697
+  head: 469939287d617631896902f363555d84df2c2860
+  kind: clean
+  merged: '2026-06-11'
+  source: https://github.com/mlflow/mlflow/pull/23722
+  must_find: []
+  must_not_flag: []
+- id: fish-completion-splits-on-unquoted-newline
+  upstream: pallets/click
+  base: c69643b60cf971cd5d8e5d3902632807ceab9b8f
+  head: 19fd4d6e18bc9fce451f92f422696b11169faa57
+  kind: logic
+  merged: '2026-04-29'
+  source: https://github.com/pallets/click/pull/3126
+  evidence: https://github.com/pallets/click/pull/3504
+  why: The fish script splits each completion on an unquoted \n, which becomes a literal line break in
+    the generated script, and the newline-framed output is flattened by fish command substitution, so
+    fish completion breaks.
+  must_find:
+  - file: src/click/shell_completion.py
+    lines:
+    - 183
+    - 183
+    severity: high
+  - file: src/click/shell_completion.py
+    lines:
+    - 436
+    - 436
+    severity: high
+  must_not_flag: []
+- id: eager-optional-numpy-import-in-approx-eq
+  upstream: pytest-dev/pytest
+  base: e35f1bfe8b2848cbe674b0390973c9a70c844a4e
+  head: 0c454979cc2038bc193eb037e80f658a9183641f
+  kind: dependency
+  merged: '2025-04-02'
+  source: https://github.com/pytest-dev/pytest/pull/13338
+  evidence: https://github.com/pytest-dev/pytest/pull/13563
+  why: is_bool() runs `import numpy` on every approx comparison, so users who never use numpy pay for
+    (and get side effects of) importing it; the rest of approx only checks sys.modules.
+  must_find:
+  - file: src/_pytest/python_api.py
+    lines:
+    - 429
+    - 434
+    severity: low
+  must_not_flag: []
+- id: indexable-hands-wrapped-frames-to-estimators
+  upstream: scikit-learn/scikit-learn
+  base: aade86fe5f42d2e11a8ec46ff6e14a9a0609e62b
+  head: 925873e46af0185cf8b90cacea33ac12edca5939
+  kind: caller
+  merged: '2026-07-28'
+  source: https://github.com/scikit-learn/scikit-learn/pull/33959
+  evidence: https://github.com/scikit-learn/scikit-learn/pull/34605
+  why: _make_indexable now returns narwhals wrappers instead of the user's pandas/polars frame, so indexable()
+    callers (cross_validate, GridSearchCV, train_test_split) pass narwhals objects into user estimators.
+  must_find:
+  - file: sklearn/utils/validation.py
+    lines:
+    - 481
+    - 481
+    severity: high
+  must_not_flag: []
+- id: disable-prefetch-assumes-virtual-channel-qos
+  upstream: celery/celery
+  base: 6804ea8615afcdbc95ed68e95b47ae623080fa2b
+  head: 246bca18e3c65e6881a4a8fef89dd15e1b506a5f
+  kind: logic
+  merged: '2025-08-31'
+  source: https://github.com/celery/celery/pull/9863
+  evidence: https://github.com/celery/celery/pull/9919
+  why: worker_disable_prefetch reads c.task_consumer.channel.qos, which only kombu virtual (Redis) channels
+    have; on RabbitMQ the worker raises AttributeError at startup.
+  must_find:
+  - file: celery/worker/consumer/tasks.py
+    lines:
+    - 55
+    - 56
+    severity: medium
+  must_not_flag: []
+- id: db-pool-closed-after-each-task-in-thread-pools
+  upstream: celery/celery
+  base: 273186043cb93bcb2ce82886b54bfbcd7ddb3459
+  head: 1ad3bd45369106e22b6aabad047480119140b8ea
+  kind: logic
+  merged: '2025-10-20'
+  source: https://github.com/celery/celery/pull/9953
+  evidence: https://github.com/celery/celery/pull/10020
+  why: _close_database closes the shared Django connection pool after every task in every worker pool
+    type; with threads/gevent other in-flight tasks then fail with "pool is closed".
+  must_find:
+  - file: celery/fixups/django.py
+    lines:
+    - 206
+    - 208
+    severity: high
+  must_not_flag: []
+- id: parser-cancellation-leaves-connection-open
+  upstream: aio-libs/aiohttp
+  base: f049588a8ab5b6b6757677b539845c63698d61f7
+  head: 63a411d09af23a9c9945c03f64285c0310f088f7
+  kind: logic
+  merged: '2026-02-23'
+  source: https://github.com/aio-libs/aiohttp/pull/12130
+  evidence: https://github.com/aio-libs/aiohttp/pull/12798
+  why: Narrowing data_received's handler to `except Exception` means a CancelledError mid-parse no longer
+    closes the transport, leaving a desynchronized connection in the keep-alive pool.
+  must_find:
+  - file: aiohttp/client_proto.py
+    lines:
+    - 328
+    - 328
+    severity: high
+  must_not_flag: []
+- id: new-required-kwarg-breaks-direct-responder-use
+  upstream: Kludex/starlette
+  base: 5567e274c8c4a0811fb3bc602c3b6631571b8e80
+  head: cb824a1c7d67924fc762bfc12359139892385b18
+  kind: caller
+  merged: '2026-08-05'
+  source: https://github.com/Kludex/starlette/pull/3410
+  evidence: https://github.com/Kludex/starlette/pull/3415
+  why: GZipResponder.__init__ gains a required keyword-only thread_minimum_size with no default, so any
+    code constructing GZipResponder directly now raises TypeError.
+  must_find:
+  - file: starlette/middleware/gzip.py
+    lines:
+    - 155
+    - 156
+    severity: medium
+  must_not_flag: []
+- id: password-hasher-decodes-bytes-as-utf8
+  upstream: django/django
+  base: e709301000edddc48ebfe9535e2e2177d3bcedb1
+  head: 78fac1b0473ed8960ecd2a30aca4fa8420d150b8
+  kind: logic
+  merged: '2025-07-22'
+  source: https://github.com/django/django/pull/19626
+  evidence: https://github.com/django/django/commit/356e5b0f5ddb473eec3ed96d8ad9a37f3f8585eb
+  why: PBKDF2 and MD5 encode() now call force_str(password), which raises UnicodeDecodeError for valid
+    non-UTF-8 bytes passwords the change claims to accept.
+  must_find:
+  - file: django/contrib/auth/hashers.py
+    lines:
+    - 328
+    - 328
+    severity: medium
+  - file: django/contrib/auth/hashers.py
+    lines:
+    - 662
+    - 662
+    severity: medium
+  must_not_flag: []
+- id: async-login-leaves-stale-request-user
+  upstream: django/django
+  base: 117f90dea53b0dd121eb14f07bcbadb295665ff7
+  head: 31a43c571f4d036827d4fd7a5f615591637dc1be
+  kind: logic
+  merged: '2025-08-08'
+  source: https://github.com/django/django/pull/19709
+  evidence: https://github.com/django/django/pull/21045
+  why: alogin()/alogout() stop updating request.user (only request.auser is replaced), so if request.user
+    was read earlier in the request, it still holds the previous user afterwards.
+  must_find:
+  - file: django/contrib/auth/__init__.py
+    lines:
+    - 237
+    - 242
+    severity: medium
+  - file: django/contrib/auth/__init__.py
+    lines:
+    - 279
+    - 282
+    severity: medium
+  must_not_flag: []
+- id: hardcoded-kwarg-collides-with-user-option
+  upstream: django/django
+  base: 1b0d46f715849de53563aaf6912b4ded7d61641d
+  head: 7142667340f78403cbbcaa8f33703c494282b7b7
+  kind: logic
+  merged: '2026-04-18'
+  source: https://github.com/django/django/pull/21055
+  evidence: https://github.com/django/django/pull/22096
+  why: yaml.dump(..., sort_keys=False, **self.options) raises "got multiple values for keyword argument
+    'sort_keys'" when the caller passes sort_keys as a serializer option.
+  must_find:
+  - file: django/core/serializers/pyyaml.py
+    lines:
+    - 63
+    - 64
+    severity: medium
+  must_not_flag: []
+- id: sync-wrapper-hides-async-view
+  upstream: django/django
+  base: 7112007fcaf7a7db8a4a6bb1d45b51d8fa41d0b7
+  head: bdbda29c3e126754c3ae04ceb5c5d35d49aae01c
+  kind: logic
+  merged: '2026-07-13'
+  source: https://github.com/django/django/pull/21254
+  evidence: https://github.com/django/django/pull/22064
+  why: _non_atomic_requests now wraps every view in a plain def wrapper, so an async view decorated with
+    @non_atomic_requests is no longer a coroutine function and is treated as sync.
+  must_find:
+  - file: django/db/transaction.py
+    lines:
+    - 345
+    - 347
+    severity: high
+  must_not_flag: []
+- id: db-default-pk-treated-as-unset-on-save
+  upstream: django/django
+  base: 8c2d3dca633629effad17ccc98730234f740d03f
+  head: a2348c85fc6c20087935c74cd99340dd4ef2dcdc
+  kind: caller
+  merged: '2026-06-05'
+  source: https://github.com/django/django/pull/21420
+  evidence: https://github.com/django/django/pull/21693
+  why: _is_pk_set() now reports a DatabaseDefault pk as unset, so when that pk also has a Python default
+    (an MTI or FK pk), its caller _save_table() (same file, outside the diff) replaces the db_default
+    with the Python default.
+  must_find:
+  - file: django/db/models/base.py
+    lines:
+    - 717
+    - 717
+    severity: medium
+  must_not_flag: []
+- id: limit-read-before-connection-opened
+  upstream: django/django
+  base: 37f2a77c729ccb71059c8e66c49b07499d2edf60
+  head: 358fd21c47cdf7bda520ce73c5cfd82bba57827b
+  kind: logic
+  merged: '2025-05-08'
+  source: https://github.com/django/django/pull/19427
+  evidence: https://github.com/django/django/pull/20443
+  why: max_query_params calls self.connection.connection.getlimit() without ensure_connection(), so it
+    raises AttributeError on None when read before the SQLite connection is opened.
+  must_find:
+  - file: django/db/backends/sqlite3/features.py
+    lines:
+    - 151
+    - 151
+    severity: medium
+  must_not_flag: []
+- id: hostname-regex-rejects-multi-label-domains
+  upstream: django/django
+  base: 05bac8c4202aba77dcb109aeedd35ff563331e1a
+  head: a9fe98d5bd4212d069afe8316101984aadecfbb2
+  kind: logic
+  merged: '2025-08-28'
+  source: https://github.com/django/django/pull/19781
+  evidence: https://github.com/django/django/pull/20060
+  why: simple_url_2_re now only allows a single hostname label before the TLD, so urlize stops linking
+    multi-part domains like sub.example.com.
+  must_find:
+  - file: django/utils/html.py
+    lines:
+    - 299
+    - 300
+    severity: low
+  must_not_flag: []
+- id: deprecated-module-imported-eagerly
+  upstream: pypa/setuptools
+  base: c032a5b9a857d02509f8b2903079e64490fdf400
+  head: f160c700762fcf0eef7a75ff4aa58ba262473c60
+  kind: dependency
+  merged: '2024-10-31'
+  source: https://github.com/pypa/setuptools/pull/4709
+  evidence: https://github.com/pypa/setuptools/pull/4994
+  why: A module-level `from pkg_resources import Distribution` added only for a return annotation makes
+    pkg_resources load eagerly, defeating the function's own "Delay import to avoid unnecessary side-effects"
+    import.
+  must_find:
+  - file: setuptools/installer.py
+    lines:
+    - 10
+    - 10
+    severity: medium
+  must_not_flag: []
+- id: tar-filter-kwarg-needs-newer-python-patch
+  upstream: scikit-learn/scikit-learn
+  base: af41352a8c8ac7409d86860ab192742d709c6275
+  head: 5b1f9ece84fbebb86b11ee7023316f26f7a42f48
+  kind: dependency
+  merged: '2025-03-25'
+  source: https://github.com/scikit-learn/scikit-learn/pull/31022
+  evidence: https://github.com/scikit-learn/scikit-learn/pull/31685
+  why: The compatibility shim is removed and extractall(filter="data") is called directly, but requires-python
+    is >=3.10 and `filter` only exists from 3.10.12/3.11.4, so dataset fetchers crash with TypeError on
+    earlier patch releases.
+  must_find:
+  - file: sklearn/datasets/_lfw.py
+    lines:
+    - 123
+    - 123
+    severity: medium
+  - file: sklearn/datasets/_twenty_newsgroups.py
+    lines:
+    - 87
+    - 87
+    severity: medium
+  must_not_flag: []
+- id: clean-close-transport-on-base-exception
+  upstream: aio-libs/aiohttp
+  base: 5771a85fd865fc8fd69501345a00e6e58d469ba7
+  head: 24cb57bb8755ac795224db2e24d5baf6c4735812
+  kind: clean
+  merged: '2026-06-04'
+  source: https://github.com/aio-libs/aiohttp/pull/12798
+  must_find: []
+  must_not_flag: []
+- id: clean-default-thread-minimum-size
+  upstream: Kludex/starlette
+  base: 3d6d6c20e795d02d22b358758bfa987b436a3ec4
+  head: 152cef477111a16c79fe0195126e094633627576
+  kind: clean
+  merged: '2026-08-05'
+  source: https://github.com/Kludex/starlette/pull/3415
+  must_find: []
+  must_not_flag: []
+- id: clean-indexable-keeps-native-frames
+  upstream: scikit-learn/scikit-learn
+  base: 63f2abff4003210103a0569664982ce384487dfa
+  head: 4347a16712cb2bfe51c376ff60ad9c033a689abf
+  kind: clean
+  merged: '2026-07-31'
+  source: https://github.com/scikit-learn/scikit-learn/pull/34605
+  must_find: []
+  must_not_flag: []
+- id: clean-yaml-sort-keys-default
+  upstream: django/django
+  base: 8c34887b1ad8bb3ec61c6e713442dab3c643d557
+  head: a269574f1bcf4716502b9ba8c3492abf15dc93eb
+  kind: clean
+  merged: '2026-10-07'
+  source: https://github.com/django/django/pull/22096
+  must_find: []
+  must_not_flag: []
+- id: clean-sqlite-ensure-connection
+  upstream: django/django
+  base: 0def695e3cbaa9ede9ae4040a24cfed7417f9065
+  head: 84bae9c22a8ae7663c56cce5e0c611ea7c17fce1
+  kind: clean
+  merged: '2025-12-23'
+  source: https://github.com/django/django/pull/20443
+  must_find: []
+  must_not_flag: []
+- id: clean-bytes-password-hashing
+  upstream: django/django
+  base: d058058976496cedf3f36fa303a0327af38cdeaa
+  head: 356e5b0f5ddb473eec3ed96d8ad9a37f3f8585eb
+  kind: clean
+  merged: '2026-06-26'
+  source: https://github.com/django/django/pull/21552
+  must_find: []
+  must_not_flag: []
