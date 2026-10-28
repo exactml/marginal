@@ -1,3 +1,4 @@
+import asyncio
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -17,7 +18,7 @@ from marginal.providers import (
     get_provider,
 )
 from marginal.providers.anthropic import AnthropicProvider, _strict_input_schema
-from marginal.providers.base import reset_usage, usage
+from marginal.providers.base import record_usage, reset_usage, usage
 from marginal.providers.credentials import require_env
 from marginal.providers.openai import OllamaProvider, OpenAIProvider
 
@@ -676,3 +677,27 @@ async def test_usage_is_null_once_a_call_reports_none():
     await provider.generate("say hi")
 
     assert usage() == {"input_tokens": None, "output_tokens": None}
+
+
+async def test_concurrent_reviews_keep_their_own_usage():
+    async def review(tokens: int) -> dict[str, int | None]:
+        reset_usage()
+        await asyncio.sleep(0)  # let the other review record in between
+        record_usage(tokens, tokens)
+        await asyncio.sleep(0)
+        return usage()
+
+    first, second = await asyncio.gather(review(5), review(7))
+
+    assert first == {"input_tokens": 5, "output_tokens": 5}
+    assert second == {"input_tokens": 7, "output_tokens": 7}
+
+
+def test_usage_recorded_inside_asyncio_run_reaches_the_caller():
+    async def call_model() -> None:
+        record_usage(3, 2)
+
+    reset_usage()
+    asyncio.run(call_model())
+
+    assert usage() == {"input_tokens": 3, "output_tokens": 2}
