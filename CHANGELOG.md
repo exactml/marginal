@@ -2,6 +2,45 @@
 
 <!-- towncrier release notes start -->
 
+## marginal v0.3.0, 2026-10-28
+
+### Breaking Changes
+
+- Findings are posted on checked evidence instead of a self-rated confidence.
+  The model now gives each finding a trigger, 1-3 exactly quoted lines and its
+  assumptions; marginal checks the quotes against your code (within 2 lines) and
+  posts a finding only if a quote is verified and the trigger names real code,
+  with a "Why marginal flagged this" block. `review.confidence_threshold` and
+  `review.self_reflect` are removed: delete both from `.marginal/config.yaml`,
+  or the config fails to load. In `--format json`, findings lose `confidence`,
+  gain `trigger`, `evidence`, `assumptions` and `checks`, and
+  `filtered_findings` is now `dropped_findings`, each with a `reason`
+
+  ([ISSUE-200](https://github.com/exactml/marginal/issues/200), [PR-202](https://github.com/exactml/marginal/pull/202) by [@exactml](https://github.com/exactml))
+
+### New Features
+
+### Improvements
+
+### Fixes
+
+- Renaming a file no longer makes marginal post its findings on it again: a
+  finding that matches one of marginal's comments at the path and line GitHub
+  shows it on now counts as already posted
+
+  ([ISSUE-177](https://github.com/exactml/marginal/issues/177), [PR-201](https://github.com/exactml/marginal/pull/201) by [@babyhuey](https://github.com/babyhuey))
+
+- The caller context reaches the model on repos the graph couldn't
+  fully read: a file that doesn't parse (newer syntax than the Python marginal
+  runs on, or a file kept broken on purpose) is skipped instead of dropping the
+  whole graph. Callers elsewhere in a changed file are kept, and the caller
+  snippets are shared across the changed definitions, so a changed method's
+  callers aren't crowded out by the class around it
+
+  ([ISSUE-198](https://github.com/exactml/marginal/issues/198), [PR-199](https://github.com/exactml/marginal/pull/199) by [@exactml](https://github.com/exactml))
+
+### Warnings
+
 ## marginal v0.2.10, 2026-10-28
 
 ### Breaking Changes
