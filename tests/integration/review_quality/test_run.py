@@ -5,7 +5,7 @@ import json
 import pytest
 import run
 import yaml
-from score import Attempt, Case, RepoSettings
+from score import Attempt, Case
 
 
 def test_run_attempt_reviews_with_the_attempts_model_and_saves_under_its_id(tmp_path, monkeypatch):
@@ -115,13 +115,3 @@ def test_pr_agent_never_reads_an_earlier_runs_review(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError, match="credit too low"):
         run.review_with_pr_agent(attempt, case, checkout)
-
-
-def test_repo_config_applies_a_repos_threshold_and_keeps_the_rest():
-    config = {"version": 1, "review": {"max_comments": 5}}
-
-    tuned = run.repo_config(config, RepoSettings(confidence_threshold=0.6))
-
-    assert tuned == {"version": 1, "review": {"max_comments": 5, "confidence_threshold": 0.6}}
-    assert config == {"version": 1, "review": {"max_comments": 5}}  # not mutated
-    assert run.repo_config(config, None) is config

@@ -34,11 +34,6 @@
           "min": 0.4090909090909091,
           "max": 0.4090909090909091
         },
-        "recall_before_filter": {
-          "median": 0.8181818181818182,
-          "min": 0.8181818181818182,
-          "max": 0.8181818181818182
-        },
         "precision": {
           "median": 1.0,
           "min": 1.0,
@@ -73,7 +68,13 @@
           "median": 1,
           "min": 1,
           "max": 1
-        }
+        },
+        "recall_before_rules": {
+          "median": 0.8181818181818182,
+          "min": 0.8181818181818182,
+          "max": 0.8181818181818182
+        },
+        "evidence_accuracy": null
       },
       "by_kind": {
         "caller": {
@@ -81,11 +82,6 @@
             "median": 0.3333333333333333,
             "min": 0.3333333333333333,
             "max": 0.3333333333333333
-          },
-          "recall_before_filter": {
-            "median": 0.6666666666666666,
-            "min": 0.6666666666666666,
-            "max": 0.6666666666666666
           },
           "precision": {
             "median": 1.0,
@@ -121,11 +117,16 @@
             "median": 1,
             "min": 1,
             "max": 1
-          }
+          },
+          "recall_before_rules": {
+            "median": 0.6666666666666666,
+            "min": 0.6666666666666666,
+            "max": 0.6666666666666666
+          },
+          "evidence_accuracy": null
         },
         "clean": {
           "recall": null,
-          "recall_before_filter": null,
           "precision": null,
           "accuracy": {
             "median": 1.0,
@@ -152,18 +153,15 @@
             "median": 0,
             "min": 0,
             "max": 0
-          }
+          },
+          "recall_before_rules": null,
+          "evidence_accuracy": null
         },
         "dependency": {
           "recall": {
             "median": 0.25,
             "min": 0.25,
             "max": 0.25
-          },
-          "recall_before_filter": {
-            "median": 0.75,
-            "min": 0.75,
-            "max": 0.75
           },
           "precision": {
             "median": 1.0,
@@ -199,18 +197,19 @@
             "median": 0,
             "min": 0,
             "max": 0
-          }
+          },
+          "recall_before_rules": {
+            "median": 0.75,
+            "min": 0.75,
+            "max": 0.75
+          },
+          "evidence_accuracy": null
         },
         "logic": {
           "recall": {
             "median": 0.42857142857142855,
             "min": 0.42857142857142855,
             "max": 0.42857142857142855
-          },
-          "recall_before_filter": {
-            "median": 0.8571428571428571,
-            "min": 0.8571428571428571,
-            "max": 0.8571428571428571
           },
           "precision": {
             "median": 1.0,
@@ -246,15 +245,16 @@
             "median": 0,
             "min": 0,
             "max": 0
-          }
+          },
+          "recall_before_rules": {
+            "median": 0.8571428571428571,
+            "min": 0.8571428571428571,
+            "max": 0.8571428571428571
+          },
+          "evidence_accuracy": null
         },
         "security": {
           "recall": {
-            "median": 1.0,
-            "min": 1.0,
-            "max": 1.0
-          },
-          "recall_before_filter": {
             "median": 1.0,
             "min": 1.0,
             "max": 1.0
@@ -293,7 +293,13 @@
             "median": 0,
             "min": 0,
             "max": 0
-          }
+          },
+          "recall_before_rules": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "evidence_accuracy": null
         }
       },
       "by_case": {
@@ -512,11 +518,6 @@
           "min": 0.8181818181818182,
           "max": 0.8181818181818182
         },
-        "recall_before_filter": {
-          "median": 0.8181818181818182,
-          "min": 0.8181818181818182,
-          "max": 0.8181818181818182
-        },
         "precision": {
           "median": 1.0,
           "min": 1.0,
@@ -547,16 +548,17 @@
           "median": 9,
           "min": 9,
           "max": 9
-        }
+        },
+        "recall_before_rules": {
+          "median": 0.8181818181818182,
+          "min": 0.8181818181818182,
+          "max": 0.8181818181818182
+        },
+        "evidence_accuracy": null
       },
       "by_kind": {
         "caller": {
           "recall": {
-            "median": 0.6666666666666666,
-            "min": 0.6666666666666666,
-            "max": 0.6666666666666666
-          },
-          "recall_before_filter": {
             "median": 0.6666666666666666,
             "min": 0.6666666666666666,
             "max": 0.6666666666666666
@@ -591,11 +593,16 @@
             "median": 3,
             "min": 3,
             "max": 3
-          }
+          },
+          "recall_before_rules": {
+            "median": 0.6666666666666666,
+            "min": 0.6666666666666666,
+            "max": 0.6666666666666666
+          },
+          "evidence_accuracy": null
         },
         "clean": {
           "recall": null,
-          "recall_before_filter": null,
           "precision": null,
           "accuracy": {
             "median": 1.0,
@@ -622,15 +629,12 @@
             "median": 0,
             "min": 0,
             "max": 0
-          }
+          },
+          "recall_before_rules": null,
+          "evidence_accuracy": null
         },
         "dependency": {
           "recall": {
-            "median": 1.0,
-            "min": 1.0,
-            "max": 1.0
-          },
-          "recall_before_filter": {
             "median": 1.0,
             "min": 1.0,
             "max": 1.0
@@ -665,15 +669,16 @@
             "median": 1,
             "min": 1,
             "max": 1
-          }
+          },
+          "recall_before_rules": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "evidence_accuracy": null
         },
         "logic": {
           "recall": {
-            "median": 0.7857142857142857,
-            "min": 0.7857142857142857,
-            "max": 0.7857142857142857
-          },
-          "recall_before_filter": {
             "median": 0.7857142857142857,
             "min": 0.7857142857142857,
             "max": 0.7857142857142857
@@ -708,15 +713,16 @@
             "median": 5,
             "min": 5,
             "max": 5
-          }
+          },
+          "recall_before_rules": {
+            "median": 0.7857142857142857,
+            "min": 0.7857142857142857,
+            "max": 0.7857142857142857
+          },
+          "evidence_accuracy": null
         },
         "security": {
           "recall": {
-            "median": 1.0,
-            "min": 1.0,
-            "max": 1.0
-          },
-          "recall_before_filter": {
             "median": 1.0,
             "min": 1.0,
             "max": 1.0
@@ -751,7 +757,13 @@
             "median": 0,
             "min": 0,
             "max": 0
-          }
+          },
+          "recall_before_rules": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "evidence_accuracy": null
         }
       },
       "by_case": {

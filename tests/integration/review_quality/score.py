@@ -31,10 +31,11 @@ _SEVERITY_RANK = {severity.value: rank for rank, severity in enumerate(Severity)
 # (key, label, how it's formatted and when a change counts as a regression)
 _METRICS = [
     ("recall", "Recall", "ratio"),
-    ("recall_before_filter", "Recall before filter", "ratio"),
+    ("recall_before_rules", "Recall before rules", "ratio"),
     ("precision", "Precision", "ratio"),
     ("accuracy", "Accuracy (per PR)", "ratio"),
     ("severity_accuracy", "Severity accuracy", "ratio"),
+    ("evidence_accuracy", "Evidence accuracy", "ratio"),
     ("seconds", "Time", "seconds"),
     ("cost_usd", "Cost", "usd"),
     ("duplicates", "Duplicate findings", "count"),
@@ -43,10 +44,11 @@ _METRICS = [
 # One plain sentence per metric, shown next to it in the run summary.
 _MEANING = {
     "recall": "Known bugs the reviewer posted a finding for",
-    "recall_before_filter": "Known bugs the model raised, including ones the filter dropped",
+    "recall_before_rules": "Known bugs the model raised, posted or dropped by the posting rules",
     "precision": "Posted findings that point at a known bug, not at clean code",
     "accuracy": "PRs judged right: a bug PR with a hit, a clean PR with no findings",
     "severity_accuracy": "Hits rated at or above the expected severity",
+    "evidence_accuracy": "Hits whose verified quotes include the bug's own lines",
     "seconds": "Median seconds per review",
     "cost_usd": "Model cost in USD of reviewing every case once",
     "duplicates": "Extra findings on a bug already hit",
@@ -123,16 +125,8 @@ class Attempt(_Strict):
         return f"{self.tool}/{self.provider}/{self.model}"
 
 
-class RepoSettings(_Strict):
-    """How a team running marginal on one upstream repo would tune it."""
-
-    confidence_threshold: float = Field(ge=0.0, le=1.0)
-
-
 class Suite(_Strict):
     config: str
-    # Per upstream repo ("owner/name"), applied to marginal's config for its cases.
-    repos: dict[str, RepoSettings] = Field(default_factory=dict)
     attempts: list[Attempt] = Field(min_length=1)
     cases: list[Case]
 
@@ -187,13 +181,13 @@ def score_review(case: Case, review: dict) -> dict:
         else:
             unlabeled.append(finding)
     hits = [(f, entry) for f, entry in zip(hit_by, case.must_find, strict=True) if f is not None]
-    # Also counting what the confidence filter dropped tells a model that
-    # missed the bug apart from a threshold that hid it.
-    raised = review["findings"] + review.get("filtered_findings", [])
+    # Also counting what the posting rules dropped tells a model that missed
+    # the bug apart from a finding that couldn't back itself up.
+    raised = review["findings"] + review.get("dropped_findings", [])
     return {
         "expected": len(case.must_find),
         "hits": len(hits),
-        "hits_before_filter": sum(
+        "hits_before_rules": sum(
             any(entry.contains(f["file"], f["line"], f.get("end_line")) for f in raised)
             for entry in case.must_find
         ),
@@ -203,6 +197,14 @@ def score_review(case: Case, review: dict) -> dict:
             _SEVERITY_RANK[f["severity"]] >= _SEVERITY_RANK[entry.severity.value]
             for f, entry in hits
             if f.get("severity") is not None
+        ),
+        # Hits that quoted evidence, and of those, the ones with a verified quote
+        # on the bug's own lines. A tool that quotes nothing is left out.
+        "evidenced": sum(bool(f.get("evidence")) for f, _ in hits),
+        "evidence_on_key": sum(
+            any(q.get("verified") and entry.contains(q["file"], q["line"]) for q in f["evidence"])
+            for f, entry in hits
+            if f.get("evidence")
         ),
         "false_positives": false_positives,
         "duplicates": duplicates,
@@ -223,13 +225,16 @@ def run_metrics(scores: list[dict]) -> dict[str, float | None]:
     costs = [s["cost_usd"] for s in scores]
     return {
         "recall": _ratio(hits, sum(s["expected"] for s in scores)),
-        "recall_before_filter": _ratio(
-            sum(s["hits_before_filter"] for s in scores), sum(s["expected"] for s in scores)
+        "recall_before_rules": _ratio(
+            sum(s["hits_before_rules"] for s in scores), sum(s["expected"] for s in scores)
         ),
         "precision": _ratio(hits, hits + sum(s["false_positives"] for s in scores)),
         "accuracy": _ratio(sum(s["correct"] for s in scores), len(scores)),
         "severity_accuracy": _ratio(
             sum(s["severe_enough"] for s in scores), sum(s["rated"] for s in scores)
+        ),
+        "evidence_accuracy": _ratio(
+            sum(s["evidence_on_key"] for s in scores), sum(s["evidenced"] for s in scores)
         ),
         "seconds": statistics.median(s["seconds"] for s in scores),
         "cost_usd": None if None in costs else sum(costs),
@@ -292,7 +297,7 @@ def score_attempt(suite: Suite, raw_dir: Path) -> dict | None:
             )
             counts["runs"] += 1
             counts["correct"] += s["correct"]
-            counts["raised"] += s["hits_before_filter"] > 0
+            counts["raised"] += s["hits_before_rules"] > 0
             counts["posted"] += s["hits"] + s["false_positives"] + len(s["unlabeled"])
     return {
         "runs": len(runs),

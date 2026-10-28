@@ -73,22 +73,38 @@ def test_classifies_hit_duplicate_false_positive_and_unlabeled():
     assert result["correct"]
 
 
-def test_recall_before_filter_counts_findings_the_filter_dropped():
-    dropped = review() | {"filtered_findings": [finding(line=12, severity="low")]}
+def test_recall_before_rules_counts_findings_the_rules_dropped():
+    dropped = review() | {"dropped_findings": [finding(line=12, severity="low")]}
 
     result = score_review(bug_case(), dropped)
 
     assert result["hits"] == 0
-    assert result["hits_before_filter"] == 1
+    assert result["hits_before_rules"] == 1
     assert not result["correct"]  # only posted findings count as a catch
-    assert score_review(bug_case(), review(finding(line=12)))["hits_before_filter"] == 1
-    assert score_review(bug_case(), review())["hits_before_filter"] == 0
+    assert score_review(bug_case(), review(finding(line=12)))["hits_before_rules"] == 1
+    assert score_review(bug_case(), review())["hits_before_rules"] == 0
 
 
 def test_a_finding_with_a_line_range_hits_when_the_range_overlaps():
     # The answer key is app.py lines 10-20.
     assert score_review(bug_case(), review(finding(line=5) | {"end_line": 12}))["hits"] == 1
     assert score_review(bug_case(), review(finding(line=21) | {"end_line": 30}))["hits"] == 0
+
+
+def test_evidence_accuracy_counts_hits_whose_verified_quote_is_on_the_bug():
+    def quoted(line, verified=True):
+        return finding() | {"evidence": [{"file": "app.py", "line": line, "verified": verified}]}
+
+    on_key = score_review(bug_case(), review(quoted(15)))
+    elsewhere = score_review(bug_case(), review(quoted(40)))
+    unverified = score_review(bug_case(), review(quoted(15, verified=False)))
+    no_quotes = score_review(bug_case(), review(finding()))
+
+    assert (on_key["evidenced"], on_key["evidence_on_key"]) == (1, 1)
+    assert (elsewhere["evidenced"], elsewhere["evidence_on_key"]) == (1, 0)
+    assert (unverified["evidenced"], unverified["evidence_on_key"]) == (1, 0)
+    # A tool that quotes nothing (PR-Agent) is left out, not scored 0.
+    assert (no_quotes["evidenced"], no_quotes["evidence_on_key"]) == (0, 0)
 
 
 def test_a_hit_without_severity_is_left_out_of_severity_accuracy():
@@ -181,7 +197,8 @@ def result_with(recall: float, seconds: float, runs: int = 3) -> dict:
     spread = lambda v: {"median": v, "min": v, "max": v}  # noqa: E731
     metrics = {
         "recall": spread(recall),
-        "recall_before_filter": spread(recall),
+        "recall_before_rules": spread(recall),
+        "evidence_accuracy": None,
         "precision": spread(1.0),
         "accuracy": spread(1.0),
         "severity_accuracy": None,
@@ -311,7 +328,6 @@ def test_shipped_cases_are_valid():
     suite = load_suite(HERE / "cases.yml")
 
     assert (HERE / suite.config).is_file()
-    assert suite.repos["mlflow/mlflow"].confidence_threshold == 0.6
     assert [attempt.id for attempt in suite.attempts] == [
         ATTEMPT_ID,
         "pr-agent/anthropic/claude-opus-5-5",
