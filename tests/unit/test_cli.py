@@ -2192,6 +2192,7 @@ def test_review_of_two_commits_reviews_the_compare_diff_with_base_config(
         "redacted_files": [],
         "comment_posted": False,
         "prompt_over_budget": False,
+        "usage": {"model": "anthropic:claude-3-5-sonnet", "input_tokens": 0, "output_tokens": 0},
     }
 
 
