@@ -58,7 +58,7 @@ _MEANING = {
 # a relative increase this large.
 _SLOWER_TOLERANCE = 0.25
 # What score.json keeps of an unlabeled finding.
-_FINDING_KEYS = ("file", "line", "severity", "confidence", "message")
+_FINDING_KEYS = ("file", "line", "severity", "message")
 
 
 class _Strict(BaseModel):
@@ -391,8 +391,8 @@ def markdown(result: dict, baseline: dict, tolerance: float) -> str:
             lines.append(f"| `{case_id}` | {kind} | " + " | ".join(cells) + " |")
         lines += [
             "",
-            "✅ caught, or quiet on a clean case · 🟡 raised but dropped by the confidence "
-            "threshold, or caught in only some runs · ❌ missed, or findings on a clean case",
+            "✅ caught, or quiet on a clean case · 🟡 raised but dropped by the posting "
+            "rules, or caught in only some runs · ❌ missed, or findings on a clean case",
         ]
     for attempt_id, attempt in attempts.items():
         lines += ["", *_attempt_details(attempt_id, attempt, old.get(attempt_id, {}))]
@@ -420,7 +420,7 @@ def _case_cell(case: dict | None) -> str:
         return f"🟡 caught{of}"
     if case["raised"]:
         raised = f" {case['raised']}/{runs}" if runs > 1 else ""
-        return f"🟡 raised{raised}, filtered"
+        return f"🟡 raised{raised}, dropped"
     return "❌ missed"
 
 
@@ -451,7 +451,7 @@ def _attempt_details(attempt_id: str, result: dict, baseline: dict) -> list[str]
             "",
             *(
                 f"- `{f['case']}` run {f['run']}: `{f['file']}:{f['line']}` "
-                f"{f['severity']}, {f['confidence']}: {f['message']}"
+                f"{f['severity']}: {f['message']}"
                 for f in result["unlabeled"]
             ),
         ]

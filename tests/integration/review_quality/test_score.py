@@ -42,7 +42,7 @@ def clean_case() -> Case:
 
 
 def finding(file="app.py", line=12, severity="high", message="bug") -> dict:
-    return {"file": file, "line": line, "severity": severity, "confidence": 0.9, "message": message}
+    return {"file": file, "line": line, "severity": severity, "message": message}
 
 
 def review(*findings, seconds=10.0, usage=None) -> dict:
@@ -266,7 +266,7 @@ def test_markdown_puts_attempts_side_by_side_against_their_own_baselines():
     # Only the first attempt has a baseline, and it dropped.
     assert "| **Recall** | 🟡 0.50 ⚠ | 🟢 1.00 |" in text
     assert f"| Case | Kind | `{ATTEMPT_ID}` | `{other}` |" in text
-    assert "| `unchecked-path` | security | 🟡 raised 2/3, filtered | ✅ caught |" in text
+    assert "| `unchecked-path` | security | 🟡 raised 2/3, dropped | ✅ caught |" in text
 
 
 def test_case_cells_say_caught_raised_missed_or_quiet():
@@ -276,7 +276,7 @@ def test_case_cells_say_caught_raised_missed_or_quiet():
     assert _case_cell(None) == "—"
     assert _case_cell(case(correct=1, raised=1, posted=1)) == "✅ caught"
     assert _case_cell(case(runs=3, correct=1, raised=1)) == "🟡 caught 1/3"
-    assert _case_cell(case(raised=1)) == "🟡 raised, filtered"
+    assert _case_cell(case(raised=1)) == "🟡 raised, dropped"
     assert _case_cell(case()) == "❌ missed"
     assert _case_cell(case(kind="clean", correct=1)) == "✅ quiet"
     assert _case_cell(case(kind="clean", runs=2, correct=1, posted=3)) == (

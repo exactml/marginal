@@ -139,7 +139,7 @@ def pr_agent_result(data: dict, attempt: Attempt) -> dict:
     """PR-Agent's structured review in the shape score.py reads.
 
     Each of its key issues names a file and a line range, but carries no
-    severity or confidence, so those stay None rather than being guessed.
+    severity or quoted evidence: severity stays None rather than being guessed.
     """
     findings = []
     for issue in (data.get("review") or {}).get("key_issues_to_review") or []:
@@ -152,7 +152,6 @@ def pr_agent_result(data: dict, attempt: Attempt) -> dict:
                 "line": start,
                 "end_line": end or start,
                 "severity": None,
-                "confidence": None,
                 "message": f"{header}: {content}" if header else content,
             }
         )

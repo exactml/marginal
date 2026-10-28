@@ -67,7 +67,6 @@ def test_pr_agent_result_reads_key_issues_without_guessing_severity():
             "line": 1172,
             "end_line": 1175,
             "severity": None,
-            "confidence": None,
             "message": "Possible Bug: max_results is never None.",
         },
         {
@@ -75,7 +74,6 @@ def test_pr_agent_result_reads_key_issues_without_guessing_severity():
             "line": None,
             "end_line": None,
             "severity": None,
-            "confidence": None,
             "message": "no lines given",
         },
     ]

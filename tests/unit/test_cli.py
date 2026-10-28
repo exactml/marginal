@@ -2121,7 +2121,7 @@ def test_review_format_json_prints_nothing_on_an_invalid_config(
     monkeypatch.chdir(tmp_path)
     config_dir = tmp_path / ".marginal"
     config_dir.mkdir()
-    (config_dir / "config.yaml").write_text("review:\n  confidence_threshold: high\n")
+    (config_dir / "config.yaml").write_text("review:\n  max_comments: lots\n")
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--format", "json"])
 

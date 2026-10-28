@@ -231,10 +231,11 @@ async def test_anthropic_generate_structured_still_enforces_stripped_bounds_loca
 
 
 async def test_anthropic_generate_structured_findings_response_schema_is_strict_compatible():
-    """Regression test for the exact schema that broke production: strict
-    tool use rejected `_FindingsResponse` outright because `Finding.confidence`
-    carries `ge=0.0, le=1.0` and `_FindingsResponse.findings` carries a
-    `max_length` -- both render as keywords strict mode doesn't support."""
+    """Regression test for the schema that once broke production: strict
+    tool use rejected `_FindingsResponse` outright over keywords it doesn't
+    support (`minimum`/`maximum` from a bounded field, back when findings had
+    a confidence, and `maxItems` from `_FindingsResponse.findings`'
+    `max_length`). It must stay free of them as `Finding` changes."""
     client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
     client.messages.create.return_value = SimpleNamespace(
         content=[
