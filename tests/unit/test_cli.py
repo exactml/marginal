@@ -2350,11 +2350,10 @@ def test_rerun_after_a_rename_does_not_post_the_finding_again(
         {"id": 1, "body": c["body"], "path": "marginal/backoff.py", "line": c["line"]}
         for c in posted.kwargs["comments"]
     ]
-    renamed = Finding(
+    renamed = _evidenced(
         file="marginal/backoff.py",
         line=2,
         severity=Severity.HIGH,
-        confidence=0.9,
         message="time.sleep() here stalls the event loop between retries.",
     )
     mock_provider.return_value.generate_structured = AsyncMock(

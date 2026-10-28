@@ -197,3 +197,13 @@ def test_current_fingerprints_ignore_a_badge_without_a_marginal_marker():
     posted = current_fingerprints([comment("backoff.py", 11, marker=False)], patches)
 
     assert posted == set()
+
+
+def test_current_fingerprints_read_the_badge_without_a_confidence():
+    # Findings no longer carry a confidence, so the badge is severity only.
+    patches = {"backoff.py": PATCH}
+    body = f"🟠 **High**\n\nissue\n\n{fingerprint_marker(fp(11))}"
+
+    posted = current_fingerprints([{"body": body, "path": "backoff.py", "line": 11}], patches)
+
+    assert nearby(11, file="backoff.py") & posted
