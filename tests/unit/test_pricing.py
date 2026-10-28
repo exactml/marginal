@@ -1,7 +1,5 @@
 from datetime import date
 
-import pytest
-
 from marginal.providers.pricing import LAST_UPDATED, PRICES, SOURCES, price_for
 
 
@@ -9,8 +7,9 @@ def test_price_for_reads_the_provider_and_model_from_usage():
     price = price_for("anthropic:claude-opus-5-5")
 
     assert (price.input, price.output, price.cache_read) == (4.0, 20.0, 0.20)
-    assert price.cache_write == pytest.approx({"5m": 5.0, "1h": 8.0})
+    assert price.cache_write == {"5m": 5.0, "1h": 8.0}
     assert price_for("openai:gpt-5.6-sol").cache_write == {"30m": 5.0, "12h": 10.0}
+    assert price_for("openai:gpt-5.5").cache_write == {}  # no write price listed
 
 
 def test_unlisted_models_have_no_price():
