@@ -2,7 +2,7 @@
 <h3 align="center" style="border-bottom: none">The Open Source Engineering Intelligence Agent for Pull Requests</h3>
 
 <p align="center">
-marginal reviews pull requests the way a senior engineer who knows your codebase would — not just the diff. It reads the code your change touches, checks it against the rules your team has written down, and posts only <b>high-confidence, actionable feedback</b>, running entirely on infrastructure you control.
+marginal reviews pull requests the way a senior engineer who knows your codebase would — not just the diff. It reads the code your change touches, checks it against the rules your team has written down, and posts only <b>findings it can back with evidence from your code</b>, running entirely on infrastructure you control.
 </p>
 
 <div align="center">
@@ -53,19 +53,20 @@ marginal is built around a different bet: **context beats volume**. One well-evi
             Your model (BYOK or local)
                       |
                       v
-     confidence threshold · comment cap · dedup
+   evidence check · comment cap · dedup
                       |
                       v
        inline comments + summary on the PR
 ```
 
-marginal builds one prompt from the diff and the context around it, asks your model for structured findings, and keeps only the ones that clear your confidence threshold. On later pushes it checks its earlier findings again and resolves the ones the new code fixed.
+marginal builds one prompt from the diff and the context around it and asks your model for structured findings. Each finding has to show its work: the trigger that makes it go wrong, and the exact lines it rests on. marginal checks those lines against your code, with no second model call, and posts only the findings whose evidence holds. On later pushes it checks its earlier findings again and resolves the ones the new code fixed.
 
 ## What it reviews for
 
 - **Context over diff** — when a PR changes a function, marginal finds its callers outside the diff and shows them to the model, so a change that breaks one of them is flagged with that caller as evidence. (The caller index covers Python today.)
 - **Your team's rules** — Markdown policies in `.marginal/policies/` are checked against every diff, and anti-policies list the deliberate tradeoffs marginal must never re-litigate.
-- **Quiet by design** — a confidence threshold and a comment cap, no repeated findings across pushes, findings closed once a later push fixes them, and a maintainer's reply taken into account on the next review.
+- **Findings that show their work** — each posted finding quotes the lines it rests on and names its trigger, in a folded "Why marginal flagged this" block. A finding whose quote isn't in your code, or whose trigger names no real code, is dropped, not posted.
+- **Quiet by design** — evidence-checked findings and a comment cap, no repeated findings across pushes, findings closed once a later push fixes them, and a maintainer's reply taken into account on the next review.
 - **Team-friendly defaults** — drafts, bot PRs, and PRs labelled `skip-review` are skipped, and lockfiles and minified assets never reach the model.
 
 ## Review quality
@@ -75,16 +76,19 @@ Every release is scored on a fixed set of real PRs from public repos: PRs that i
 | Metric | What it measures | marginal · Claude Opus 5.5 | PR-Agent · Claude Opus 5.5 |
 |---|---|--:|--:|
 | Recall | known bugs the reviewer posted a finding for | 🔴 0.41 | 🟢 0.82 |
-| Recall before filter | known bugs the model raised, including ones below the confidence threshold | 🟢 0.82 | 🟢 0.82 |
+| Recall before rules | known bugs the model raised, posted or not | 🟢 0.82 | 🟢 0.82 |
 | Precision | posted findings that point at a known bug | 🟢 1.00 | 🟢 1.00 |
 | Accuracy per PR | bug PRs with a hit, clean PRs with no findings | 🟡 0.62 | 🟢 0.88 |
 | Severity accuracy | hits rated at or above the expected severity | 🟢 1.00 | ⚪ n/a |
+| Evidence accuracy | hits whose verified quotes include the bug's own lines | — | ⚪ n/a |
 | Time | median seconds per review | 16.7 | 16.7 |
 | Cost | model cost in USD of reviewing all 24 cases once | $1.00 | $1.18 |
 
-🟢 0.80 or more, 🟡 0.50 or more, 🔴 below 0.50, ⚪ not measured (PR-Agent rates no severity). One run per case ([run 40698115733](https://github.com/exactml/marginal/actions/runs/40698115733), 2026-10-28). marginal is scored with a confidence threshold of 0.6 for each of these repos (`repos` in `cases.yml`), the value a team running marginal on mlflow uses, not tuned per repo on these cases; the run itself used it on mlflow only, and marginal's reviews are re-scored at 0.6 from that run's saved output, since the threshold only filters what the model already returned. At marginal's 0.85 default, its Recall on the same run is 0.05.
+🟢 0.80 or more, 🟡 0.50 or more, 🔴 below 0.50, ⚪ not measured (PR-Agent rates no severity and quotes no evidence). One run per case ([run 40698115733](https://github.com/exactml/marginal/actions/runs/40698115733), 2026-10-28).
 
-Neither tool posted a finding on any clean PR. The model raises the same share of the known bugs in both tools; marginal posts fewer of them because it rates them below its threshold. The cases are in [`cases.yml`](tests/integration/review_quality/cases.yml). Know a PR that belongs there? Propose it with the [Benchmark case](https://github.com/exactml/marginal/issues/new?template=benchmark_case.yml) form.
+These scores were measured **before** marginal posted findings on checked evidence: marginal then posted a finding only if the model's own confidence cleared a threshold. Its reviews are re-scored here at a threshold of 0.6 from that run's saved output (at the old 0.85 default, its Recall was 0.05). That gap, a model that found 82% of the known bugs but rated them too low to post, is why the threshold was replaced by the evidence check ([#200](https://github.com/exactml/marginal/issues/200)). The next release's run measures the evidence check, including Evidence accuracy.
+
+Neither tool posted a finding on any clean PR. The cases are in [`cases.yml`](tests/integration/review_quality/cases.yml). Know a PR that belongs there? Propose it with the [Benchmark case](https://github.com/exactml/marginal/issues/new?template=benchmark_case.yml) form.
 
 ## Safe to run on your code
 
@@ -227,7 +231,6 @@ version: 1
 
 review:
   enabled: true
-  confidence_threshold: 0.85
   max_comments: 8
   max_prompt_tokens: 100000  # estimated; over this, the model is never called
   ignore_paths:    # never sent to the model; no "/" matches the file name anywhere
@@ -237,7 +240,6 @@ review:
     - go.sum
     - "*.min.js"
     - "*.min.css"
-  self_reflect: false  # true: a second model call re-checks findings before they're filtered
   # With --comment, these PRs get no review and no model call
   skip_drafts: true
   skip_bots: true           # dependabot, renovate, any GitHub App author
