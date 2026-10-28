@@ -134,7 +134,7 @@ def test_readme_quickstart_matches_what_init_prints_and_writes(tmp_path, capsys)
     so the two can't drift apart again."""
     main(["init", str(tmp_path)])
     out = capsys.readouterr().out.replace(str(tmp_path), ".")
-    readme = (Path(__file__).parent.parent / "README.md").read_text()
+    readme = (Path(__file__).parents[2] / "README.md").read_text()
 
     assert f"```text\n{out}```" in readme
     assert f"```yaml\n# .github/workflows/marginal.yml\n{WORKFLOW_TEMPLATE}```" in readme
