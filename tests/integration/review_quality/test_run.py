@@ -2,6 +2,7 @@
 
 import json
 
+import pytest
 import run
 import yaml
 from score import Attempt, Case
@@ -86,3 +87,29 @@ def test_pr_agent_result_reads_key_issues_without_guessing_severity():
     empty = run.pr_agent_result({"review": {"key_issues_to_review": []}}, attempt)
     assert empty["findings"] == []
     assert empty["usage"]["input_tokens"] is None
+
+
+def test_pr_agent_never_reads_an_earlier_runs_review(tmp_path, monkeypatch):
+    work = tmp_path / "work"
+    checkout = work / "repo"
+    checkout.mkdir(parents=True)
+    (work / "pr-agent.json").write_text('{"review": {"key_issues_to_review": []}}')
+    monkeypatch.setattr(run, "download_diff", lambda case: b"diff")
+    # PR-Agent failing the way it does on a credit error: exit 0, no JSON.
+    monkeypatch.setattr(
+        run.subprocess,
+        "run",
+        lambda *a, **k: run.subprocess.CompletedProcess(a, 0, stdout="credit too low", stderr=""),
+    )
+    attempt = Attempt(tool="pr-agent", provider="anthropic", model="claude-opus-5-5")
+    case = Case(
+        id="clean-refactor",
+        upstream="owner/repo",
+        base="a" * 40,
+        head="b" * 40,
+        kind="clean",
+        source="https://github.com/owner/repo/pull/1",
+    )
+
+    with pytest.raises(RuntimeError, match="credit too low"):
+        run.review_with_pr_agent(attempt, case, checkout)

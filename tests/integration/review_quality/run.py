@@ -93,6 +93,9 @@ def review_with_pr_agent(attempt: Attempt, case: Case, checkout: Path) -> dict:
     prefix, key_setting, key_env = _PR_AGENT_PROVIDERS[attempt.provider]
     work = checkout.parent
     (work / "case.diff").write_bytes(download_diff(case))
+    output = work / "pr-agent.json"
+    # An earlier run's review must never be read back as this run's.
+    output.unlink(missing_ok=True)
     env = os.environ | {
         "CONFIG__MODEL": prefix + attempt.model,
         # The same model only: the default fallback is another provider's model.
@@ -112,7 +115,6 @@ def review_with_pr_agent(attempt: Attempt, case: Case, checkout: Path) -> dict:
     process = subprocess.run(
         command, cwd=work, env=env, capture_output=True, text=True, check=False
     )
-    output = work / "pr-agent.json"
     if process.returncode != 0 or not output.is_file():
         # PR-Agent can fail with exit code 0 and its error on stdout (seen: an
         # API key out of credit), so the missing JSON is what counts.
