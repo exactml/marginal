@@ -114,9 +114,10 @@ def review_with_pr_agent(attempt: Attempt, case: Case, checkout: Path) -> dict:
     )
     output = work / "pr-agent.json"
     if process.returncode != 0 or not output.is_file():
-        raise RuntimeError(
-            f"pr-agent exited {process.returncode}: {process.stderr.strip()[-2000:]}"
-        )
+        # PR-Agent can fail with exit code 0 and its error on stdout (seen: an
+        # API key out of credit), so the missing JSON is what counts.
+        log = (process.stderr + process.stdout).strip()[-2000:]
+        raise RuntimeError(f"pr-agent wrote no review (exit {process.returncode}): {log}")
     return pr_agent_result(json.loads(output.read_text()), attempt)
 
 
