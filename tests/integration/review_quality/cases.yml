@@ -4,11 +4,6 @@
 # positive; anything else is unlabeled and listed for a person to judge.
 config: marginal-config.yaml
 
-# USD per million tokens, keyed by the model id in the review's `usage`.
-# Anthropic list prices as of 2026-06; update when a price changes.
-prices:
-  claude-sonnet-5: {input: 2.0, output: 10.0}
-
 cases:
   - id: missing-auth-on-camelcase-alias
     upstream: mlflow/mlflow

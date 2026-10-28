@@ -4,9 +4,10 @@ import json
 
 import pytest
 from pydantic import ValidationError
-from score import HERE, Case, Price, load_suite, main, markdown, review_cost, score, score_review
+from score import HERE, Case, load_suite, main, markdown, review_cost, score, score_review
 
-PRICES = {"model-a": Price(input=3.0, output=15.0)}
+# $4 / $20 per million input / output tokens.
+MODEL = "anthropic:claude-opus-5-5"
 
 
 def bug_case(**overrides) -> Case:
@@ -46,7 +47,6 @@ def test_classifies_hit_duplicate_false_positive_and_unlabeled():
             finding(file="other.py", line=12),
             finding(line=None),
         ),
-        PRICES,
     )
 
     assert result["hits"] == 1
@@ -61,34 +61,30 @@ def test_classifies_hit_duplicate_false_positive_and_unlabeled():
 
 
 def test_bug_case_without_a_hit_is_wrong():
-    assert not score_review(bug_case(), review(finding(line=40)), PRICES)["correct"]
+    assert not score_review(bug_case(), review(finding(line=40)))["correct"]
 
 
 def test_any_finding_on_a_clean_case_is_a_false_positive():
-    result = score_review(clean_case(), review(finding(line=None), finding(line=3)), PRICES)
+    result = score_review(clean_case(), review(finding(line=None), finding(line=3)))
 
     assert result["false_positives"] == 2
     assert result["unlabeled"] == []
     assert not result["correct"]
-    assert score_review(clean_case(), review(), PRICES)["correct"]
+    assert score_review(clean_case(), review())["correct"]
 
 
 def test_severity_below_expected_is_counted():
-    assert (
-        score_review(bug_case(), review(finding(severity="critical")), PRICES)["severe_enough"] == 1
-    )
-    assert (
-        score_review(bug_case(), review(finding(severity="medium")), PRICES)["severe_enough"] == 0
-    )
+    assert score_review(bug_case(), review(finding(severity="critical")))["severe_enough"] == 1
+    assert score_review(bug_case(), review(finding(severity="medium")))["severe_enough"] == 0
 
 
 def test_cost_is_never_guessed():
-    usage = {"model": "model-a", "input_tokens": 1_000_000, "output_tokens": 100_000}
+    usage = {"model": MODEL, "input_tokens": 1_000_000, "output_tokens": 100_000}
 
-    assert review_cost(usage, PRICES) == pytest.approx(4.5)
-    assert review_cost(usage | {"model": "unpriced"}, PRICES) is None
-    assert review_cost(usage | {"output_tokens": None}, PRICES) is None
-    assert review_cost(None, PRICES) is None
+    assert review_cost(usage) == pytest.approx(6.0)
+    assert review_cost(usage | {"model": "ollama:llama3"}) is None
+    assert review_cost(usage | {"output_tokens": None}) is None
+    assert review_cost(None) is None
 
 
 def write_raw(raw, case_id, run, data):
@@ -103,7 +99,6 @@ def suite(tmp_path):
         json.dumps(
             {
                 "config": "marginal-config.yaml",
-                "prices": {"model-a": {"input": 3.0, "output": 15.0}},
                 "cases": [bug_case().model_dump(mode="json"), clean_case().model_dump(mode="json")],
             }
         )
@@ -113,7 +108,7 @@ def suite(tmp_path):
 
 def test_score_reports_median_and_range_across_runs(suite, tmp_path):
     raw = tmp_path / "raw"
-    usage = {"model": "model-a", "input_tokens": 1_000_000, "output_tokens": 0}
+    usage = {"model": MODEL, "input_tokens": 1_000_000, "output_tokens": 0}
     write_raw(raw, "unchecked-path", 1, review(finding(), seconds=10, usage=usage))
     write_raw(raw, "clean-refactor", 1, review(seconds=20, usage=usage))
     write_raw(raw, "unchecked-path", 2, review(finding(line=40), seconds=30, usage=usage))
@@ -130,7 +125,7 @@ def test_score_reports_median_and_range_across_runs(suite, tmp_path):
     assert result["overall"]["precision"] == {"median": 1.0, "min": 0.0, "max": 1.0}
     assert result["overall"]["seconds"] == {"median": 35.0, "min": 15.0, "max": 55.0}
     # Run 3 has a review without usage: its cost is unknown, not zero.
-    assert result["overall"]["cost_usd"] == {"median": 6.0, "min": 6.0, "max": 6.0}
+    assert result["overall"]["cost_usd"] == {"median": 8.0, "min": 8.0, "max": 8.0}
     assert result["by_kind"]["clean"]["recall"] is None
     assert result["by_kind"]["clean"]["accuracy"]["min"] == 0.0
     assert result["unlabeled"] == [

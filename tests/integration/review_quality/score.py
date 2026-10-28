@@ -19,6 +19,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from marginal.providers.pricing import price_for
 from marginal.review import Severity
 
 HERE = Path(__file__).parent
@@ -86,16 +87,8 @@ class Case(_Strict):
         return self
 
 
-class Price(_Strict):
-    """USD per million tokens."""
-
-    input: float = Field(ge=0)
-    output: float = Field(ge=0)
-
-
 class Suite(_Strict):
     config: str
-    prices: dict[str, Price] = Field(default_factory=dict)
     cases: list[Case]
 
     @model_validator(mode="after")
@@ -110,18 +103,18 @@ def load_suite(path: Path) -> Suite:
     return Suite.model_validate(yaml.safe_load(path.read_text()))
 
 
-def review_cost(usage: dict | None, prices: dict[str, Price]) -> float | None:
+def review_cost(usage: dict | None) -> float | None:
     """The review's cost in USD, or None when the model or a token count is
     unknown -- a missing price is never guessed."""
     usage = usage or {}
-    price = prices.get(usage.get("model"))
+    price = price_for(usage.get("model") or "")
     tokens_in, tokens_out = usage.get("input_tokens"), usage.get("output_tokens")
     if price is None or tokens_in is None or tokens_out is None:
         return None
     return (tokens_in * price.input + tokens_out * price.output) / 1_000_000
 
 
-def score_review(case: Case, review: dict, prices: dict[str, Price]) -> dict:
+def score_review(case: Case, review: dict) -> dict:
     """Match one review's findings against the case's answer key.
 
     Each must_find entry is hit at most once, by the first finding inside its
@@ -156,7 +149,7 @@ def score_review(case: Case, review: dict, prices: dict[str, Price]) -> dict:
         "unlabeled": unlabeled,
         "correct": not review["findings"] if case.kind == "clean" else bool(hits),
         "seconds": review["seconds"],
-        "cost_usd": review_cost(review.get("usage"), prices),
+        "cost_usd": review_cost(review.get("usage")),
     }
 
 
@@ -194,7 +187,7 @@ def score(suite: Suite, raw_dir: Path) -> dict:
     unlabeled = []
     for case in suite.cases:
         for path in sorted((raw_dir / case.id).glob("*.json")):
-            result = score_review(case, json.loads(path.read_text()), suite.prices)
+            result = score_review(case, json.loads(path.read_text()))
             runs.setdefault(path.stem, []).append((case, result))
             unlabeled += [
                 {"case": case.id, "run": path.stem, **{k: f.get(k) for k in _FINDING_KEYS}}
