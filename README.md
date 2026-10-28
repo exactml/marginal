@@ -75,18 +75,18 @@ Every release is scored on a fixed set of real PRs from public repos: PRs that i
 
 | Metric | What it measures | marginal · Claude Opus 5.5 | PR-Agent · Claude Opus 5.5 |
 |---|---|--:|--:|
-| Recall | known bugs the reviewer posted a finding for | 🔴 0.41 | 🟢 0.82 |
-| Recall before rules | known bugs the model raised, posted or not | 🟢 0.82 | 🟢 0.82 |
+| Recall | known bugs the reviewer posted a finding for | 🟡 0.73 | 🟡 0.73 |
+| Recall before rules | known bugs the model raised, posted or not | 🟡 0.73 | 🟡 0.73 |
 | Precision | posted findings that point at a known bug | 🟢 1.00 | 🟢 1.00 |
-| Accuracy per PR | bug PRs with a hit, clean PRs with no findings | 🟡 0.62 | 🟢 0.88 |
-| Severity accuracy | hits rated at or above the expected severity | 🟢 1.00 | ⚪ n/a |
-| Evidence accuracy | hits whose verified quotes include the bug's own lines | — | ⚪ n/a |
-| Time | median seconds per review | 16.7 | 16.7 |
-| Cost | model cost in USD of reviewing all 24 cases once | $1.00 | $1.18 |
+| Accuracy per PR | bug PRs with a hit, clean PRs with no findings | 🟢 0.88 | 🟢 0.83 |
+| Severity accuracy | hits rated at or above the expected severity | 🟢 0.81 | ⚪ n/a |
+| Evidence accuracy | hits whose verified quotes include the bug's own lines | 🟢 1.00 | ⚪ n/a |
+| Time | median seconds per review | 20.8 | 16.0 |
+| Cost | model cost in USD of reviewing all 24 cases once | $1.14 | $1.16 |
 
-🟢 0.80 or more, 🟡 0.50 or more, 🔴 below 0.50, ⚪ not measured (PR-Agent rates no severity and quotes no evidence). One run per case ([run 40698115733](https://github.com/exactml/marginal/actions/runs/40698115733), 2026-10-28).
+🟢 0.80 or more, 🟡 0.50 or more, 🔴 below 0.50, ⚪ not measured (PR-Agent rates no severity and quotes no evidence). marginal v0.3.0, one run per case ([run 40756859982](https://github.com/exactml/marginal/actions/runs/40756859982), 2026-10-28).
 
-These scores were measured **before** marginal posted findings on checked evidence: marginal then posted a finding only if the model's own confidence cleared a threshold. Its reviews are re-scored here at a threshold of 0.6 from that run's saved output (at the old 0.85 default, its Recall was 0.05). That gap, a model that found 82% of the known bugs but rated them too low to post, is why the threshold was replaced by the evidence check ([#200](https://github.com/exactml/marginal/issues/200)). The next release's run measures the evidence check, including Evidence accuracy.
+marginal posts every bug its model raises that it can back with a verified quote: Recall equals Recall before rules. Before v0.3.0 it posted only findings whose self-rated confidence cleared a threshold, and its Recall was 0.41 at 0.6 (0.05 at the old 0.85 default) while the model had raised 0.82 of the known bugs ([#200](https://github.com/exactml/marginal/issues/200)).
 
 Neither tool posted a finding on any clean PR. The cases are in [`cases.yml`](tests/integration/review_quality/cases.yml). Know a PR that belongs there? Propose it with the [Benchmark case](https://github.com/exactml/marginal/issues/new?template=benchmark_case.yml) form.
 

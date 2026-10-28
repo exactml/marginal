@@ -30,9 +30,14 @@
       ],
       "overall": {
         "recall": {
-          "median": 0.4090909090909091,
-          "min": 0.4090909090909091,
-          "max": 0.4090909090909091
+          "median": 0.7272727272727273,
+          "min": 0.7272727272727273,
+          "max": 0.7272727272727273
+        },
+        "recall_before_rules": {
+          "median": 0.7272727272727273,
+          "min": 0.7272727272727273,
+          "max": 0.7272727272727273
         },
         "precision": {
           "median": 1.0,
@@ -40,48 +45,52 @@
           "max": 1.0
         },
         "accuracy": {
-          "median": 0.625,
-          "min": 0.625,
-          "max": 0.625
+          "median": 0.875,
+          "min": 0.875,
+          "max": 0.875
         },
         "severity_accuracy": {
+          "median": 0.8125,
+          "min": 0.8125,
+          "max": 0.8125
+        },
+        "evidence_accuracy": {
           "median": 1.0,
           "min": 1.0,
           "max": 1.0
         },
         "seconds": {
-          "median": 16.740000000000002,
-          "min": 16.740000000000002,
-          "max": 16.740000000000002
+          "median": 20.83,
+          "min": 20.83,
+          "max": 20.83
         },
         "cost_usd": {
-          "median": 1.0011079999999999,
-          "min": 1.0011079999999999,
-          "max": 1.0011079999999999
+          "median": 1.1358720000000002,
+          "min": 1.1358720000000002,
+          "max": 1.1358720000000002
         },
         "duplicates": {
-          "median": 0,
-          "min": 0,
-          "max": 0
+          "median": 2,
+          "min": 2,
+          "max": 2
         },
         "unlabeled": {
-          "median": 1,
-          "min": 1,
-          "max": 1
-        },
-        "recall_before_rules": {
-          "median": 0.8181818181818182,
-          "min": 0.8181818181818182,
-          "max": 0.8181818181818182
-        },
-        "evidence_accuracy": null
+          "median": 11,
+          "min": 11,
+          "max": 11
+        }
       },
       "by_kind": {
         "caller": {
           "recall": {
-            "median": 0.3333333333333333,
-            "min": 0.3333333333333333,
-            "max": 0.3333333333333333
+            "median": 0.6666666666666666,
+            "min": 0.6666666666666666,
+            "max": 0.6666666666666666
+          },
+          "recall_before_rules": {
+            "median": 0.6666666666666666,
+            "min": 0.6666666666666666,
+            "max": 0.6666666666666666
           },
           "precision": {
             "median": 1.0,
@@ -89,24 +98,29 @@
             "max": 1.0
           },
           "accuracy": {
-            "median": 0.3333333333333333,
-            "min": 0.3333333333333333,
-            "max": 0.3333333333333333
+            "median": 0.6666666666666666,
+            "min": 0.6666666666666666,
+            "max": 0.6666666666666666
           },
           "severity_accuracy": {
             "median": 1.0,
             "min": 1.0,
             "max": 1.0
           },
+          "evidence_accuracy": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
           "seconds": {
-            "median": 14.06,
-            "min": 14.06,
-            "max": 14.06
+            "median": 26.93,
+            "min": 26.93,
+            "max": 26.93
           },
           "cost_usd": {
-            "median": 0.13178,
-            "min": 0.13178,
-            "max": 0.13178
+            "median": 0.17652,
+            "min": 0.17652,
+            "max": 0.17652
           },
           "duplicates": {
             "median": 0,
@@ -114,19 +128,14 @@
             "max": 0
           },
           "unlabeled": {
-            "median": 1,
-            "min": 1,
-            "max": 1
-          },
-          "recall_before_rules": {
-            "median": 0.6666666666666666,
-            "min": 0.6666666666666666,
-            "max": 0.6666666666666666
-          },
-          "evidence_accuracy": null
+            "median": 3,
+            "min": 3,
+            "max": 3
+          }
         },
         "clean": {
           "recall": null,
+          "recall_before_rules": null,
           "precision": null,
           "accuracy": {
             "median": 1.0,
@@ -134,15 +143,16 @@
             "max": 1.0
           },
           "severity_accuracy": null,
+          "evidence_accuracy": null,
           "seconds": {
-            "median": 12.155000000000001,
-            "min": 12.155000000000001,
-            "max": 12.155000000000001
+            "median": 16.685000000000002,
+            "min": 16.685000000000002,
+            "max": 16.685000000000002
           },
           "cost_usd": {
-            "median": 0.13636,
-            "min": 0.13636,
-            "max": 0.13636
+            "median": 0.12884,
+            "min": 0.12884,
+            "max": 0.12884
           },
           "duplicates": {
             "median": 0,
@@ -153,15 +163,18 @@
             "median": 0,
             "min": 0,
             "max": 0
-          },
-          "recall_before_rules": null,
-          "evidence_accuracy": null
+          }
         },
         "dependency": {
           "recall": {
-            "median": 0.25,
-            "min": 0.25,
-            "max": 0.25
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "recall_before_rules": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
           },
           "precision": {
             "median": 1.0,
@@ -169,24 +182,29 @@
             "max": 1.0
           },
           "accuracy": {
-            "median": 0.3333333333333333,
-            "min": 0.3333333333333333,
-            "max": 0.3333333333333333
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
           },
           "severity_accuracy": {
             "median": 1.0,
             "min": 1.0,
             "max": 1.0
           },
+          "evidence_accuracy": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
           "seconds": {
-            "median": 25.02,
-            "min": 25.02,
-            "max": 25.02
+            "median": 20.06,
+            "min": 20.06,
+            "max": 20.06
           },
           "cost_usd": {
-            "median": 0.24119199999999996,
-            "min": 0.24119199999999996,
-            "max": 0.24119199999999996
+            "median": 0.21749600000000002,
+            "min": 0.21749600000000002,
+            "max": 0.21749600000000002
           },
           "duplicates": {
             "median": 0,
@@ -197,19 +215,18 @@
             "median": 0,
             "min": 0,
             "max": 0
-          },
-          "recall_before_rules": {
-            "median": 0.75,
-            "min": 0.75,
-            "max": 0.75
-          },
-          "evidence_accuracy": null
+          }
         },
         "logic": {
           "recall": {
-            "median": 0.42857142857142855,
-            "min": 0.42857142857142855,
-            "max": 0.42857142857142855
+            "median": 0.6428571428571429,
+            "min": 0.6428571428571429,
+            "max": 0.6428571428571429
+          },
+          "recall_before_rules": {
+            "median": 0.6428571428571429,
+            "min": 0.6428571428571429,
+            "max": 0.6428571428571429
           },
           "precision": {
             "median": 1.0,
@@ -217,41 +234,40 @@
             "max": 1.0
           },
           "accuracy": {
-            "median": 0.5454545454545454,
-            "min": 0.5454545454545454,
-            "max": 0.5454545454545454
+            "median": 0.8181818181818182,
+            "min": 0.8181818181818182,
+            "max": 0.8181818181818182
           },
           "severity_accuracy": {
+            "median": 0.7777777777777778,
+            "min": 0.7777777777777778,
+            "max": 0.7777777777777778
+          },
+          "evidence_accuracy": {
             "median": 1.0,
             "min": 1.0,
             "max": 1.0
           },
           "seconds": {
-            "median": 17.39,
-            "min": 17.39,
-            "max": 17.39
+            "median": 24.74,
+            "min": 24.74,
+            "max": 24.74
           },
           "cost_usd": {
-            "median": 0.44339199999999995,
-            "min": 0.44339199999999995,
-            "max": 0.44339199999999995
+            "median": 0.533084,
+            "min": 0.533084,
+            "max": 0.533084
           },
           "duplicates": {
-            "median": 0,
-            "min": 0,
-            "max": 0
+            "median": 1,
+            "min": 1,
+            "max": 1
           },
           "unlabeled": {
-            "median": 0,
-            "min": 0,
-            "max": 0
-          },
-          "recall_before_rules": {
-            "median": 0.8571428571428571,
-            "min": 0.8571428571428571,
-            "max": 0.8571428571428571
-          },
-          "evidence_accuracy": null
+            "median": 8,
+            "min": 8,
+            "max": 8
+          }
         },
         "security": {
           "recall": {
@@ -259,6 +275,11 @@
             "min": 1.0,
             "max": 1.0
           },
+          "recall_before_rules": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
           "precision": {
             "median": 1.0,
             "min": 1.0,
@@ -270,36 +291,35 @@
             "max": 1.0
           },
           "severity_accuracy": {
+            "median": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "evidence_accuracy": {
             "median": 1.0,
             "min": 1.0,
             "max": 1.0
           },
           "seconds": {
-            "median": 26.85,
-            "min": 26.85,
-            "max": 26.85
+            "median": 41.54,
+            "min": 41.54,
+            "max": 41.54
           },
           "cost_usd": {
-            "median": 0.048384,
-            "min": 0.048384,
-            "max": 0.048384
+            "median": 0.079932,
+            "min": 0.079932,
+            "max": 0.079932
           },
           "duplicates": {
-            "median": 0,
-            "min": 0,
-            "max": 0
+            "median": 1,
+            "min": 1,
+            "max": 1
           },
           "unlabeled": {
             "median": 0,
             "min": 0,
             "max": 0
-          },
-          "recall_before_rules": {
-            "median": 1.0,
-            "min": 1.0,
-            "max": 1.0
-          },
-          "evidence_accuracy": null
+          }
         }
       },
       "by_case": {
@@ -308,7 +328,7 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 1
+          "posted": 2
         },
         "clean-bytes-password-hashing": {
           "kind": "clean",
@@ -357,14 +377,14 @@
           "runs": 1,
           "correct": 0,
           "raised": 0,
-          "posted": 1
+          "posted": 0
         },
         "db-pool-closed-after-each-task-in-thread-pools": {
           "kind": "logic",
           "runs": 1,
-          "correct": 0,
+          "correct": 1,
           "raised": 1,
-          "posted": 0
+          "posted": 2
         },
         "deprecated-module-imported-eagerly": {
           "kind": "dependency",
@@ -383,23 +403,23 @@
         "eager-optional-numpy-import-in-approx-eq": {
           "kind": "dependency",
           "runs": 1,
-          "correct": 0,
-          "raised": 0,
-          "posted": 0
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
         },
         "fish-completion-splits-on-unquoted-newline": {
+          "kind": "logic",
+          "runs": 1,
+          "correct": 0,
+          "raised": 0,
+          "posted": 3
+        },
+        "hardcoded-kwarg-collides-with-user-option": {
           "kind": "logic",
           "runs": 1,
           "correct": 1,
           "raised": 1,
           "posted": 1
-        },
-        "hardcoded-kwarg-collides-with-user-option": {
-          "kind": "logic",
-          "runs": 1,
-          "correct": 0,
-          "raised": 1,
-          "posted": 0
         },
         "hostname-regex-rejects-multi-label-domains": {
           "kind": "logic",
@@ -413,14 +433,14 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 1
+          "posted": 3
         },
         "limit-read-before-connection-opened": {
           "kind": "logic",
           "runs": 1,
-          "correct": 0,
+          "correct": 1,
           "raised": 1,
-          "posted": 0
+          "posted": 1
         },
         "missing-auth-on-camelcase-alias": {
           "kind": "security",
@@ -432,23 +452,23 @@
         "new-required-kwarg-breaks-direct-responder-use": {
           "kind": "caller",
           "runs": 1,
-          "correct": 0,
+          "correct": 1,
           "raised": 1,
-          "posted": 0
+          "posted": 2
         },
         "parser-cancellation-leaves-connection-open": {
           "kind": "logic",
           "runs": 1,
           "correct": 0,
-          "raised": 1,
-          "posted": 0
+          "raised": 0,
+          "posted": 1
         },
         "password-hasher-decodes-bytes-as-utf8": {
           "kind": "logic",
           "runs": 1,
-          "correct": 0,
+          "correct": 1,
           "raised": 1,
-          "posted": 0
+          "posted": 2
         },
         "sync-wrapper-hides-async-view": {
           "kind": "logic",
@@ -460,27 +480,106 @@
         "tar-filter-kwarg-needs-newer-python-patch": {
           "kind": "dependency",
           "runs": 1,
-          "correct": 0,
+          "correct": 1,
           "raised": 1,
-          "posted": 0
+          "posted": 2
         },
         "unset-proto-field-treated-as-zero": {
           "kind": "logic",
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 1
+          "posted": 2
         }
       },
       "unlabeled": [
         {
-          "case": "db-default-pk-treated-as-unset-on-save",
+          "case": "unset-proto-field-treated-as-zero",
           "run": "1",
-          "file": "tests/inline_formsets/tests.py",
-          "line": 119,
+          "file": "mlflow/store/tracking/sqlalchemy_store.py",
+          "line": 1050,
           "severity": "medium",
-          "confidence": 0.7,
-          "message": "The default prefix for this inline formset comes from the FK accessor name, which is `childuuidpk_set`, not `child_set`. With the wrong prefix the management form data is missing, so the formset is invalid no matter what, and `assertIs(formset.is_valid(), False)` passes even without the fix. Use the correct prefix, or pass `prefix=`, and assert the specific error so the test actually checks the regression."
+          "message": "When `max_results=0`, the query uses `limit(1)`. If at least one row exists, `len(metrics) == max_results + 1` is true and the store returns an empty page with a next token whose offset equals the current offset. A client that follows tokens until none is left loops forever. Together with the handler defaulting `max_results` to 0, ordinary paging clients could hang."
+        },
+        {
+          "case": "fish-completion-splits-on-unquoted-newline",
+          "run": "1",
+          "file": "src/click/shell_completion.py",
+          "line": 182,
+          "severity": "high",
+          "message": "Fish command substitution splits the output on newlines, so `$response` now holds one line per element instead of one whole completion. The loop handles each line as its own completion, which means `string split \\n` always returns a single element and `$metadata[2]`/`$metadata[3]` are empty. As a result, Fish completion stops working entirely. The loop has to step through `$response` three elements at a time, the way the zsh script does."
+        },
+        {
+          "case": "fish-completion-splits-on-unquoted-newline",
+          "run": "1",
+          "file": "src/click/shell_completion.py",
+          "line": 189,
+          "severity": "medium",
+          "message": "Because the loop sees one line at a time, `$metadata[3]` is always empty here. An unquoted empty list expansion makes `test` receive `!= _` with no left operand, so it fails or prints errors. Even after the loop is fixed, the variables should be quoted."
+        },
+        {
+          "case": "fish-completion-splits-on-unquoted-newline",
+          "run": "1",
+          "file": "tests/test_shell_completion.py",
+          "line": 594,
+          "severity": "low",
+          "message": "The new test only checks the Python output format, so it can't catch the broken Fish script. That is how the per-line split bug got through. A test against the real Fish script, or at least one that checks the script's parsing logic, is needed."
+        },
+        {
+          "case": "indexable-hands-wrapped-frames-to-estimators",
+          "run": "1",
+          "file": "sklearn/utils/validation.py",
+          "line": 2335,
+          "severity": "medium",
+          "message": "Fit params such as a pandas `sample_weight` Series now become narwhals Series before they reach `fit`. Downstream code such as `check_array` only recognises native dataframes through `_nw_is_into_df_or_series`, so a narwhals wrapper may skip the dataframe path. This could cause wrong conversion or dropped feature names."
+        },
+        {
+          "case": "indexable-hands-wrapped-frames-to-estimators",
+          "run": "1",
+          "file": "sklearn/utils/validation.py",
+          "line": 482,
+          "severity": "low",
+          "message": "The `hasattr(iterable, 'iloc')` check was removed. Objects that expose `iloc` but not `__getitem__`, and that narwhals doesn't recognise, are now converted with `np.array`, which loses their type. The MockDataFrame tests that covered this case were deleted rather than adapted."
+        },
+        {
+          "case": "db-pool-closed-after-each-task-in-thread-pools",
+          "run": "1",
+          "file": "celery/fixups/django.py",
+          "line": 204,
+          "severity": "low",
+          "message": "`close_pool()` is in the same `try` block as `conn.close()`. If `close()` raises an interface or DatabaseError that gets swallowed, the pool is never closed, so pooled connections can still be shared with the forked process."
+        },
+        {
+          "case": "parser-cancellation-leaves-connection-open",
+          "run": "1",
+          "file": "aiohttp/worker.py",
+          "line": 125,
+          "severity": "medium",
+          "message": "`_run` used to catch `BaseException`, which included `asyncio.CancelledError`. Now that it only catches `Exception`, cancelling the `_run` task (or a `KeyboardInterrupt`/`SystemExit` raised inside it) skips `await runner.cleanup()`. Sites stay unclosed, connections aren't drained and on_shutdown/on_cleanup hooks don't run during graceful shutdown."
+        },
+        {
+          "case": "new-required-kwarg-breaks-direct-responder-use",
+          "run": "1",
+          "file": "starlette/middleware/gzip.py",
+          "line": 138,
+          "severity": "medium",
+          "message": "`IdentityResponder.apply_compression` changed from a sync method to a coroutine, and `send_with_compression` now awaits it. Existing subclasses that override `apply_compression` with a plain method returning bytes (e.g. Brotli or zstd responders built on `IdentityResponder`) will raise `TypeError: object bytes can't be used in 'await' expression` on every response."
+        },
+        {
+          "case": "password-hasher-decodes-bytes-as-utf8",
+          "run": "1",
+          "file": "django/contrib/auth/hashers.py",
+          "line": 256,
+          "severity": "low",
+          "message": "`_check_encode_args` now runs `force_str` on bytes salts. If a bytes salt isn't valid UTF-8, it raises a decode error instead of the documented `ValueError` about salt validity. The same check runs for MD5, PBKDF2 and scrypt."
+        },
+        {
+          "case": "async-login-leaves-stale-request-user",
+          "run": "1",
+          "file": "django/contrib/auth/__init__.py",
+          "line": 276,
+          "severity": "medium",
+          "message": "`alogout` no longer resets `request.user` to `AnonymousUser`. After logout, `request.user` can still return the logged-out user, so the rest of that request may treat them as authenticated, for example when rendering templates or running permission checks."
         }
       ]
     },
@@ -514,9 +613,14 @@
       ],
       "overall": {
         "recall": {
-          "median": 0.8181818181818182,
-          "min": 0.8181818181818182,
-          "max": 0.8181818181818182
+          "median": 0.7272727272727273,
+          "min": 0.7272727272727273,
+          "max": 0.7272727272727273
+        },
+        "recall_before_rules": {
+          "median": 0.7272727272727273,
+          "min": 0.7272727272727273,
+          "max": 0.7272727272727273
         },
         "precision": {
           "median": 1.0,
@@ -524,44 +628,44 @@
           "max": 1.0
         },
         "accuracy": {
-          "median": 0.875,
-          "min": 0.875,
-          "max": 0.875
+          "median": 0.8333333333333334,
+          "min": 0.8333333333333334,
+          "max": 0.8333333333333334
         },
         "severity_accuracy": null,
+        "evidence_accuracy": null,
         "seconds": {
-          "median": 16.740000000000002,
-          "min": 16.740000000000002,
-          "max": 16.740000000000002
+          "median": 16.03,
+          "min": 16.03,
+          "max": 16.03
         },
         "cost_usd": {
-          "median": 1.1839879999999998,
-          "min": 1.1839879999999998,
-          "max": 1.1839879999999998
+          "median": 1.158448,
+          "min": 1.158448,
+          "max": 1.158448
         },
         "duplicates": {
-          "median": 2,
-          "min": 2,
-          "max": 2
+          "median": 1,
+          "min": 1,
+          "max": 1
         },
         "unlabeled": {
-          "median": 9,
-          "min": 9,
-          "max": 9
-        },
-        "recall_before_rules": {
-          "median": 0.8181818181818182,
-          "min": 0.8181818181818182,
-          "max": 0.8181818181818182
-        },
-        "evidence_accuracy": null
+          "median": 10,
+          "min": 10,
+          "max": 10
+        }
       },
       "by_kind": {
         "caller": {
           "recall": {
-            "median": 0.6666666666666666,
-            "min": 0.6666666666666666,
-            "max": 0.6666666666666666
+            "median": 0.3333333333333333,
+            "min": 0.3333333333333333,
+            "max": 0.3333333333333333
+          },
+          "recall_before_rules": {
+            "median": 0.3333333333333333,
+            "min": 0.3333333333333333,
+            "max": 0.3333333333333333
           },
           "precision": {
             "median": 1.0,
@@ -569,20 +673,21 @@
             "max": 1.0
           },
           "accuracy": {
-            "median": 0.6666666666666666,
-            "min": 0.6666666666666666,
-            "max": 0.6666666666666666
+            "median": 0.3333333333333333,
+            "min": 0.3333333333333333,
+            "max": 0.3333333333333333
           },
           "severity_accuracy": null,
+          "evidence_accuracy": null,
           "seconds": {
-            "median": 19.77,
-            "min": 19.77,
-            "max": 19.77
+            "median": 16.91,
+            "min": 16.91,
+            "max": 16.91
           },
           "cost_usd": {
-            "median": 0.17262,
-            "min": 0.17262,
-            "max": 0.17262
+            "median": 0.16036,
+            "min": 0.16036,
+            "max": 0.16036
           },
           "duplicates": {
             "median": 0,
@@ -593,16 +698,11 @@
             "median": 3,
             "min": 3,
             "max": 3
-          },
-          "recall_before_rules": {
-            "median": 0.6666666666666666,
-            "min": 0.6666666666666666,
-            "max": 0.6666666666666666
-          },
-          "evidence_accuracy": null
+          }
         },
         "clean": {
           "recall": null,
+          "recall_before_rules": null,
           "precision": null,
           "accuracy": {
             "median": 1.0,
@@ -610,15 +710,16 @@
             "max": 1.0
           },
           "severity_accuracy": null,
+          "evidence_accuracy": null,
           "seconds": {
-            "median": 10.399999999999999,
-            "min": 10.399999999999999,
-            "max": 10.399999999999999
+            "median": 9.535,
+            "min": 9.535,
+            "max": 9.535
           },
           "cost_usd": {
-            "median": 0.14962,
-            "min": 0.14962,
-            "max": 0.14962
+            "median": 0.14095999999999997,
+            "min": 0.14095999999999997,
+            "max": 0.14095999999999997
           },
           "duplicates": {
             "median": 0,
@@ -629,12 +730,15 @@
             "median": 0,
             "min": 0,
             "max": 0
-          },
-          "recall_before_rules": null,
-          "evidence_accuracy": null
+          }
         },
         "dependency": {
           "recall": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "recall_before_rules": {
             "median": 1.0,
             "min": 1.0,
             "max": 1.0
@@ -650,15 +754,16 @@
             "max": 1.0
           },
           "severity_accuracy": null,
+          "evidence_accuracy": null,
           "seconds": {
-            "median": 19.42,
-            "min": 19.42,
-            "max": 19.42
+            "median": 14.78,
+            "min": 14.78,
+            "max": 14.78
           },
           "cost_usd": {
-            "median": 0.261164,
-            "min": 0.261164,
-            "max": 0.261164
+            "median": 0.255284,
+            "min": 0.255284,
+            "max": 0.255284
           },
           "duplicates": {
             "median": 0,
@@ -669,19 +774,18 @@
             "median": 1,
             "min": 1,
             "max": 1
-          },
-          "recall_before_rules": {
-            "median": 1.0,
-            "min": 1.0,
-            "max": 1.0
-          },
-          "evidence_accuracy": null
+          }
         },
         "logic": {
           "recall": {
-            "median": 0.7857142857142857,
-            "min": 0.7857142857142857,
-            "max": 0.7857142857142857
+            "median": 0.7142857142857143,
+            "min": 0.7142857142857143,
+            "max": 0.7142857142857143
+          },
+          "recall_before_rules": {
+            "median": 0.7142857142857143,
+            "min": 0.7142857142857143,
+            "max": 0.7142857142857143
           },
           "precision": {
             "median": 1.0,
@@ -694,35 +798,35 @@
             "max": 0.8181818181818182
           },
           "severity_accuracy": null,
+          "evidence_accuracy": null,
           "seconds": {
-            "median": 18.24,
-            "min": 18.24,
-            "max": 18.24
+            "median": 17.56,
+            "min": 17.56,
+            "max": 17.56
           },
           "cost_usd": {
-            "median": 0.5392119999999999,
-            "min": 0.5392119999999999,
-            "max": 0.5392119999999999
+            "median": 0.541572,
+            "min": 0.541572,
+            "max": 0.541572
           },
           "duplicates": {
-            "median": 2,
-            "min": 2,
-            "max": 2
+            "median": 1,
+            "min": 1,
+            "max": 1
           },
           "unlabeled": {
-            "median": 5,
-            "min": 5,
-            "max": 5
-          },
-          "recall_before_rules": {
-            "median": 0.7857142857142857,
-            "min": 0.7857142857142857,
-            "max": 0.7857142857142857
-          },
-          "evidence_accuracy": null
+            "median": 6,
+            "min": 6,
+            "max": 6
+          }
         },
         "security": {
           "recall": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "recall_before_rules": {
             "median": 1.0,
             "min": 1.0,
             "max": 1.0
@@ -738,15 +842,16 @@
             "max": 1.0
           },
           "severity_accuracy": null,
+          "evidence_accuracy": null,
           "seconds": {
-            "median": 21.85,
-            "min": 21.85,
-            "max": 21.85
+            "median": 21.88,
+            "min": 21.88,
+            "max": 21.88
           },
           "cost_usd": {
-            "median": 0.061372,
-            "min": 0.061372,
-            "max": 0.061372
+            "median": 0.060272,
+            "min": 0.060272,
+            "max": 0.060272
           },
           "duplicates": {
             "median": 0,
@@ -757,13 +862,7 @@
             "median": 0,
             "min": 0,
             "max": 0
-          },
-          "recall_before_rules": {
-            "median": 1.0,
-            "min": 1.0,
-            "max": 1.0
-          },
-          "evidence_accuracy": null
+          }
         }
       },
       "by_case": {
@@ -772,7 +871,7 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 3
+          "posted": 2
         },
         "clean-bytes-password-hashing": {
           "kind": "clean",
@@ -819,16 +918,16 @@
         "db-default-pk-treated-as-unset-on-save": {
           "kind": "caller",
           "runs": 1,
-          "correct": 1,
-          "raised": 1,
-          "posted": 2
+          "correct": 0,
+          "raised": 0,
+          "posted": 1
         },
         "db-pool-closed-after-each-task-in-thread-pools": {
           "kind": "logic",
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 1
+          "posted": 2
         },
         "deprecated-module-imported-eagerly": {
           "kind": "dependency",
@@ -842,7 +941,7 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 2
+          "posted": 1
         },
         "eager-optional-numpy-import-in-approx-eq": {
           "kind": "dependency",
@@ -856,7 +955,7 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 3
+          "posted": 2
         },
         "hardcoded-kwarg-collides-with-user-option": {
           "kind": "logic",
@@ -884,7 +983,7 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 1
+          "posted": 2
         },
         "missing-auth-on-camelcase-alias": {
           "kind": "security",
@@ -933,7 +1032,7 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 2
+          "posted": 3
         }
       },
       "unlabeled": [
@@ -941,10 +1040,17 @@
           "case": "unset-proto-field-treated-as-zero",
           "run": "1",
           "file": "mlflow/store/tracking/sqlalchemy_store.py",
-          "line": 1036,
+          "line": 1043,
           "severity": null,
-          "confidence": null,
-          "message": "Unvalidated max_results: Nothing validates `max_results`, either here or in the handler schema. A negative value such as `-1` produces `LIMIT 0`, and `len(metrics) == max_results + 1` becomes `0 == 0`. The store then emits a token for offset `-1`. Following that token sends `OFFSET -1` to the database, which fails with a DB error (500) rather than a clean `INVALID_PARAMETER_VALUE`.\n\n`max_results=0` similarly returns an empty page with a token that points back to the same offset. Reject non-positive values, or treat `0` as \"no limit\"."
+          "message": "Pagination loop: With `max_results=0`, the query uses `limit(1)`. If at least one metric exists, `len(metrics) == max_results + 1` holds. The store then returns an empty list plus a token for `offset + 0`, which is the same offset that was requested. A client that follows `next_page_token` gets the same empty page and the same token forever. The Java `getMetricHistory` `while (!token.isEmpty())` loop is one such client. `max_results` is also not validated, so negative values reach `limit()` as zero or negative numbers. Reject `max_results <= 0` (or treat 0 as \"no limit\"), or skip emitting a token when no rows are returned."
+        },
+        {
+          "case": "unset-proto-field-treated-as-zero",
+          "run": "1",
+          "file": "mlflow/store/tracking/file_store.py",
+          "line": 894,
+          "severity": null,
+          "message": "Same zero-size issue: `SearchUtils.paginate(all_metrics, page_token, 0)` can likewise return an empty page with a non-advancing next token. This depends on `paginate` emitting a token whenever more items remain. Combined with an unset proto `max_results` arriving as `0`, REST clients backed by FileStore could loop forever or receive empty histories. Validate that `max_results` is a positive integer before paginating."
         },
         {
           "case": "fish-completion-splits-on-unquoted-newline",
@@ -952,35 +1058,31 @@
           "file": "tests/test_shell_completion.py",
           "line": 564,
           "severity": null,
-          "confidence": null,
-          "message": "Test Gap: The new tests only check the Python-side output format. They never exercise the Fish source script, which is why the incompatibility between the new 3-line format and the script's per-line loop goes undetected.\n\nA test that runs the generated Fish script, or at least asserts the script's parsing logic matches the new format, would catch this regression."
+          "message": "Test Gap: The new and updated tests only check the Python `format_completion` output. They never exercise the Fish script's parsing of that output.\n\nThis is why the newline-delimited format passes CI even though the Fish source script can no longer consume it. A test that runs the generated script, or at least checks that the script parses records in groups of three lines, would catch this."
         },
         {
           "case": "eager-optional-numpy-import-in-approx-eq",
           "run": "1",
           "file": "changelog/13047.bugfix.rst",
-          "line": 8,
+          "line": 7,
           "severity": null,
-          "confidence": null,
-          "message": "Doc Example Error: The example imports `approx` with `from pytest import approx` but then calls `pytest.approx(...)`. As written, the pycon snippet raises `NameError: name 'pytest' is not defined`. Use `approx(...)` or `import pytest` instead."
+          "message": "Doc Example Error: The example runs `from pytest import approx` but then calls `pytest.approx(...)`. Because `pytest` is never imported, copying the snippet raises a `NameError`. Either use `approx(...)` or change the import to `import pytest`."
         },
         {
           "case": "indexable-hands-wrapped-frames-to-estimators",
           "run": "1",
-          "file": "sklearn/model_selection/tests/test_validation.py",
-          "line": 660,
+          "file": "sklearn/model_selection/tests/test_search.py",
+          "line": 842,
           "severity": null,
-          "confidence": null,
-          "message": "Weakened Test: The previous tests asserted that estimators receive exactly the native input type. The new `check_df`/`check_series` also accept any object whose `to_native()` returns that type, so the tests no longer catch a regression where native dataframes are replaced by narwhals wrappers before reaching user estimators.\n\nIn addition, if `x` is a numpy array (for example, after an unintended conversion), `x.to_native()` raises `AttributeError` instead of the intended clear check failure. The same pattern is in `test_search.py`."
+          "message": "Weakened assertion: The previous tests checked that the estimator receives exactly the input type. The new `check_df`/`check_series` also accept any object whose `to_native()` matches, so the test passes whether the estimator gets the native frame or a narwhals wrapper. This hides the behavior change described above.\n\nThe check also fails badly if data was converted to a numpy array. `isinstance` returns False, then `x.to_native()` raises `AttributeError` instead of giving a clean check failure.\n\nThe same pattern appears in `test_cross_val_and_permutation_test_on_dataframe`."
         },
         {
-          "case": "disable-prefetch-assumes-virtual-channel-qos",
+          "case": "db-pool-closed-after-each-task-in-thread-pools",
           "run": "1",
-          "file": "celery/worker/consumer/tasks.py",
-          "line": 58,
+          "file": "t/unit/fixups/test_django.py",
+          "line": 302,
           "severity": null,
-          "confidence": null,
-          "message": "ETA Tasks Block: The gate compares `len(state.reserved_requests)` with the pool size. That set also holds tasks waiting for their ETA/countdown in the timer, not just tasks running or ready to run. So a worker holding `num_processes` ETA tasks would stop pulling new messages even though every process is idle. This contradicts the documented \"only when a process is available\" behavior and can stall throughput when ETA tasks are common.\n\nUncertainty: this depends on ETA requests being added to `reserved_requests` by the strategy, which this diff doesn't show. Consider counting active or ready requests, or excluding ETA requests."
+          "message": "Test relies on Mock: `test_close_database_suppresses_close_pool_keyerror` does not configure `DATABASES` or `conn.alias`. Reaching `close_pool()` then depends on `f._settings.DATABASES.get(...)` returning a truthy `Mock`. If the fixture's settings are a real object, or `pool` lookup returns a falsy value, this test fails for unrelated reasons. If `_settings` is mocked, the test may also hide a regression in the settings check. Setting `DATABASES = {\"default\": {\"OPTIONS\": {\"pool\": True}}}` explicitly would make the test independent of this."
         },
         {
           "case": "parser-cancellation-leaves-connection-open",
@@ -988,8 +1090,7 @@
           "file": "aiohttp/worker.py",
           "line": 125,
           "severity": null,
-          "confidence": null,
-          "message": "Cleanup skipped: Narrowing the handler from `BaseException` to `Exception` changes shutdown behavior. Since Python 3.8, `asyncio.CancelledError` subclasses `BaseException`, as do `KeyboardInterrupt` and `SystemExit`. None of these are caught anymore.\n\nIf the `_run` task is cancelled, or the worker is interrupted while awaiting `_wait_next_notify()`, the exception now skips `await runner.cleanup()`. The previous code always reached that call.\n\nAs a result, the server would not shut down gracefully: the site stays bound, open connections are not drained, and the app's `on_shutdown`/`on_cleanup` hooks do not run.\n\nIf cleanup must always happen, wrap the loop in `try/finally` so cleanup runs on every exit path. Alternatively, catch `asyncio.CancelledError` explicitly."
+          "message": "Cleanup Skipped: Narrowing `except BaseException` to `except Exception` stops this block from catching `asyncio.CancelledError`, which subclasses `BaseException` on Python 3.8+. If the `_run` task is cancelled while awaiting `_wait_next_notify()` or the startup awaits (for example, during loop shutdown or a forced worker stop), the cancellation now propagates past the `try` block. `await runner.cleanup()` is then skipped. Listening sockets stay open and the app's `on_shutdown`/`on_cleanup` handlers never run. `KeyboardInterrupt`/`SystemExit` raised inside the task also skip cleanup. Consider running `runner.cleanup()` in a `finally` block, or catching `asyncio.CancelledError` explicitly so cleanup still happens before re-raising."
         },
         {
           "case": "new-required-kwarg-breaks-direct-responder-use",
@@ -997,17 +1098,7 @@
           "file": "starlette/middleware/gzip.py",
           "line": 138,
           "severity": null,
-          "confidence": null,
-          "message": "Signature Change: `IdentityResponder.apply_compression` and `GZipResponder.apply_compression` changed from sync to `async`, and every call site now `await`s the result. Code outside this PR that subclasses these responders and overrides `apply_compression` with a plain `def` will now fail at runtime with `TypeError: object bytes can't be used in 'await' expression`. Code that calls the method directly will get a coroutine instead of `bytes`.\n\nThis only affects users who extend these classes. Starlette documents them as non-public, so the risk is limited. If compatibility matters, consider one of these options:\n- Keep `apply_compression` sync, and add a separate async wrapper (e.g. `apply_compression_async`) that `send_with_compression` awaits.\n- Note the break in the changelog."
-        },
-        {
-          "case": "async-login-leaves-stale-request-user",
-          "run": "1",
-          "file": "tests/auth_tests/test_middleware.py",
-          "line": 63,
-          "severity": null,
-          "confidence": null,
-          "message": "Incomplete tests: The new tests check only `request.auser()` after `alogin`/`alogout`. They do not check `request.user`, so the regression in `request.user` described above goes undetected. Add assertions on `self.request.user` after each call."
+          "message": "Breaking Override Signature: `apply_compression` changed from a sync method returning `bytes` to an `async` method, and `send_with_compression` now `await`s it. Any existing subclass of `IdentityResponder` or `GZipResponder` that overrides `apply_compression` synchronously will now fail: `await` on a `bytes` value raises `TypeError` on the first compressed response. Example: a custom brotli or zstd responder built on these classes.\n\nThese responders may be considered internal, which would make this acceptable. If they are used as an extension point, keep a sync hook (for example, the new `_compress_body`) as the overridable method, or call out the change in release notes."
         },
         {
           "case": "db-default-pk-treated-as-unset-on-save",
@@ -1015,8 +1106,15 @@
           "file": "tests/inline_formsets/tests.py",
           "line": 116,
           "severity": null,
-          "confidence": null,
-          "message": "Ineffective Test: The formset data uses the `child_set-` prefix. The default inline formset prefix for `ChildUUIDPk` is its accessor name, `childuuidpk_set`, so the management form data is never found. `formset.is_valid()` therefore returns `False` because the ManagementForm data is missing, not because of the `DatabaseDefault` pk handling. The test passes with or without the fix in `base.py`. Use the `childuuidpk_set-` prefix, or pass `prefix=\"child_set\"`. Then assert on the behavior the fix targets, such as no crash or an empty queryset for the unsaved parent."
+          "message": "Ineffective Test: The formset data uses the `child_set-` prefix. The default prefix for `ChildUUIDPk` is `childuuidpk_set`, so the management form data is never found. `is_valid()` therefore returns `False` because the ManagementForm is missing or invalid, not because of the `_is_pk_set`/`DatabaseDefault` handling.\n\nThe test would pass with or without the fix in `base.py`. It also sets `INITIAL_FORMS` to \"1\" without an existing object.\n\nTo exercise the regression, use the correct prefix (or pass `prefix=`) and pass `instance=ParentUUIDPk()`. Then assert the expected outcome of the inline formset with an unsaved parent whose PK is a `DatabaseDefault`."
+        },
+        {
+          "case": "limit-read-before-connection-opened",
+          "run": "1",
+          "file": "tests/backends/sqlite/test_features.py",
+          "line": 22,
+          "severity": null,
+          "message": "Order-dependent test: This test reads `connection.features.max_query_params` and calls `connection.connection.setlimit(...)` without first ensuring a connection is open.\n\nIf it runs first, or after the connection was closed, it errors instead of testing the behavior. Because of this, the test can't catch the missing-connection bug above.\n\nAdding `connection.ensure_connection()` makes it deterministic. A separate test should cover a closed connection."
         }
       ]
     }
