@@ -14,9 +14,10 @@ from dataclasses import dataclass
 
 from marginal.review.dedup import _MARKER
 
-# The severity+confidence badge every marginal finding opens with. Releases
-# before the fingerprint marker existed posted findings with only this, so
-# it's the one way to recognize those older comments as marginal's own.
+# The badge marginal findings opened with before findings carried quoted
+# evidence (severity plus "· 92% confidence"). Releases before the fingerprint
+# marker existed posted findings with only this, so it's the one way to
+# recognize those older comments as marginal's own.
 _BADGE = re.compile(r"^(?:🔴|🟠|🟡|⚪) \*\*(?:Critical|High|Medium|Low)\*\* · \d+% confidence")
 
 

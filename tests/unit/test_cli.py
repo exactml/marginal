@@ -36,6 +36,7 @@ from marginal.cli.review import (
     _redacted_filenames,
     _redaction_warning_lines,
     _verdict,
+    _why_lines,
     run_review,
 )
 from marginal.config import MarginalConfig, load_config
@@ -47,7 +48,7 @@ from marginal.github.errors import (
 )
 from marginal.graph import CallSite, ChangedDefinition, Definition
 from marginal.providers.errors import MissingCredentialsError, ProviderResponseError
-from marginal.review import Finding, Severity
+from marginal.review import Evidence, Finding, Severity
 from marginal.review.dedup import finding_fingerprint, fingerprint_marker
 from marginal.review.replies import ReplyThread
 
@@ -416,9 +417,7 @@ def test_review_with_comment_flag_maps_permission_denied_to_clean_error(
 
 def test_build_inline_comments_skips_findings_without_a_line():
     findings = [
-        Finding(
-            file="a.py", line=None, severity=Severity.LOW, confidence=0.9, message="no line here"
-        ),
+        Finding(file="a.py", line=None, severity=Severity.LOW, message="no line here"),
     ]
 
     assert _build_inline_comments(findings, {}) == []
@@ -426,17 +425,14 @@ def test_build_inline_comments_skips_findings_without_a_line():
 
 def test_build_inline_comments_builds_one_entry_per_anchored_finding():
     findings = [
-        Finding(file="a.py", line=10, severity=Severity.HIGH, confidence=0.9, message="issue in a"),
+        Finding(file="a.py", line=10, severity=Severity.HIGH, message="issue in a"),
         Finding(
             file="b.py",
             line=None,
             severity=Severity.LOW,
-            confidence=0.9,
             message="issue in b, unanchored",
         ),
-        Finding(
-            file="c.py", line=3, severity=Severity.MEDIUM, confidence=0.9, message="issue in c"
-        ),
+        Finding(file="c.py", line=3, severity=Severity.MEDIUM, message="issue in c"),
     ]
 
     marker_a = fingerprint_marker(finding_fingerprint("a.py", 10, "high", "issue in a", None))
@@ -445,12 +441,12 @@ def test_build_inline_comments_builds_one_entry_per_anchored_finding():
         {
             "path": "a.py",
             "line": 10,
-            "body": f"🟠 **High** · 90% confidence\n\nissue in a\n\n{marker_a}",
+            "body": f"🟠 **High**\n\nissue in a\n\n{marker_a}",
         },
         {
             "path": "c.py",
             "line": 3,
-            "body": f"🟡 **Medium** · 90% confidence\n\nissue in c\n\n{marker_c}",
+            "body": f"🟡 **Medium**\n\nissue in c\n\n{marker_c}",
         },
     ]
 
@@ -458,24 +454,22 @@ def test_build_inline_comments_builds_one_entry_per_anchored_finding():
 # -- review: badge and body template --------------------------------------
 
 
-def test_finding_badge_includes_severity_and_confidence():
-    finding = Finding(file="a.py", line=5, severity=Severity.CRITICAL, confidence=0.92, message="x")
+def test_finding_badge_shows_the_severity():
+    finding = Finding(file="a.py", line=5, severity=Severity.CRITICAL, message="x")
 
-    assert _finding_badge(finding, with_location=False) == "🔴 **Critical** · 92% confidence"
+    assert _finding_badge(finding, with_location=False) == "🔴 **Critical**"
 
 
 def test_finding_badge_with_location_includes_file_and_line():
-    finding = Finding(file="a.py", line=5, severity=Severity.CRITICAL, confidence=0.9, message="x")
+    finding = Finding(file="a.py", line=5, severity=Severity.CRITICAL, message="x")
 
-    assert (
-        _finding_badge(finding, with_location=True) == "🔴 **Critical** · 90% confidence — `a.py:5`"
-    )
+    assert _finding_badge(finding, with_location=True) == "🔴 **Critical** — `a.py:5`"
 
 
 def test_finding_badge_with_location_omits_the_line_when_absent():
-    finding = Finding(file="a.py", line=None, severity=Severity.LOW, confidence=0.9, message="x")
+    finding = Finding(file="a.py", line=None, severity=Severity.LOW, message="x")
 
-    assert _finding_badge(finding, with_location=True) == "⚪ **Low** · 90% confidence — `a.py`"
+    assert _finding_badge(finding, with_location=True) == "⚪ **Low** — `a.py`"
 
 
 def test_base_lines_collapses_the_file_list_behind_details():
@@ -618,6 +612,32 @@ def test_coverage_warning_lines_can_report_both_gaps_at_once():
 # -- review: LLM finding -------------------------------------------------
 
 
+def _evidenced(
+    *, file, line, severity, message, quote="time.sleep(1)", quote_line=None, in_tree=None
+):
+    """A finding that passes marginal's posting rule, as a well-formed model
+    answer would: it quotes `quote` at `file:quote_line` (default: its own
+    line, or 1) and its trigger names that code.
+
+    For a test whose diff doesn't show that line, pass `in_tree` (the test's
+    working tree, e.g. `tmp_path`) to write the quoted line into the file
+    there, where marginal reads it from the checkout.
+    """
+    at = quote_line or line or 1
+    if in_tree is not None:
+        path = in_tree / file
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n" * (at - 1) + quote + "\n")
+    return Finding(
+        file=file,
+        line=line,
+        severity=severity,
+        message=message,
+        trigger=f"reaching `{quote.strip()}`",
+        evidence=[Evidence(file=file, line=at, quote=quote)],
+    )
+
+
 def _write_reviewer_config(tmp_path):
     config_dir = tmp_path / ".marginal"
     config_dir.mkdir()
@@ -655,25 +675,19 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(
         {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
     ]
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(
-            findings=[
-                Finding(
-                    file="marginal/retry.py",
-                    line=2,
-                    severity=Severity.HIGH,
-                    confidence=0.9,
-                    message="This introduces a blocking sleep in an async retry loop.",
-                )
-            ]
-        )
+    finding = _evidenced(
+        file="marginal/retry.py",
+        line=2,
+        severity=Severity.HIGH,
+        message="This introduces a blocking sleep in an async retry loop.",
     )
+    provider.generate_structured = AsyncMock(return_value=_FindingsResponse(findings=[finding]))
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
 
     assert exit_code == 0
     out = capsys.readouterr().out
-    assert "🟠 **High** · 90% confidence — `marginal/retry.py:2`" in out
+    assert "🟠 **High** — `marginal/retry.py:2`" in out
     assert "This introduces a blocking sleep in an async retry loop." in out
 
     call = provider.generate_structured.call_args
@@ -709,17 +723,23 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(
             {
                 "path": "marginal/retry.py",
                 "line": 2,
-                "body": (
-                    "🟠 **High** · 90% confidence\n\n"
-                    "This introduces a blocking sleep in an async retry loop.\n\n"
-                    + fingerprint_marker(
-                        finding_fingerprint(
-                            "marginal/retry.py",
-                            2,
-                            "high",
-                            "This introduces a blocking sleep in an async retry loop.",
-                            "@@ -1,3 +1,4 @@\n+time.sleep(1)",
-                        )
+                "body": "\n".join(
+                    [
+                        "🟠 **High**",
+                        "",
+                        "This introduces a blocking sleep in an async retry loop.",
+                        *_why_lines(finding),
+                        "",
+                    ]
+                )
+                + "\n"
+                + fingerprint_marker(
+                    finding_fingerprint(
+                        "marginal/retry.py",
+                        2,
+                        "high",
+                        "This introduces a blocking sleep in an async retry loop.",
+                        "@@ -1,3 +1,4 @@\n+time.sleep(1)",
                     )
                 ),
             }
@@ -739,11 +759,11 @@ def test_review_with_finding_missing_line_falls_back_to_filename(
     provider.generate_structured = AsyncMock(
         return_value=_FindingsResponse(
             findings=[
-                Finding(
+                _evidenced(
+                    in_tree=tmp_path,
                     file="marginal/retry.py",
                     line=None,
                     severity=Severity.MEDIUM,
-                    confidence=0.9,
                     message="Consider adding a backoff cap.",
                 )
             ]
@@ -754,7 +774,7 @@ def test_review_with_finding_missing_line_falls_back_to_filename(
 
     assert exit_code == 0
     out = capsys.readouterr().out
-    assert "🟡 **Medium** · 90% confidence — `marginal/retry.py`" in out
+    assert "🟡 **Medium** — `marginal/retry.py`" in out
     assert "marginal/retry.py:None" not in out
 
 
@@ -770,11 +790,11 @@ def test_review_with_unanchored_finding_posts_it_in_the_summary_body_not_inline(
     provider.generate_structured = AsyncMock(
         return_value=_FindingsResponse(
             findings=[
-                Finding(
+                _evidenced(
+                    in_tree=tmp_path,
                     file="marginal/retry.py",
                     line=None,
                     severity=Severity.MEDIUM,
-                    confidence=0.9,
                     message="Consider adding a backoff cap.",
                 )
             ]
@@ -785,7 +805,7 @@ def test_review_with_unanchored_finding_posts_it_in_the_summary_body_not_inline(
 
     assert exit_code == 0
     out = capsys.readouterr().out
-    assert "🟡 **Medium** · 90% confidence — `marginal/retry.py`" in out
+    assert "🟡 **Medium** — `marginal/retry.py`" in out
 
     marker = fingerprint_marker(
         finding_fingerprint(
@@ -797,7 +817,7 @@ def test_review_with_unanchored_finding_posts_it_in_the_summary_body_not_inline(
     )
 
 
-def test_review_drops_a_finding_below_the_confidence_threshold(
+def test_review_drops_a_finding_whose_quote_is_not_in_the_code(
     tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
 ):
     monkeypatch.chdir(tmp_path)
@@ -809,28 +829,28 @@ def test_review_drops_a_finding_below_the_confidence_threshold(
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(
-            findings=[
-                Finding(
-                    file="marginal/retry.py",
-                    line=2,
-                    severity=Severity.LOW,
-                    confidence=0.5,
-                    message="Might be worth a second look, but not sure.",
-                )
-            ]
+        return_value=_findings_response(
+            Finding(
+                file="marginal/retry.py",
+                line=2,
+                severity=Severity.HIGH,
+                message="The retry loop never backs off.",
+                trigger="calling `retry_forever()`",
+                # An invented line: nothing like it is in the diff or the file.
+                evidence=[Evidence(file="marginal/retry.py", line=2, quote="retry_forever()")],
+            )
         )
     )
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
 
     assert exit_code == 0
-    out = capsys.readouterr().out
-    assert "confidence" not in out
-
-    # Below the default confidence_threshold (0.85) -- filtered out entirely,
-    # same as if no finding had been generated at all.
-    client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT", comments=[])
+    captured = capsys.readouterr()
+    assert "dropped 1 finding(s): 1 quoted line not found" in captured.err
+    # Dropped entirely, same as if no finding had been generated at all.
+    client.create_review.assert_called_once_with(
+        42, captured.out.rstrip("\n"), event="COMMENT", comments=[]
+    )
 
 
 # -- review: multiple findings ---------------------------------------------
@@ -871,19 +891,18 @@ def test_review_with_multiple_findings_posts_all_of_them(
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
         return_value=_findings_response(
-            Finding(
+            _evidenced(
                 file="marginal/retry.py",
                 line=2,
                 severity=Severity.HIGH,
-                confidence=0.95,
                 message="This introduces a blocking sleep in an async retry loop.",
             ),
-            Finding(
+            _evidenced(
                 file="marginal/backoff.py",
                 line=1,
                 severity=Severity.MEDIUM,
-                confidence=0.9,
                 message="Consider adding a backoff cap.",
+                quote="delay = 1",
             ),
         )
     )
@@ -892,8 +911,8 @@ def test_review_with_multiple_findings_posts_all_of_them(
 
     assert exit_code == 0
     out = capsys.readouterr().out
-    assert "🟠 **High** · 95% confidence — `marginal/retry.py:2`" in out
-    assert "🟡 **Medium** · 90% confidence — `marginal/backoff.py:1`" in out
+    assert "🟠 **High** — `marginal/retry.py:2`" in out
+    assert "🟡 **Medium** — `marginal/backoff.py:1`" in out
 
     comments = client.create_review.call_args.kwargs["comments"]
     assert {(c["path"], c["line"]) for c in comments} == {
@@ -913,7 +932,6 @@ def _write_reviewer_config_with_max_comments(tmp_path, max_comments):
         "    model: claude-3-5-sonnet\n"
         "review:\n"
         f"  max_comments: {max_comments}\n"
-        "  confidence_threshold: 0.0\n"
     )
 
 
@@ -925,28 +943,31 @@ def test_review_caps_multiple_findings_at_max_comments(
     client = mock_github_client.return_value
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = [
-        {"filename": f"file{i}.py", "patch": "+x = 1"} for i in range(3)
+        {"filename": f"file{i}.py", "patch": "@@ -0,0 +1 @@\n+max_retries = 1"} for i in range(3)
     ]
     provider = mock_provider.return_value
+
+    def finding(file, severity, message):
+        return _evidenced(
+            file=file, line=1, severity=severity, message=message, quote="max_retries = 1"
+        )
+
     provider.generate_structured = AsyncMock(
         return_value=_findings_response(
-            Finding(file="file0.py", line=1, severity=Severity.LOW, confidence=0.7, message="low"),
-            Finding(
-                file="file1.py", line=1, severity=Severity.MEDIUM, confidence=0.9, message="mid"
-            ),
-            Finding(
-                file="file2.py", line=1, severity=Severity.HIGH, confidence=0.99, message="high"
-            ),
+            finding("file0.py", Severity.LOW, "low"),
+            finding("file1.py", Severity.MEDIUM, "mid"),
+            finding("file2.py", Severity.HIGH, "high"),
         )
     )
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
     assert exit_code == 0
-    out = capsys.readouterr().out
-    # Three findings came back, but max_comments=2 caps the survivors at the
-    # two highest-confidence ones -- the lowest-confidence finding is dropped.
-    assert out.count("confidence") == 2
+    captured = capsys.readouterr()
+    out = captured.out
+    # All three pass the rule, but max_comments=2 keeps the two most severe;
+    # the low one is dropped, and says why.
+    assert "dropped 1 finding(s): 1 over review.max_comments" in captured.err
     assert "— `file2.py:1`" in out
     assert "— `file1.py:1`" in out
     assert "— `file0.py:1`" not in out
@@ -954,7 +975,7 @@ def test_review_caps_multiple_findings_at_max_comments(
 
 def test_findings_response_rejects_more_than_the_schema_bound():
     findings = [
-        Finding(file=f"f{i}.py", severity=Severity.LOW, confidence=0.9, message="x")
+        Finding(file=f"f{i}.py", severity=Severity.LOW, message="x")
         for i in range(MAX_FINDINGS_PER_REVIEW + 1)
     ]
 
@@ -1112,11 +1133,10 @@ def test_review_folds_a_configured_policy_file_into_the_prompt(
     provider.generate_structured = AsyncMock(
         return_value=_FindingsResponse(
             findings=[
-                Finding(
+                _evidenced(
                     file="marginal/retry.py",
                     line=2,
                     severity=Severity.HIGH,
-                    confidence=0.9,
                     message="This introduces a blocking sleep in an async retry loop.",
                 )
             ]
@@ -1143,11 +1163,10 @@ def test_review_with_a_missing_policy_file_does_not_crash(
     provider.generate_structured = AsyncMock(
         return_value=_FindingsResponse(
             findings=[
-                Finding(
+                _evidenced(
                     file="marginal/retry.py",
                     line=None,
                     severity=Severity.LOW,
-                    confidence=0.9,
                     message="Minor nit.",
                 )
             ]
@@ -1390,10 +1409,8 @@ def test_build_graph_context_section_skips_unreadable_callers_to_reach_a_readabl
 # -- review: secret redaction warning --------------------------------------
 
 
-def _finding(file="marginal/config.py", confidence=0.5, message="not important"):
-    return Finding(
-        file=file, line=None, severity=Severity.LOW, confidence=confidence, message=message
-    )
+def _finding(file="marginal/config.py", message="not important"):
+    return Finding(file=file, line=None, severity=Severity.LOW, message=message)
 
 
 def _findings_response(*findings):
@@ -1710,7 +1727,7 @@ def test_review_format_json_prints_parseable_json_with_pr_metadata(
         "head_sha": "def456",
         "changed_files": ["marginal/retry.py", "tests/test_retry.py"],
         "findings": [],
-        "filtered_findings": [],
+        "dropped_findings": [],
         "redacted_files": [],
         "comment_posted": False,
         "prompt_over_budget": False,
@@ -1735,11 +1752,10 @@ def test_review_format_json_includes_surviving_findings(
     provider.generate_structured = AsyncMock(
         return_value=_FindingsResponse(
             findings=[
-                Finding(
+                _evidenced(
                     file="marginal/retry.py",
                     line=2,
                     severity=Severity.HIGH,
-                    confidence=0.9,
                     message="This introduces a blocking sleep in an async retry loop.",
                 )
             ]
@@ -1755,13 +1771,23 @@ def test_review_format_json_includes_surviving_findings(
             "file": "marginal/retry.py",
             "line": 2,
             "severity": "high",
-            "confidence": 0.9,
             "message": "This introduces a blocking sleep in an async retry loop.",
+            "trigger": "reaching `time.sleep(1)`",
+            "evidence": [
+                {"file": "marginal/retry.py", "line": 2, "quote": "time.sleep(1)", "verified": True}
+            ],
+            "assumptions": [],
+            "checks": {
+                "quotes_verified": 1,
+                "quotes_not_found": 0,
+                "trigger_concrete": True,
+                "caller_shown": False,
+            },
         }
     ]
 
 
-def test_review_format_json_omits_a_finding_below_the_confidence_threshold(
+def test_review_format_json_lists_a_dropped_finding_with_its_reason(
     tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
 ):
     monkeypatch.chdir(tmp_path)
@@ -1773,16 +1799,15 @@ def test_review_format_json_omits_a_finding_below_the_confidence_threshold(
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(
-            findings=[
-                Finding(
-                    file="marginal/retry.py",
-                    line=2,
-                    severity=Severity.LOW,
-                    confidence=0.5,
-                    message="Might be worth a second look, but not sure.",
-                )
-            ]
+        return_value=_findings_response(
+            Finding(
+                file="marginal/retry.py",
+                line=2,
+                severity=Severity.LOW,
+                message="Might be worth a second look, but not sure.",
+                trigger="sometimes",
+                evidence=[Evidence(file="marginal/retry.py", line=1, quote="time.sleep(1)")],
+            )
         )
     )
 
@@ -1790,18 +1815,13 @@ def test_review_format_json_omits_a_finding_below_the_confidence_threshold(
 
     assert exit_code == 0
     result = json.loads(capsys.readouterr().out)
-    # Below the default confidence_threshold (0.85): never posted, but listed
-    # under filtered_findings so its confidence shows how close it came.
+    # The quote checks out, but the trigger names no code: never posted, and
+    # listed with the reason so it's clear what was missing.
     assert result["findings"] == []
-    assert result["filtered_findings"] == [
-        {
-            "file": "marginal/retry.py",
-            "line": 2,
-            "severity": "low",
-            "confidence": 0.5,
-            "message": "Might be worth a second look, but not sure.",
-        }
+    assert [(f["message"], f["reason"]) for f in result["dropped_findings"]] == [
+        ("Might be worth a second look, but not sure.", "no concrete trigger")
     ]
+    assert result["dropped_findings"][0]["checks"]["quotes_verified"] == 1
 
 
 def test_review_format_json_reports_redacted_files(
@@ -1876,11 +1896,10 @@ def test_review_posts_the_same_review_under_both_formats(
     provider.generate_structured = AsyncMock(
         return_value=_FindingsResponse(
             findings=[
-                Finding(
+                _evidenced(
                     file="marginal/config.py",
                     line=1,
                     severity=Severity.HIGH,
-                    confidence=0.9,
                     message="Hardcoded credential.",
                 )
             ]
@@ -2117,9 +2136,7 @@ def test_review_format_json_prints_nothing_on_an_invalid_config(
 
 
 def test_build_json_result_serializes_a_finding_as_plain_json():
-    finding = Finding(
-        file="a.py", line=None, severity=Severity.HIGH, confidence=0.9, message="issue"
-    )
+    finding = Finding(file="a.py", line=None, severity=Severity.HIGH, message="issue")
 
     result = _build_json_result(
         "acme/widgets",
@@ -2130,7 +2147,7 @@ def test_build_json_result_serializes_a_finding_as_plain_json():
         [],
         comment_posted=True,
         prompt_over_budget=False,
-        filtered_findings=[],
+        dropped=[],
     )
 
     # Round-trips cleanly -- severity is a plain string, not an enum repr.
@@ -2199,11 +2216,26 @@ def test_review_of_two_commits_reviews_the_compare_diff_with_base_config(
                 "file": "marginal/retry.py",
                 "line": 2,
                 "severity": "high",
-                "confidence": 0.9,
                 "message": "Blocks the retry loop.",
+                "trigger": "reaching `time.sleep(1)`",
+                "evidence": [
+                    {
+                        "file": "marginal/retry.py",
+                        "line": 2,
+                        "quote": "time.sleep(1)",
+                        "verified": True,
+                    }
+                ],
+                "assumptions": [],
+                "checks": {
+                    "quotes_verified": 1,
+                    "quotes_not_found": 0,
+                    "trigger_concrete": True,
+                    "caller_shown": False,
+                },
             }
         ],
-        "filtered_findings": [],
+        "dropped_findings": [],
         "redacted_files": [],
         "comment_posted": False,
         "prompt_over_budget": False,
@@ -2231,8 +2263,14 @@ _RETRY_PATCH = "@@ -1,2 +1,3 @@\n import time\n+time.sleep(1)\n retry()"
 
 
 def _finding_at(line, message, severity=Severity.HIGH):
-    return Finding(
-        file="marginal/retry.py", line=line, severity=severity, confidence=0.9, message=message
+    # Quotes `_RETRY_PATCH`'s added line, so it passes the posting rule.
+    return _evidenced(
+        file="marginal/retry.py",
+        line=line,
+        severity=severity,
+        message=message,
+        quote="time.sleep(1)",
+        quote_line=2,
     )
 
 
@@ -2736,7 +2774,7 @@ def test_review_format_json_reports_the_prompt_within_budget(
 
 
 def _finding_of(severity):
-    return Finding(file="a.py", line=1, severity=severity, confidence=0.9, message="x")
+    return Finding(file="a.py", line=1, severity=severity, message="x")
 
 
 def test_verdict_counts_findings_by_severity_most_serious_first():
@@ -3028,7 +3066,9 @@ def test_a_finding_in_a_file_without_a_patch_goes_in_the_body(
     mock_provider.return_value.generate_structured = AsyncMock(
         return_value=_FindingsResponse(
             findings=[
-                Finding(file="logo.png", line=1, severity=Severity.LOW, confidence=0.9, message="x")
+                _evidenced(
+                    in_tree=tmp_path, file="logo.png", line=1, severity=Severity.LOW, message="x"
+                )
             ]
         )
     )

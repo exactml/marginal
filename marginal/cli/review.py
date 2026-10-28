@@ -30,13 +30,14 @@ from marginal.policy import load_policies
 from marginal.providers.base import reset_usage, usage
 from marginal.providers.errors import MissingCredentialsError, ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
-from marginal.review import Finding, Severity, filter_findings
+from marginal.review import Finding, Severity
 from marginal.review.dedup import (
     finding_fingerprint,
     fingerprint_marker,
     nearby_fingerprints,
     posted_fingerprints,
 )
+from marginal.review.evidence import CodeView, Decision, decide
 from marginal.review.redact import redact_secrets
 from marginal.review.replies import ReplyThread, maintainer_replies
 
@@ -92,10 +93,17 @@ FINDING_PROMPT_INSTRUCTIONS = (
     f"warranted, up to {MAX_FINDINGS_PER_REVIEW}. Return an empty list if "
     "nothing in the diff is worth flagging. For each issue, report the file "
     "it's in, the line number in the new version of the file if you can "
-    "identify one (omit it if you can't), a severity, a confidence between "
-    "0.0 and 1.0 for how likely this is a real, actionable issue (not a "
-    "false positive or a stylistic nitpick), and a concise 2-3 sentence "
-    "explanation of the problem."
+    "identify one (null if you can't), a severity, and a concise 2-3 sentence "
+    "explanation of the problem and its effect. Then show your work, which is "
+    "checked against the code before anything is posted:\n"
+    "- trigger: the concrete input, state or call path that makes it go wrong, "
+    "naming the functions or variables involved in backticks.\n"
+    "- evidence: 1-3 lines of code the issue rests on, each with its file, its "
+    "line number in the new version, and the line's text copied exactly. Quote "
+    "only lines shown below (the diff or the caller context).\n"
+    "- assumptions: what must be true for this to be a problem that you "
+    "couldn't see; an empty list if none.\n"
+    "Don't report an issue you can't quote evidence for, or a stylistic nitpick."
 )
 
 
@@ -158,22 +166,17 @@ def run_review(
     skipped with a warning rather than failing the review) and, under a
     separate "never flag" instruction, any `config.anti_policies` files
     (loaded the same way) describing deliberate tradeoffs the repo doesn't
-    want re-litigated, then runs the
-    list through `marginal.review.filter_findings`: each finding is dropped
-    outright if its self-reported `confidence` is below
-    `config.review.confidence_threshold`, and the survivors are capped at
-    `config.review.max_comments` (highest-confidence first). Each finding
-    that survives appends to the printed summary as a severity+confidence
-    badge (e.g. `🔴 **Critical** · 92% confidence`) followed by its message.
-    Without `models.reviewer`, or if every finding gets filtered out, the
-    summary stays metadata-only, same as if nothing was generated.
-
-    With `config.review.self_reflect`, the findings first go back to the same
-    model with the diff (`marginal.cli.critique.critique_findings`), which
-    can lower each one's confidence or drop it (never raise it), so the
-    threshold and cap act on that second look. It's one extra call, skipped
-    when nothing was found, and best-effort: over budget or failed, the
-    findings pass on unchanged.
+    want re-litigated. Then it checks each finding and applies the posting
+    rule (`marginal.review.evidence.decide`), with no further model call: a
+    finding is posted only if at least one of its quoted lines is found at its
+    line (within a couple of lines) and its trigger names code from the diff or
+    the caller context; the rest are dropped with a reason. Posted findings are
+    capped at `config.review.max_comments`, most severe first. Each one appends
+    to the printed summary as a severity badge (e.g. `🔴 **Critical**`), its
+    message, and a folded "Why marginal flagged this" block with its trigger,
+    verified quotes and assumptions. Without `models.reviewer`, or if every
+    finding is dropped, the summary stays metadata-only, same as if nothing
+    was generated.
 
     Before any model call, the fully built prompt's size is estimated
     (`_estimate_tokens`, a length heuristic) and checked against
@@ -347,24 +350,24 @@ def run_review(
         except ProviderError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
             return 1
-        if config.review.self_reflect and findings:
-            # Imported here: `marginal.cli.critique` imports helpers from this module.
-            from marginal.cli.critique import critique_findings
 
-            findings = critique_findings(
-                reviewer_model,
-                findings,
-                redacted,
-                max_prompt_tokens=config.review.max_prompt_tokens,
-            )
-
-    generated = findings
-    findings = filter_findings(
-        findings,
-        confidence_threshold=config.review.confidence_threshold,
-        max_comments=config.review.max_comments,
-    )
-    filtered = [finding for finding in generated if finding not in findings]
+    decisions: list[Decision] = []
+    if findings:
+        # Checked against what the model was shown: the (redacted) diff and the
+        # caller context, plus the rest of each file from the checkout.
+        context = _build_graph_context_section(graph_context, path) or ""
+        decisions = decide(
+            findings, CodeView(path, redacted, context), max_comments=config.review.max_comments
+        )
+    findings = [d.finding for d in decisions if d.posted]
+    dropped = [d for d in decisions if not d.posted]
+    if dropped:
+        reasons = Counter(d.reason for d in dropped)
+        print(
+            f"marginal review: dropped {len(dropped)} finding(s): "
+            + ", ".join(f"{count} {reason}" for reason, count in reasons.most_common()),
+            file=sys.stderr,
+        )
 
     # Without a model call nothing was reviewed, so there's no verdict to give.
     reviewed = reviewer_model is not None and bool(reviewed_files) and over_budget is None
@@ -458,9 +461,9 @@ def run_review(
             redacted_files,
             comment_posted=comment_posted,
             prompt_over_budget=over_budget is not None,
-            filtered_findings=filtered,
+            dropped=dropped,
         )
-        # Summed over every model call above: findings, retry, self-critique, re-check.
+        # Summed over every model call above: findings, its retry, the re-check.
         model = f"{reviewer_model.provider}:{reviewer_model.model}" if reviewer_model else None
         result["usage"] = {"model": model, **usage()}
         print(json.dumps(result, indent=2))
@@ -633,16 +636,12 @@ def _verdict(findings: list[Finding], *, already_posted: int = 0) -> str:
 
 
 def _finding_badge(finding: Finding, *, with_location: bool) -> str:
-    """Render a finding's severity+confidence as one line, e.g.
-
-    `🔴 **Critical** · 92% confidence` -- optionally suffixed with its file
-    location, for contexts (like a review's overall body) that aren't
-    already anchored to that location the way an inline comment is.
+    """Render a finding's severity as one line, e.g. `🔴 **Critical**` --
+    optionally suffixed with its file location, for contexts (like a review's
+    overall body) that aren't already anchored to that location the way an
+    inline comment is.
     """
-    badge = (
-        f"{SEVERITY_EMOJI[finding.severity]} **{finding.severity.value.title()}** · "
-        f"{finding.confidence:.0%} confidence"
-    )
+    badge = f"{SEVERITY_EMOJI[finding.severity]} **{finding.severity.value.title()}**"
     if with_location:
         location = finding.file if finding.line is None else f"{finding.file}:{finding.line}"
         badge += f" — `{location}`"
@@ -650,9 +649,36 @@ def _finding_badge(finding: Finding, *, with_location: bool) -> str:
 
 
 def _finding_lines(finding: Finding) -> list[str]:
-    """Render one `Finding` as `["", badge, "", message]`, badge and message
-    each getting their own paragraph."""
-    return ["", _finding_badge(finding, with_location=True), "", finding.message]
+    """Render one `Finding` as its badge, message and "Why" block, each its
+    own paragraph."""
+    badge = _finding_badge(finding, with_location=True)
+    return ["", badge, "", finding.message, *_why_lines(finding)]
+
+
+def _why_lines(finding: Finding) -> list[str]:
+    """A folded "Why marginal flagged this" block: the trigger, each verified
+    quote, and the assumptions. Model-written text goes through
+    `redact_secrets`, like everything else marginal posts."""
+    checks = finding.checks
+    if checks is None:
+        return []
+    verified = [e for e, ok in zip(finding.evidence, checks.quotes, strict=False) if ok]
+    lines = ["", "<details><summary>Why marginal flagged this</summary>", ""]
+    if finding.trigger:
+        lines.append(f"- **Trigger:** {redact_secrets(finding.trigger)}")
+    if verified:
+        lines.append(
+            "- **Evidence:** "
+            + " · ".join(f"`{e.file}:{e.line}` {_code_span(e.quote)} ✓" for e in verified)
+        )
+    if finding.assumptions:
+        lines.append("- **Assumed:** " + "; ".join(redact_secrets(a) for a in finding.assumptions))
+    return [*lines, "", "</details>"]
+
+
+def _code_span(text: str) -> str:
+    text = redact_secrets(" ".join(text.split()))
+    return f"`` {text} ``" if "`" in text else f"`{text}`"
 
 
 def _redaction_warning_lines(redacted_files: list[str]) -> list[str]:
@@ -687,8 +713,16 @@ def _build_inline_comments(
         {
             "path": finding.file,
             "line": finding.line,
-            "body": f"{_finding_badge(finding, with_location=False)}\n\n{finding.message}"
-            f"\n\n{fingerprint_marker(_fingerprint(finding, patches))}",
+            "body": "\n".join(
+                [
+                    _finding_badge(finding, with_location=False),
+                    "",
+                    finding.message,
+                    *_why_lines(finding),
+                    "",
+                    fingerprint_marker(_fingerprint(finding, patches)),
+                ]
+            ),
         }
         for finding in findings
         if finding.line is not None
@@ -738,7 +772,7 @@ def _build_json_result(
     *,
     comment_posted: bool,
     prompt_over_budget: bool,
-    filtered_findings: list[Finding],
+    dropped: list[Decision],
 ) -> dict[str, object]:
     """Build the `--format json` payload for one review run.
 
@@ -752,9 +786,9 @@ def _build_json_result(
     "not reviewed", not "nothing found").
     A finding's `line` being `None` means what it does for
     `_build_inline_comments`. Reviewing two commits (`pr_number=None`) leaves
-    `title` and `state` `None`. `filtered_findings` are the ones the model
-    returned that `review.confidence_threshold` or `review.max_comments`
-    dropped: never posted, listed so their confidence shows how close they came.
+    `title` and `state` `None`. Every finding, posted or not, carries the
+    `checks` marginal ran on it; `dropped_findings` are the ones the posting
+    rule or `review.max_comments` kept off the PR, each with its `reason`.
     """
     is_pr = pr_number is not None
     return {
@@ -765,12 +799,27 @@ def _build_json_result(
         "base_sha": str(pull_request["base"]["sha"]),
         "head_sha": str(pull_request["head"]["sha"]),
         "changed_files": filenames,
-        "findings": [finding.model_dump(mode="json") for finding in findings],
-        "filtered_findings": [f.model_dump(mode="json") for f in filtered_findings],
+        "findings": [_finding_json(finding) for finding in findings],
+        "dropped_findings": [_finding_json(d.finding) | {"reason": d.reason} for d in dropped],
         "redacted_files": redacted_files,
         "comment_posted": comment_posted,
         "prompt_over_budget": prompt_over_budget,
     }
+
+
+def _finding_json(finding: Finding) -> dict[str, object]:
+    data = finding.model_dump(mode="json")
+    checks = finding.checks
+    if checks is not None:
+        for item, verified in zip(data["evidence"], checks.quotes, strict=False):
+            item["verified"] = verified
+        data["checks"] = {
+            "quotes_verified": checks.quotes_verified,
+            "quotes_not_found": checks.quotes_not_found,
+            "trigger_concrete": checks.trigger_concrete,
+            "caller_shown": checks.caller_shown,
+        }
+    return data
 
 
 async def _generate_findings(

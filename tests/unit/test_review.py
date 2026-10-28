@@ -1,10 +1,9 @@
 import pytest
-from pydantic import ValidationError
 
-from marginal.review import Finding, Severity, filter_findings, redact_secrets
+from marginal.review import Finding, Severity, redact_secrets
 
 
-def _finding(confidence: float, **overrides: object) -> Finding:
+def _finding(**overrides: object) -> Finding:
     fields: dict[str, object] = {
         "file": "a.py",
         "line": 1,
@@ -12,44 +11,31 @@ def _finding(confidence: float, **overrides: object) -> Finding:
         "message": "an issue",
     }
     fields.update(overrides)
-    return Finding(confidence=confidence, **fields)
+    return Finding(**fields)
 
 
-@pytest.mark.parametrize("confidence", [-0.1, 1.1])
-def test_confidence_must_be_within_0_and_1(confidence):
-    with pytest.raises(ValidationError):
-        _finding(confidence)
+def test_every_finding_field_is_required_on_the_wire_and_has_no_default():
+    schema = Finding.model_json_schema()
+
+    assert schema["required"] == [
+        "file",
+        "line",
+        "severity",
+        "message",
+        "trigger",
+        "evidence",
+        "assumptions",
+    ]
+    assert not any("default" in prop for prop in schema["properties"].values())
+    assert schema["$defs"]["Evidence"]["required"] == ["file", "line", "quote"]
+    assert "confidence" not in schema["properties"]
 
 
-def test_filter_findings_drops_a_finding_below_the_threshold():
-    findings = [_finding(0.5)]
+def test_python_callers_can_still_leave_the_evidence_fields_out():
+    finding = _finding()
 
-    assert filter_findings(findings, confidence_threshold=0.85, max_comments=8) == []
-
-
-def test_filter_findings_keeps_a_finding_at_or_above_the_threshold():
-    finding = _finding(0.85)
-
-    assert filter_findings([finding], confidence_threshold=0.85, max_comments=8) == [finding]
-
-
-def test_filter_findings_caps_at_max_comments_highest_confidence_first():
-    low = _finding(0.86, file="low.py")
-    mid = _finding(0.9, file="mid.py")
-    high = _finding(0.99, file="high.py")
-
-    result = filter_findings([low, mid, high], confidence_threshold=0.85, max_comments=2)
-
-    assert result == [high, mid]
-
-
-def test_filter_findings_drops_low_confidence_before_capping():
-    below_threshold = _finding(0.5, file="dropped.py")
-    kept = _finding(0.9, file="kept.py")
-
-    result = filter_findings([below_threshold, kept], confidence_threshold=0.85, max_comments=8)
-
-    assert result == [kept]
+    assert (finding.trigger, finding.evidence, finding.assumptions) == ("", [], [])
+    assert finding.checks is None
 
 
 @pytest.mark.parametrize(
@@ -60,13 +46,14 @@ def test_filter_findings_drops_low_confidence_before_capping():
             "Will undercharge on fractional cents.",
         ),
         ('Off by one.", "line": 12}', "Off by one."),
+        ("Never retried.', 'trigger'] ,", "Never retried."),
         ("The 'file' argument is unused.", "The 'file' argument is unused."),
         ("Wrong key, see 'line'],", "Wrong key, see 'line'],"),
         ("Call `open('a', 'file')` instead.", "Call `open('a', 'file')` instead."),
     ],
 )
 def test_finding_message_drops_a_leaked_tool_call_fragment(message, expected):
-    assert _finding(0.9, message=message).message == expected
+    assert _finding(message=message).message == expected
 
 
 # -- redact_secrets --------------------------------------------------------

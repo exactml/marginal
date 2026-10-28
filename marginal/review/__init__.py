@@ -1,15 +1,17 @@
-"""Review validation, deduplication, and confidence scoring."""
+"""Review findings: what the model reports, the checks marginal runs on it,
+and the rule that decides what gets posted."""
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 from marginal.review.redact import redact_secrets
 
-__all__ = ["Finding", "Severity", "filter_findings", "redact_secrets"]
+__all__ = ["Checks", "Evidence", "Finding", "Severity", "redact_secrets"]
 
 
 class Severity(str, Enum):
@@ -21,16 +23,71 @@ class Severity(str, Enum):
     CRITICAL = "critical"
 
 
-class Finding(BaseModel):
-    """One candidate review finding, generated but not yet validated."""
+def _every_field_required(schema: dict) -> None:
+    """Make every field required on the wire, without a default.
 
-    model_config = ConfigDict(extra="forbid")
+    The model must fill each one (a finding with no trigger or evidence should
+    be the model's explicit answer, not an omission), and strict structured
+    output doesn't take `default`. Python callers can still leave them out.
+    """
+    for prop in schema.get("properties", {}).values():
+        prop.pop("default", None)
+    schema["required"] = list(schema.get("properties", {}))
+
+
+class Evidence(BaseModel):
+    """One line of code a finding rests on, quoted exactly."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_every_field_required)
+
+    file: str
+    line: int
+    quote: str
+
+
+@dataclass(frozen=True)
+class Checks:
+    """What marginal verified about one finding, with no model call."""
+
+    # One entry per evidence item: whether its quote was found at its line.
+    quotes: tuple[bool, ...]
+    trigger_concrete: bool
+    # A verified quote lies outside the diff's hunks: a caller or nearby code.
+    caller_shown: bool
+
+    @property
+    def quotes_verified(self) -> int:
+        return sum(self.quotes)
+
+    @property
+    def quotes_not_found(self) -> int:
+        return len(self.quotes) - self.quotes_verified
+
+
+class Finding(BaseModel):
+    """One finding as the model reports it -- what goes wrong, what triggers
+    it, the code it rests on, and what it had to assume -- before marginal
+    checks it (`marginal.review.evidence`)."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_every_field_required)
 
     file: str
     line: int | None = None
     severity: Severity
-    confidence: float = Field(ge=0.0, le=1.0)
     message: str
+    # The concrete input, state or call path that makes it go wrong.
+    trigger: str = ""
+    # The lines it rests on, quoted exactly; the prompt asks for 1-3.
+    evidence: list[Evidence] = Field(default_factory=list)
+    # What must be true that the model couldn't see.
+    assumptions: list[str] = Field(default_factory=list)
+
+    # Set by `marginal.review.evidence.decide`; never part of the model's output.
+    _checks: Checks | None = PrivateAttr(default=None)
+
+    @property
+    def checks(self) -> Checks | None:
+        return self._checks
 
     @field_validator("message")
     @classmethod
@@ -44,19 +101,6 @@ class Finding(BaseModel):
 # closes a list/object to the end. shortcut: matches the shapes seen so far;
 # widen it if a leak with a letter after the field name (`'severity': 'high'}`) shows up.
 _LEAKED_STRUCTURE = re.compile(
-    r"""\s*['"]\s*,\s*['"](?:file|line|severity|confidence|message)['"]?"""
+    r"""\s*['"]\s*,\s*['"](?:file|line|severity|message|trigger|evidence|assumptions)['"]?"""
     r"""[^A-Za-z]*[\]}][^A-Za-z]*$"""
 )
-
-
-def filter_findings(
-    findings: list[Finding], *, confidence_threshold: float, max_comments: int
-) -> list[Finding]:
-    """Drop low-confidence findings, then cap the rest at `max_comments`.
-
-    A finding below `confidence_threshold` is dropped outright. Of the ones
-    that pass, only the `max_comments` highest-confidence survive -- so a
-    review never posts more than that many findings.
-    """
-    passing = [finding for finding in findings if finding.confidence >= confidence_threshold]
-    return sorted(passing, key=lambda finding: finding.confidence, reverse=True)[:max_comments]
