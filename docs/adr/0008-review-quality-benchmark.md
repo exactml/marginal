@@ -58,7 +58,7 @@ Anyone can propose a case with the **Benchmark case** issue form.
   A maintainer reads it before merging.
 - Each version ships with its scores: `baseline.json` and the README table
   change in the same release PR.
-- `make test` stays free. `make bench` calls the model, needs
+- `make test` stays free. `make review-quality` calls the model, needs
   `ANTHROPIC_API_KEY`, and costs money.
 
 ## Accepted in

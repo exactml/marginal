@@ -18,8 +18,8 @@ make format   # auto-fix
 ## Test
 
 ```bash
-make test     # tests/unit/, free: no model calls
-make bench    # tests/integration/review_quality/, calls the model
+make test            # tests/unit/, free: no model calls
+make review-quality  # tests/integration/review_quality/, calls the model
 ```
 
 `make test` runs the unit tests in `tests/unit/`. They mock GitHub and the
@@ -33,7 +33,7 @@ pip install pre-commit
 pre-commit install
 ```
 
-`make bench` runs the review-quality benchmark in
+`make review-quality` runs the review-quality benchmark in
 `tests/integration/review_quality/`: marginal reviews every case in
 `cases.yml` 3 times, and `score.py` compares the result with `baseline.json`.
 It needs `ANTHROPIC_API_KEY` (and `GITHUB_TOKEN` for the GitHub API), and it
