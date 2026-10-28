@@ -2,7 +2,8 @@
 name: cut-release
 description: >-
   Cut a marginal release: build CHANGELOG.md's new version section from the
-  `changelog.d/` fragments with towncrier, bump `pyproject.toml`, tag it, and draft GitHub release
+  `changelog.d/` fragments with towncrier, bump `pyproject.toml`, record the
+  release PR's review-quality scores, tag it, and draft GitHub release
   notes with a contributor-thanks section pulled from PRs merged since the
   last tag. Publishing (which triggers the PyPI trusted-publish workflow)
   only happens on explicit confirmation, never automatically. Use when the
@@ -75,12 +76,58 @@ git push -u origin release/v<new>
 gh pr create --title "docs: Cut v<new> release notes" --body "..."
 ```
 
+Don't merge yet: Step 5 adds this version's review-quality scores to the
+same PR.
+
+## Step 5 — Record review quality in the release PR
+
+Opening the release PR starts `.github/workflows/review-quality.yml`, which
+runs the benchmark in `tests/integration/review_quality/` (it calls the
+model, so it takes a while and costs money). Wait for it:
+
+```bash
+RUN_ID=$(gh run list --workflow review-quality.yml --branch release/v<new> \
+  --limit 1 --json databaseId --jq '.[0].databaseId')
+gh run watch "$RUN_ID"
+```
+
+- **A failed run** means the benchmark crashed, not that scores dropped
+  (a drop never fails the job). Fix it or re-run it with
+  `gh workflow run review-quality.yml -f ref=release/v<new>`, then use that
+  run's id.
+- **Read the run summary** (`gh run view "$RUN_ID" --web`): it compares
+  each metric with the last release's `baseline.json`. **Tell the user about
+  every metric marked as a drop** before going on. It's a soft gate: the user
+  decides whether to ship anyway.
+
+Then download the scores and commit them into the release PR:
+
+```bash
+OUT=$(mktemp -d)
+gh run download "$RUN_ID" -n review-quality -D "$OUT"
+cp "$OUT/score.json" tests/integration/review_quality/baseline.json
+```
+
+Update the **Review quality** table in `README.md` from `baseline.json`:
+the median of each metric in the "Latest release" column, and the line
+under the table naming `v<new>`. Don't round numbers into something
+`baseline.json` doesn't say.
+
+```bash
+git add tests/integration/review_quality/baseline.json README.md
+git commit -m "docs: Record v<new> review-quality scores"
+git push
+```
+
+This push doesn't start another benchmark run (the workflow only runs when
+the PR is opened or reopened).
+
 Wait for CI to pass, then **squash-merge** -- this repo is squash-only (all
 repos in the `exactml` org are, as of 2026-09-12), even though the four
 existing releases predate that policy and used a regular merge commit. Don't
 follow the older merge-commit precedent for new releases.
 
-## Step 5 — Gather the contributor-thanks list
+## Step 6 — Gather the contributor-thanks list
 
 Find the previous tag and list every PR merged into `master` since it:
 
@@ -98,7 +145,7 @@ the thanks section entirely** rather than thanking the maintainer for their
 own work -- a thanks section only earns its place once there's an actual
 external contributor to name.
 
-## Step 6 — Draft the release notes and tag
+## Step 7 — Draft the release notes and tag
 
 ```bash
 gh release create v<new> \
@@ -127,7 +174,7 @@ Structure the notes body as:
    version (not a copy of the whole CHANGELOG, just this release's section
    -- one line per entry, not the full multi-sentence writeup), still
    carrying the `ISSUE`/`PR` links.
-3. **Contributor thanks**, from Step 5, if non-empty:
+3. **Contributor thanks**, from Step 6, if non-empty:
    - A first-time external contributor: `### New Contributors` with
      `- @username made their first contribution in [PR-N](...)` per person.
    - A returning external contributor (has an earlier merged PR in this
@@ -139,7 +186,7 @@ Structure the notes body as:
    closing link) reads as considered, a decorated emoji on every header or
    bullet reads as noise.
 
-## Step 7 — Confirm before publishing
+## Step 8 — Confirm before publishing
 
 **Never run `gh release edit v<new> --draft=false` (or otherwise publish the
 draft) without the user explicitly confirming first.** State plainly that
