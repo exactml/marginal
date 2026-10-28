@@ -1,4 +1,5 @@
 from marginal.review.dedup import (
+    current_fingerprints,
     finding_fingerprint,
     fingerprint_marker,
     nearby_fingerprints,
@@ -115,3 +116,84 @@ def test_posted_fingerprints_reads_markers_from_bodies():
     ]
 
     assert posted_fingerprints(bodies) == {"0123456789abcdef", "fedcba9876543210"}
+
+
+BADGE_EMOJI = {"Critical": "🔴", "High": "🟠", "Medium": "🟡", "Low": "⚪"}
+
+
+def comment(path, line, severity="High", fingerprint=None, marker=True):
+    body = f"{BADGE_EMOJI[severity]} **{severity}** · 90% confidence\n\nissue"
+    if marker:
+        body += f"\n\n{fingerprint_marker(fingerprint or fp(11))}"
+    return {
+        "body": body,
+        "path": path,
+        "line": line,
+    }
+
+
+def test_current_fingerprints_follow_a_file_renamed_since_posting():
+    # Posted on retry.py; GitHub now shows the comment on the renamed file.
+    patches = {"backoff.py": PATCH}
+
+    posted = current_fingerprints([comment("backoff.py", 11)], patches)
+
+    assert nearby(11, file="backoff.py") & posted
+
+
+def test_current_fingerprints_match_the_stored_hash_when_nothing_moved():
+    patches = {"retry.py": PATCH}
+
+    posted = current_fingerprints([comment("retry.py", 11)], patches)
+
+    assert posted == {fp(11)}
+    assert not nearby(13, severity="medium") & posted
+
+
+def test_current_fingerprints_skip_outdated_unlisted_and_foreign_comments():
+    patches = {"retry.py": PATCH}
+    comments = [
+        comment("retry.py", None),
+        comment("gone.py", 11),
+        {"body": "a human reply", "path": "retry.py", "line": 11},
+        {"body": None, "path": "retry.py", "line": 11},
+        {"path": "retry.py"},
+    ]
+
+    assert current_fingerprints(comments, patches) == set()
+
+
+def test_current_fingerprints_keep_a_different_finding_on_the_renamed_file_new():
+    patches = {"backoff.py": PATCH}
+
+    posted = current_fingerprints([comment("backoff.py", 11)], patches)
+
+    assert not nearby(11, file="backoff.py", severity="low") & posted
+    assert not nearby(11, file="backoff.py", patch=PATCH.replace("sleep(1)", "sleep(5)")) & posted
+
+
+def test_current_fingerprints_take_the_severity_from_a_low_badge():
+    patches = {"backoff.py": PATCH}
+
+    posted = current_fingerprints([comment("backoff.py", 11, severity="Low")], patches)
+
+    assert nearby(11, file="backoff.py", severity="low") & posted
+    assert not nearby(11, file="backoff.py", severity="high") & posted
+
+
+def test_current_fingerprints_take_the_severity_from_a_medium_badge():
+    patches = {"backoff.py": PATCH}
+
+    posted = current_fingerprints([comment("backoff.py", 11, severity="Medium")], patches)
+
+    assert nearby(11, file="backoff.py", severity="medium") & posted
+    assert not nearby(11, file="backoff.py", severity="high") & posted
+
+
+def test_current_fingerprints_ignore_a_badge_without_a_marginal_marker():
+    # Another bot, or a person quoting marginal's badge format.
+    patches = {"backoff.py": PATCH}
+
+    posted = current_fingerprints([comment("backoff.py", 11, marker=False)], patches)
+
+    assert posted == set()

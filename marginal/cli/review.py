@@ -32,6 +32,7 @@ from marginal.providers.errors import MissingCredentialsError, ProviderError, Pr
 from marginal.providers.factory import get_provider
 from marginal.review import Finding, Severity
 from marginal.review.dedup import (
+    current_fingerprints,
     finding_fingerprint,
     fingerprint_marker,
     nearby_fingerprints,
@@ -397,6 +398,7 @@ def run_review(
                 [review.get("body") for review in reviews]
                 + [c.get("body") for c in review_comments]
             )
+            posted |= current_fingerprints(review_comments, patches)
             new_findings = [f for f in findings if not _nearby_fingerprints(f, patches) & posted]
             if len(new_findings) < len(findings):
                 print(

@@ -15,6 +15,7 @@ from marginal.review.redact import redact_secrets
 
 _MARKER = re.compile(r"<!-- marginal:finding:([0-9a-f]{16}) -->")
 _HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+_SEVERITY = re.compile(r"^\S+ \*\*(Critical|High|Medium|Low)\*\*")
 
 
 def finding_fingerprint(
@@ -66,6 +67,32 @@ def fingerprint_marker(fingerprint: str) -> str:
 def posted_fingerprints(bodies: Iterable[str | None]) -> set[str]:
     """Every fingerprint marker found in `bodies` (comment/review texts)."""
     return {match for body in bodies if body for match in _MARKER.findall(body)}
+
+
+def current_fingerprints(
+    comments: Iterable[dict[str, object]], patches: dict[str, str | None]
+) -> set[str]:
+    """Fingerprints of marginal's own inline `comments`, recomputed where
+    GitHub shows them now.
+
+    A stored marker hashes the path the finding was posted on, so after a
+    rename it no longer matches; GitHub moves the comment to the new `path`,
+    so hashing that path, the comment's current `line` and its badge's
+    severity against `patches` recognises the same finding. An outdated
+    comment (no `line`) or one on a file not in `patches` is skipped.
+    """
+    fingerprints = set()
+    for comment in comments:
+        body, path, line = comment.get("body"), comment.get("path"), comment.get("line")
+        if not isinstance(body, str) or not _MARKER.search(body):
+            continue
+        severity = _SEVERITY.match(body)
+        if severity is None or not isinstance(line, int) or path not in patches:
+            continue
+        fingerprints.add(
+            finding_fingerprint(str(path), line, severity.group(1).lower(), "", patches[path])
+        )
+    return fingerprints
 
 
 def _new_line_text(patch: str | None, line: int) -> str | None:

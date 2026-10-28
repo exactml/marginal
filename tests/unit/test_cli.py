@@ -2326,6 +2326,48 @@ def test_rerun_with_the_same_finding_reworded_posts_nothing(
     assert "nothing was posted" in err
 
 
+def test_rerun_after_a_rename_does_not_post_the_finding_again(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    first = [_finding_at(2, "This sleep blocks the async retry loop.")]
+    _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, first, [])
+    posted = client.create_review.call_args
+    capsys.readouterr()
+
+    # A push renames retry.py to backoff.py; GitHub moves the comment with it.
+    client.reset_mock()
+    client.get_pull_request_files.return_value = [
+        {
+            "filename": "marginal/backoff.py",
+            "previous_filename": "marginal/retry.py",
+            "patch": _RETRY_PATCH,
+        }
+    ]
+    client.list_reviews.return_value = [{"body": posted.args[1]}]
+    client.list_review_comments.return_value = [
+        {"id": 1, "body": c["body"], "path": "marginal/backoff.py", "line": c["line"]}
+        for c in posted.kwargs["comments"]
+    ]
+    renamed = Finding(
+        file="marginal/backoff.py",
+        line=2,
+        severity=Severity.HIGH,
+        confidence=0.9,
+        message="time.sleep() here stalls the event loop between retries.",
+    )
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=_FindingsResponse(findings=[renamed])
+    )
+
+    exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+
+    assert exit_code == 0
+    client.create_review.assert_not_called()
+    assert "skipped 1 finding(s) matching one already posted" in capsys.readouterr().err
+
+
 def test_rerun_posts_only_the_new_finding(
     tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
 ):
