@@ -1,10 +1,10 @@
 name: Review quality
 
 on:
-  # Runs only on release PRs (release/v*), see the job's `if`: the benchmark
-  # calls the model and costs money, so it doesn't run on every PR. Not on
-  # synchronize: cut-release pushes the new baseline.json to the release PR,
-  # and that push shouldn't pay for a second run.
+  # Runs only on release PRs (release/v*), see the `attempts` job's `if`: the
+  # benchmark calls the model and costs money, so it doesn't run on every PR.
+  # Not on synchronize: cut-release pushes the new baseline.json to the
+  # release PR, and that push shouldn't pay for a second run.
   pull_request:
     branches: [master]
     types: [opened, reopened]
@@ -17,14 +17,42 @@ on:
 permissions:
   contents: read
 
+env:
+  BENCH: tests/integration/review_quality
+
 jobs:
-  review-quality:
+  # The matrix comes from cases.yml's `attempts`, so adding a provider or
+  # model is a cases.yml change only.
+  attempts:
     if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'release/') }}
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
     steps:
       - uses: actions/checkout@v7
         with:
           # Empty on pull_request, so the PR's own commit is checked out.
+          ref: ${{ inputs.ref }}
+
+      # yq is preinstalled on GitHub's Ubuntu runners.
+      - id: list
+        run: |
+          matrix=$(yq -o=json -I=0 \
+            '[.attempts[] | . + {"id": .tool + "/" + .provider + "/" + .model}]' "$BENCH/cases.yml")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  # One job per attempt: a review tool with one provider and model.
+  review:
+    needs: attempts
+    name: ${{ matrix.attempt.id }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        attempt: ${{ fromJSON(needs.attempts.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
           ref: ${{ inputs.ref }}
 
       - uses: actions/setup-python@v7
@@ -35,20 +63,52 @@ jobs:
         run: pip install -e ".[dev]"
 
       # A crash here fails the job, so a broken run is never mistaken for a score.
-      - name: Run benchmark
-        run: make review-quality
+      - name: Review every case
+        run: python "$BENCH/run.py" --attempt "${{ matrix.attempt.id }}"
         env:
           GITHUB_TOKEN: ${{ github.token }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          # Artifact names can't contain "/".
+          name: raw-${{ matrix.attempt.tool }}-${{ matrix.attempt.provider }}-${{ matrix.attempt.model }}
+          path: ${{ env.BENCH }}/raw/
+          if-no-files-found: warn
+
+  # Scores every attempt that produced results, together, against baseline.json.
+  score:
+    needs: review
+    if: ${{ !cancelled() && needs.review.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: raw-*
+          merge-multiple: true
+          path: ${{ env.BENCH }}/raw/
 
       # Soft gate: a drop in scores warns in the summary, never fails the job.
       - name: Compare with baseline
         continue-on-error: true
-        run: python tests/integration/review_quality/score.py >> "$GITHUB_STEP_SUMMARY"
+        run: python "$BENCH/score.py" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
           name: review-quality
-          path: tests/integration/review_quality/score.json
+          path: ${{ env.BENCH }}/score.json
           if-no-files-found: warn
