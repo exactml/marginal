@@ -1,8 +1,9 @@
 """Score review-quality benchmark runs against the answer key in cases.yml.
 
-Reads `raw/<case-id>/<run>.json` -- one `marginal review --format json`
-output each, plus the wall-clock `seconds` run.py adds -- writes score.json,
-and prints a Markdown comparison with baseline.json for the CI run summary.
+Reads `raw/<attempt id>/<case-id>/<run>.json` -- one `marginal review
+--format json` output each, plus the wall-clock `seconds` run.py adds --
+writes score.json with one score per attempt, and prints a Markdown
+comparison with baseline.json for the CI run summary.
 A regression only gets a warning: the exit code is non-zero for broken input
 alone, never for a worse score.
 """
@@ -87,15 +88,32 @@ class Case(_Strict):
         return self
 
 
+class Attempt(_Strict):
+    """One reviewer every case is reviewed with: a review tool, and the
+    provider and model it calls."""
+
+    tool: Literal["marginal"]
+    provider: Literal["anthropic", "openai", "ollama"]
+    model: str = Field(min_length=1)
+
+    @property
+    def id(self) -> str:
+        return f"{self.tool}/{self.provider}/{self.model}"
+
+
 class Suite(_Strict):
     config: str
+    attempts: list[Attempt] = Field(min_length=1)
     cases: list[Case]
 
     @model_validator(mode="after")
     def _check_unique_ids(self) -> Suite:
-        ids = [case.id for case in self.cases]
-        if len(ids) != len(set(ids)):
-            raise ValueError(f"duplicate case ids in {ids}")
+        for name, ids in (
+            ("attempt", [attempt.id for attempt in self.attempts]),
+            ("case", [case.id for case in self.cases]),
+        ):
+            if len(ids) != len(set(ids)):
+                raise ValueError(f"duplicate {name} ids in {ids}")
         return self
 
 
@@ -181,8 +199,20 @@ def _spread(values: list[float | None]) -> dict[str, float] | None:
 
 
 def score(suite: Suite, raw_dir: Path) -> dict:
+    """Score each attempt that has results under `raw_dir/<attempt id>/`."""
+    attempts = {}
+    for attempt in suite.attempts:
+        result = score_attempt(suite, raw_dir / attempt.id)
+        if result is not None:
+            attempts[attempt.id] = result
+    if not attempts:
+        raise ValueError(f"no results for any attempt in {raw_dir}")
+    return {"attempts": attempts}
+
+
+def score_attempt(suite: Suite, raw_dir: Path) -> dict | None:
     """Score every case with results in `raw_dir`: each metric's median and
-    min-max across runs, overall and per kind."""
+    min-max across runs, overall and per kind. None when there are none."""
     runs: dict[str, list[tuple[Case, dict]]] = {}
     unlabeled = []
     for case in suite.cases:
@@ -194,7 +224,7 @@ def score(suite: Suite, raw_dir: Path) -> dict:
                 for f in result["unlabeled"]
             ]
     if not runs:
-        raise ValueError(f"no results for any case in {raw_dir}")
+        return None
 
     def group(kind: str | None) -> dict:
         per_run = [
@@ -241,10 +271,22 @@ def _median(metrics: dict, key: str) -> float | None:
 
 
 def markdown(result: dict, baseline: dict, tolerance: float) -> str:
-    """The comparison with the baseline, for $GITHUB_STEP_SUMMARY."""
+    """The comparison with the baseline, one section per attempt, for
+    $GITHUB_STEP_SUMMARY."""
+    lines = ["## Review quality"]
+    old = baseline.get("attempts", {})
+    for attempt_id, attempt in result["attempts"].items():
+        lines += [
+            "",
+            f"### `{attempt_id}`",
+            "",
+            *_attempt_markdown(attempt, old.get(attempt_id, {}), tolerance),
+        ]
+    return "\n".join(lines)
+
+
+def _attempt_markdown(result: dict, baseline: dict, tolerance: float) -> list[str]:
     lines = [
-        "## Review quality",
-        "",
         f"{len(result['cases'])} cases × {result['runs']} runs; median across runs, "
         "with the min-max range.",
         "",
@@ -281,7 +323,7 @@ def markdown(result: dict, baseline: dict, tolerance: float) -> str:
             f"{len(result['unlabeled'])} unlabeled findings are listed in score.json "
             "for a person to judge.",
         ]
-    return "\n".join(lines)
+    return lines
 
 
 def main(argv: list[str] | None = None) -> int:

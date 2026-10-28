@@ -8,6 +8,8 @@ from score import HERE, Case, load_suite, main, markdown, review_cost, score, sc
 
 # $4 / $20 per million input / output tokens.
 MODEL = "anthropic:claude-opus-5-5"
+ATTEMPT = {"tool": "marginal", "provider": "anthropic", "model": "claude-opus-5-5"}
+ATTEMPT_ID = "marginal/anthropic/claude-opus-5-5"
 
 
 def bug_case(**overrides) -> Case:
@@ -87,9 +89,9 @@ def test_cost_is_never_guessed():
     assert review_cost(None) is None
 
 
-def write_raw(raw, case_id, run, data):
-    (raw / case_id).mkdir(parents=True, exist_ok=True)
-    (raw / case_id / f"{run}.json").write_text(json.dumps(data))
+def write_raw(raw, case_id, run, data, attempt_id=ATTEMPT_ID):
+    (raw / attempt_id / case_id).mkdir(parents=True, exist_ok=True)
+    (raw / attempt_id / case_id / f"{run}.json").write_text(json.dumps(data))
 
 
 @pytest.fixture
@@ -99,6 +101,7 @@ def suite(tmp_path):
         json.dumps(
             {
                 "config": "marginal-config.yaml",
+                "attempts": [ATTEMPT, ATTEMPT | {"provider": "openai", "model": "gpt-5.5"}],
                 "cases": [bug_case().model_dump(mode="json"), clean_case().model_dump(mode="json")],
             }
         )
@@ -116,7 +119,7 @@ def test_score_reports_median_and_range_across_runs(suite, tmp_path):
     write_raw(raw, "unchecked-path", 3, review(finding(), seconds=50))
     write_raw(raw, "clean-refactor", 3, review(seconds=60, usage=usage))
 
-    result = score(suite, raw)
+    result = score(suite, raw)["attempts"][ATTEMPT_ID]
 
     assert result["runs"] == 3
     assert result["overall"]["recall"] == {"median": 1.0, "min": 0.0, "max": 1.0}
@@ -145,7 +148,8 @@ def result_with(recall: float, seconds: float) -> dict:
         "duplicates": spread(0),
         "unlabeled": spread(0),
     }
-    return {"runs": 3, "cases": ["x"], "overall": metrics, "by_kind": {}, "unlabeled": []}
+    attempt = {"runs": 3, "cases": ["x"], "overall": metrics, "by_kind": {}, "unlabeled": []}
+    return {"attempts": {ATTEMPT_ID: attempt}}
 
 
 def test_markdown_without_baseline():
@@ -178,9 +182,35 @@ def test_main_writes_score_and_fails_only_on_broken_input(suite, tmp_path, capsy
     # A regression still exits 0: the gate is soft.
     assert main([*args, "--out", str(out)]) == 0
     assert "⚠" in capsys.readouterr().out
-    assert json.loads(out.read_text())["runs"] == 1
+    assert json.loads(out.read_text())["attempts"][ATTEMPT_ID]["runs"] == 1
 
     assert main([*args, "--raw", str(tmp_path / "missing"), "--out", str(out)]) == 2
+
+
+def test_each_attempt_is_scored_on_its_own_and_one_without_results_is_left_out(suite, tmp_path):
+    raw = tmp_path / "raw"
+    write_raw(raw, "unchecked-path", 1, review(finding()))
+    write_raw(raw, "unchecked-path", 1, review(finding(line=40)), "marginal/openai/gpt-5.5")
+
+    attempts = score(suite, raw)["attempts"]
+
+    assert attempts[ATTEMPT_ID]["overall"]["recall"]["median"] == 1.0
+    assert attempts["marginal/openai/gpt-5.5"]["overall"]["recall"]["median"] == 0.0
+
+    write_raw(tmp_path / "only-one", "unchecked-path", 1, review(finding()))
+    assert list(score(suite, tmp_path / "only-one")["attempts"]) == [ATTEMPT_ID]
+
+
+def test_markdown_compares_each_attempt_with_its_own_baseline():
+    other = "marginal/openai/gpt-5.5"
+    result = result_with(0.5, 10.0)
+    result["attempts"][other] = result["attempts"][ATTEMPT_ID]
+
+    text = markdown(result, result_with(1.0, 10.0), tolerance=0.05)
+
+    mine, theirs = text.split(f"### `{other}`")
+    assert f"### `{ATTEMPT_ID}`" in mine and "1.00 → 0.50 ⚠" in mine
+    assert "No baseline yet." in theirs
 
 
 def test_answer_key_must_fit_the_kind():
@@ -196,3 +226,4 @@ def test_shipped_cases_are_valid():
     suite = load_suite(HERE / "cases.yml")
 
     assert (HERE / suite.config).is_file()
+    assert [attempt.id for attempt in suite.attempts] == [ATTEMPT_ID]

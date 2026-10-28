@@ -1,12 +1,14 @@
-"""Run the review-quality benchmark: `marginal review` on every case, N times.
+"""Run the review-quality benchmark: every attempt reviews every case, N times.
 
-For each case, downloads one snapshot of the head commit (no clone, no
-history), puts the benchmark's marginal-config.yaml in it as
-.marginal/config.yaml, and runs `marginal review --base --head --format json`
-there, so the code graph sees the files around the change. Each review is
-saved as <out>/<case-id>/<run>.json with the wall-clock `seconds` added;
-score.py turns those into scores. Calls the reviewer model once per case per
-run, so it needs that provider's API key (and GITHUB_TOKEN for the diff).
+An attempt is one review tool with one provider and model (cases.yml's
+`attempts`). For each case, downloads one snapshot of the head commit (no
+clone, no history), writes the benchmark's marginal-config.yaml into it as
+.marginal/config.yaml with the attempt's reviewer, and runs `marginal review
+--base --head --format json` there, so the code graph sees the files around
+the change. Each review is saved as <out>/<attempt id>/<case-id>/<run>.json
+with the wall-clock `seconds` added; score.py turns those into scores. Calls
+each attempt's model once per case per run, so it needs that provider's API
+key (and GITHUB_TOKEN for the diff).
 """
 
 from __future__ import annotations
@@ -22,7 +24,8 @@ import time
 import urllib.request
 from pathlib import Path
 
-from score import HERE, Case, load_suite
+import yaml
+from score import HERE, Attempt, Case, load_suite
 
 
 def download_snapshot(upstream: str, sha: str, dest: Path) -> Path:
@@ -65,6 +68,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--case", action="append", metavar="ID", help="run only this case (repeatable)"
     )
+    parser.add_argument(
+        "--attempt",
+        action="append",
+        metavar="ID",
+        help="run only this attempt, e.g. marginal/anthropic/claude-opus-5-5 (repeatable)",
+    )
     parser.add_argument("--out", type=Path, default=HERE / "raw", help="results dir")
     parser.add_argument("--cases", type=Path, default=HERE / "cases.yml")
     args = parser.parse_args(argv)
@@ -76,35 +85,53 @@ def main(argv: list[str] | None = None) -> int:
     if unknown:
         parser.error(f"unknown case ids: {', '.join(sorted(unknown))}")
     cases = [case for case in suite.cases if not args.case or case.id in args.case]
-    config = (args.cases.parent / suite.config).read_text()
+    unknown = set(args.attempt or []) - {attempt.id for attempt in suite.attempts}
+    if unknown:
+        parser.error(f"unknown attempt ids: {', '.join(sorted(unknown))}")
+    attempts = [a for a in suite.attempts if not args.attempt or a.id in args.attempt]
+    config = yaml.safe_load((args.cases.parent / suite.config).read_text())
 
     failures = 0
     for case in cases:
-        case_dir = args.out / case.id
-        # Runs left from an earlier, longer benchmark would be scored with these.
-        shutil.rmtree(case_dir, ignore_errors=True)
-        case_dir.mkdir(parents=True)
+        for attempt in attempts:
+            # Runs left from an earlier, longer benchmark would be scored with these.
+            shutil.rmtree(args.out / attempt.id / case.id, ignore_errors=True)
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 checkout = download_snapshot(case.upstream, case.head, Path(tmp))
             except (OSError, tarfile.TarError) as error:
                 print(f"{case.id}: download failed: {error}", file=sys.stderr)
-                failures += args.runs
+                failures += args.runs * len(attempts)
                 continue
             (checkout / ".marginal").mkdir(exist_ok=True)
-            (checkout / ".marginal" / "config.yaml").write_text(config)
-            for run in range(1, args.runs + 1):
-                print(f"{case.id}: run {run}/{args.runs}", file=sys.stderr)
-                try:
-                    result = review(case, checkout)
-                except (OSError, RuntimeError, ValueError) as error:
-                    print(f"{case.id}: run {run} failed: {error}", file=sys.stderr)
-                    failures += 1
-                    continue
-                (case_dir / f"{run}.json").write_text(json.dumps(result, indent=2) + "\n")
+            for attempt in attempts:
+                failures += run_attempt(attempt, case, checkout, config, args.runs, args.out)
     if failures:
         print(f"{failures} reviews failed", file=sys.stderr)
     return 1 if failures else 0
+
+
+def run_attempt(
+    attempt: Attempt, case: Case, checkout: Path, config: dict, runs: int, out: Path
+) -> int:
+    """Review `case` `runs` times with `attempt`'s reviewer; return the failures."""
+    reviewer = {"provider": attempt.provider, "model": attempt.model}
+    attempt_config = config | {"models": {"reviewer": reviewer}}
+    (checkout / ".marginal" / "config.yaml").write_text(yaml.safe_dump(attempt_config))
+    case_dir = out / attempt.id / case.id
+    case_dir.mkdir(parents=True)
+    failures = 0
+    for run in range(1, runs + 1):
+        label = f"{attempt.id} {case.id}"
+        print(f"{label}: run {run}/{runs}", file=sys.stderr)
+        try:
+            result = review(case, checkout)
+        except (OSError, RuntimeError, ValueError) as error:
+            print(f"{label}: run {run} failed: {error}", file=sys.stderr)
+            failures += 1
+            continue
+        (case_dir / f"{run}.json").write_text(json.dumps(result, indent=2) + "\n")
+    return failures
 
 
 if __name__ == "__main__":

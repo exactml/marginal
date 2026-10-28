@@ -4,6 +4,11 @@
 # positive; anything else is unlabeled and listed for a person to judge.
 config: marginal-config.yaml
 
+# Every attempt reviews every case: a review tool, and the provider and model
+# it calls. Scores are kept per attempt.
+attempts:
+  - {tool: marginal, provider: anthropic, model: claude-opus-5-5}
+
 cases:
   - id: missing-auth-on-camelcase-alias
     upstream: mlflow/mlflow
