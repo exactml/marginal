@@ -20,7 +20,8 @@ from marginal.providers import (
 from marginal.providers.anthropic import AnthropicProvider, _strict_input_schema
 from marginal.providers.base import record_usage, reset_usage, usage
 from marginal.providers.credentials import require_env
-from marginal.providers.openai import OllamaProvider, OpenAIProvider
+from marginal.providers.ollama import OllamaProvider
+from marginal.providers.openai import OpenAIProvider
 
 
 class Verdict(BaseModel):

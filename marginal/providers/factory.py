@@ -14,7 +14,7 @@ from marginal.providers.errors import ProviderError, UnknownProviderError
 _REGISTRY: dict[str, str] = {
     "anthropic": "marginal.providers.anthropic:AnthropicProvider",
     "openai": "marginal.providers.openai:OpenAIProvider",
-    "ollama": "marginal.providers.openai:OllamaProvider",
+    "ollama": "marginal.providers.ollama:OllamaProvider",
 }
 
 
