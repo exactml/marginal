@@ -163,13 +163,23 @@ def test_current_fingerprints_skip_outdated_unlisted_and_foreign_comments():
     assert current_fingerprints(comments, patches) == set()
 
 
-def test_current_fingerprints_cover_every_line_of_a_multi_line_comment():
+def test_current_fingerprints_cover_both_ends_of_a_multi_line_comment():
     # GitHub reports a multi-line comment's last line; the finding was on 11.
     patches = {"backoff.py": PATCH}
 
     posted = current_fingerprints([comment("backoff.py", 13) | {"start_line": 11}], patches)
 
     assert nearby(11, file="backoff.py") & posted
+
+
+def test_current_fingerprints_leave_a_new_finding_inside_a_multi_line_comment_new():
+    # Only the ends of a 9-15 span count, so a new finding on 12 still posts.
+    patches = {"retry.py": PATCH}
+
+    posted = current_fingerprints([comment("retry.py", 15) | {"start_line": 9}], patches)
+
+    assert not nearby(12) & posted
+    assert nearby(9) & posted and nearby(15) & posted
 
 
 def test_current_fingerprints_keep_a_different_finding_on_the_renamed_file_new():
