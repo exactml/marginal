@@ -141,7 +141,6 @@ marginal/
 ├── context/    # diff, git history, dependency detection
 ├── graph/      # code graph
 ├── policy/     # policy engine
-├── agent/      # orchestration loop
 ├── review/     # findings, evidence checks, dedup, redaction
 ├── github/     # GitHub API integration, auth
 └── cli/        # command entry points

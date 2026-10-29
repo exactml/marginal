@@ -9,7 +9,6 @@ PACKAGES = [
     "marginal.context",
     "marginal.graph",
     "marginal.policy",
-    "marginal.agent",
     "marginal.review",
     "marginal.github",
     "marginal.cli",
