@@ -7,20 +7,14 @@ from collections.abc import AsyncIterator
 import anthropic
 from pydantic import BaseModel
 
-from marginal.providers.base import record_usage, retry_once_on_validation_error
+from marginal.providers.base import ModelProvider, retry_once_on_validation_error
 from marginal.providers.credentials import require_env
-from marginal.providers.errors import ProviderAPIError
 
 DEFAULT_MAX_TOKENS = 4096
 # On the newest Claude models thinking is always on and counts toward
 # max_tokens, so structured output needs room for it before the tool call.
 STRUCTURED_MAX_TOKENS = 16_000
 _STRUCTURED_OUTPUT_TOOL = "emit_structured_output"
-
-
-def _record_usage(response: object) -> None:
-    usage = getattr(response, "usage", None)
-    record_usage(getattr(usage, "input_tokens", None), getattr(usage, "output_tokens", None))
 
 
 def _find_tool_input(response: object, tool_name: str) -> dict | None:
@@ -141,8 +135,11 @@ def _nullable_type(node: dict) -> str | None:
     return next(candidate for candidate in types if candidate != "null")
 
 
-class AnthropicProvider:
+class AnthropicProvider(ModelProvider):
     """`ModelProvider` for a single Claude model."""
+
+    _name = "anthropic"
+    _api_error = anthropic.APIError
 
     def __init__(
         self,
@@ -156,17 +153,19 @@ class AnthropicProvider:
             api_key=require_env("ANTHROPIC_API_KEY", provider="anthropic"), base_url=base_url
         )
 
+    def _usage(self, response: object) -> tuple[int | None, int | None]:
+        usage = getattr(response, "usage", None)
+        return getattr(usage, "input_tokens", None), getattr(usage, "output_tokens", None)
+
     async def generate(self, prompt: str, **kwargs: object) -> str:
-        try:
-            response = await self._client.messages.create(
+        response = await self._send(
+            self._client.messages.create(
                 model=self._model,
                 max_tokens=kwargs.pop("max_tokens", DEFAULT_MAX_TOKENS),
                 messages=[{"role": "user", "content": prompt}],
                 **kwargs,
             )
-        except anthropic.APIError as exc:
-            raise ProviderAPIError("anthropic", str(exc)) from exc
-        _record_usage(response)
+        )
         return "".join(
             block.text for block in response.content if getattr(block, "type", None) == "text"
         )
@@ -178,8 +177,8 @@ class AnthropicProvider:
         input_schema = _strict_input_schema(schema)
 
         async def attempt() -> BaseModel:
-            try:
-                response = await self._client.messages.create(
+            response = await self._send(
+                self._client.messages.create(
                     model=self._model,
                     max_tokens=max_tokens,
                     messages=[{"role": "user", "content": prompt}],
@@ -197,17 +196,15 @@ class AnthropicProvider:
                     system=f"Answer only by calling the {_STRUCTURED_OUTPUT_TOOL} tool.",
                     **kwargs,
                 )
-            except anthropic.APIError as exc:
-                raise ProviderAPIError("anthropic", str(exc)) from exc
-            _record_usage(response)
+            )
             # A reply without the tool call validates as None, which fails like
             # malformed input and so gets the same single retry.
             return schema.model_validate(_find_tool_input(response, _STRUCTURED_OUTPUT_TOOL))
 
-        return await retry_once_on_validation_error("anthropic", attempt)
+        return await retry_once_on_validation_error(self._name, attempt)
 
     async def stream(self, prompt: str, **kwargs: object) -> AsyncIterator[str]:
-        try:
+        with self._api_errors():
             response = await self._client.messages.create(
                 model=self._model,
                 max_tokens=kwargs.pop("max_tokens", DEFAULT_MAX_TOKENS),
@@ -218,5 +215,3 @@ class AnthropicProvider:
             async for event in response:
                 if event.type == "content_block_delta" and event.delta.type == "text_delta":
                     yield event.delta.text
-        except anthropic.APIError as exc:
-            raise ProviderAPIError("anthropic", str(exc)) from exc

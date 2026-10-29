@@ -1,36 +1,69 @@
-"""The `ModelProvider` interface every concrete provider implements."""
+"""The `ModelProvider` base class every concrete provider extends."""
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Protocol, runtime_checkable
+from typing import ClassVar, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from marginal.providers.errors import ProviderResponseError
+from marginal.providers.errors import ProviderAPIError, ProviderResponseError
+
+_Response = TypeVar("_Response")
 
 
-@runtime_checkable
-class ModelProvider(Protocol):
-    """A callable LLM backend, resolved from one `provider` value in `models:`."""
+class ModelProvider(ABC):
+    """A callable LLM backend, resolved from one `provider` value in `models:`.
 
+    A subclass makes the SDK calls; this class turns the SDK's errors into
+    `ProviderAPIError` and records each response's token usage, so every
+    provider reports both the same way.
+    """
+
+    # The `provider` value, used in error messages.
+    _name: ClassVar[str]
+    # The SDK's base error, raised as `ProviderAPIError` instead.
+    _api_error: ClassVar[type[Exception]]
+
+    @abstractmethod
     async def generate(self, prompt: str, **kwargs: object) -> str:
         """Generate a single text completion for `prompt`."""
-        ...
 
+    @abstractmethod
     async def generate_structured(
         self, prompt: str, schema: type[BaseModel], **kwargs: object
     ) -> BaseModel:
         """Generate a completion validated against `schema`."""
-        ...
 
     # Declared without `async` on purpose: concrete implementations are async
     # generator functions (`async def ...: yield ...`), which return an
     # AsyncIterator directly when called rather than a coroutine to await.
+    @abstractmethod
     def stream(self, prompt: str, **kwargs: object) -> AsyncIterator[str]:
         """Stream a text completion for `prompt` as it's generated."""
-        ...
+
+    @abstractmethod
+    def _usage(self, response: object) -> tuple[int | None, int | None]:
+        """`(input_tokens, output_tokens)` from an SDK response, None where it
+        doesn't say."""
+
+    @contextmanager
+    def _api_errors(self) -> Iterator[None]:
+        """Raise the SDK's errors inside the block as `ProviderAPIError`."""
+        try:
+            yield
+        except self._api_error as exc:
+            raise ProviderAPIError(self._name, str(exc)) from exc
+
+    async def _send(self, request: Awaitable[_Response]) -> _Response:
+        """Await one SDK call and record the tokens its response used."""
+        with self._api_errors():
+            response = await request
+        record_usage(*self._usage(response))
+        return response
 
 
 async def retry_once_on_validation_error(
