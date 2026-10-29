@@ -77,8 +77,9 @@ def current_fingerprints(
 
     A stored marker hashes the path the finding was posted on, so after a
     rename it no longer matches; GitHub moves the comment to the new `path`,
-    so hashing that path, the comment's current `line` and its badge's
-    severity against `patches` recognises the same finding. An outdated
+    so hashing that path, the comment's current `line` (each line of its
+    span, for a multi-line one) and its badge's severity against `patches`
+    recognises the same finding. An outdated
     comment (no `line`) or one on a file not in `patches` is skipped.
     """
     fingerprints = set()
@@ -89,9 +90,13 @@ def current_fingerprints(
         severity = _SEVERITY.match(body)
         if severity is None or not isinstance(line, int) or path not in patches:
             continue
-        fingerprints.add(
-            finding_fingerprint(str(path), line, severity.group(1).lower(), "", patches[path])
-        )
+        # A multi-line comment's `line` is its last; the finding's own is in the span.
+        start = comment.get("start_line")
+        first = start if isinstance(start, int) and start < line else line
+        fingerprints |= {
+            finding_fingerprint(str(path), n, severity.group(1).lower(), "", patches[path])
+            for n in range(first, line + 1)
+        }
     return fingerprints
 
 
