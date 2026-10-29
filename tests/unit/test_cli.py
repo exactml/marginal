@@ -567,6 +567,12 @@ def test_base_lines_skips_the_details_block_with_no_files():
 # -- review: policy prompt folding ----------------------------------------
 
 
+def test_finding_prompt_defines_every_severity():
+    # The model and the benchmark's answer keys rate on this one scale.
+    for severity in Severity:
+        assert f"- {severity.value}: " in FINDING_PROMPT_INSTRUCTIONS
+
+
 def test_build_finding_prompt_without_policies_is_unchanged():
     files = [{"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}]
 
