@@ -62,6 +62,16 @@ later fixed or reverted, or a clean PR with nothing to flag.
   proves it (`evidence`), and give the file, line range, and expected
   severity. A case without evidence won't be merged.
 
+Rate the expected severity the way the reviewer is told to, by how bad the
+effect is when it happens and how likely it is to happen:
+
+| Severity | Meaning |
+|---|---|
+| `critical` | A security hole someone can use (an auth or permission check that can be skipped, injection, a leaked secret), data loss, or a wrong result for every user |
+| `high` | A wrong result or a crash on a normal, realistic input |
+| `medium` | Wrong only in an edge case, or it works but worse (slower, noisier) |
+| `low` | A small effect, unlikely to matter in practice |
+
 ## Changelog
 
 Don't edit `CHANGELOG.md` directly. Instead, add one file to `changelog.d/`

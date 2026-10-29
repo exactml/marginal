@@ -35,7 +35,7 @@ body:
     id: location
     attributes:
       label: Where the bug is
-      description: File, line range in the PR's head commit, and the severity marginal should give it. Leave empty for a clean case.
+      description: File, line range in the PR's head commit, and the severity marginal should give it ([how severity is rated](https://github.com/exactml/marginal/blob/master/CONTRIBUTING.md#adding-a-benchmark-case)). Leave empty for a clean case.
       placeholder: "server/handlers.py, lines 210-224, critical"
   - type: textarea
     id: why
