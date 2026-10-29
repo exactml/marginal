@@ -4,11 +4,12 @@ import pytest
 from conftest import working_tree_file
 
 from marginal.cli import main
-from marginal.cli.compact import COMPACT_HEADING, _Recheck, _RecheckResponse
+from marginal.cli.compact import COMPACT_HEADING
 from marginal.github.errors import GitHubAPIError
 from marginal.providers.errors import MissingCredentialsError
 from marginal.review.dedup import fingerprint_marker
 from marginal.review.replies import RESOLVED_MARKER, maintainer_replies
+from marginal.review.schema import Recheck, RecheckResponse
 
 PATCH = "@@ -1,2 +1,3 @@\n import time\n+time.sleep(1)\n retry()"
 FILES = [{"filename": "retry.py", "patch": PATCH}]
@@ -50,9 +51,9 @@ def _finding(id, line=2, path="retry.py", message="time.sleep blocks the event l
 
 def _answers(*results):
     return AsyncMock(
-        return_value=_RecheckResponse(
+        return_value=RecheckResponse(
             results=[
-                _Recheck(id=r[0], still_applies=r[1], reason=r[2], dismissed_by=(r + (None,))[3])
+                Recheck(id=r[0], still_applies=r[1], reason=r[2], dismissed_by=(r + (None,))[3])
                 for r in results
             ]
         )

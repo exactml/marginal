@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 import sys
 
-from pydantic import BaseModel, ConfigDict
-
 from marginal.cli.review import _estimate_tokens, _load_base_config, _redact_patches
 from marginal.config.errors import ConfigError
 from marginal.config.schema import ModelSpec, PermissionsConfig
@@ -17,6 +15,7 @@ from marginal.providers.factory import get_provider
 from marginal.review.dedup import _MARKER
 from marginal.review.redact import redact_secrets
 from marginal.review.replies import RESOLVED_MARKER, is_marginal_comment
+from marginal.review.schema import Recheck, RecheckResponse
 
 COMPACT_HEADING = "### 🧹 marginal compact"
 
@@ -39,24 +38,6 @@ RECHECK_INSTRUCTIONS = (
 _ANSWER_CHARS = 600
 
 _GITHUB_ERRORS = (PermissionDeniedError, GitHubAuthenticationError, GitHubAPIError)
-
-
-class _Recheck(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: int
-    still_applies: bool
-    reason: str
-    # A person's comment id that disputes this finding, if any.
-    dismissed_by: int | None = None
-
-
-class _RecheckResponse(BaseModel):
-    """Structured-output wrapper: one verdict per re-checked finding."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    results: list[_Recheck]
 
 
 def run_compact(repo: str, pr_number: int, path: str = ".", *, comment: bool = False) -> int:
@@ -155,7 +136,7 @@ def close_resolved_findings(
     max_prompt_tokens: int,
     post: bool,
     log_prefix: str,
-) -> tuple[list[dict[str, object]], dict[object, _Recheck]]:
+) -> tuple[list[dict[str, object]], dict[object, Recheck]]:
     """Re-check marginal's open findings and, with `post`, close the resolved ones.
 
     Returns the open findings and the verdict for each one the model (or the
@@ -185,7 +166,7 @@ def close_resolved_findings(
 
     patches = {str(f["filename"]): str(f["patch"]) for f in _redact_patches(files)}
     verdicts = {
-        c["id"]: _Recheck(
+        c["id"]: Recheck(
             id=c["id"], still_applies=False, reason="its file is no longer changed by this PR"
         )
         for c in findings
@@ -321,11 +302,11 @@ def _quote(comment: dict[str, object], kind: str) -> str:
     return f"{kind} {comment['id']} by @{login}: {text}"
 
 
-def _is_closed(verdict: _Recheck) -> bool:
+def _is_closed(verdict: Recheck) -> bool:
     return not verdict.still_applies or verdict.dismissed_by is not None
 
 
-def _resolution(verdict: _Recheck, by_id: dict[object, dict[str, object]]) -> str:
+def _resolution(verdict: Recheck, by_id: dict[object, dict[str, object]]) -> str:
     """Why a closed finding is closed: who dismissed it, or the code change."""
     if verdict.dismissed_by is None:
         return verdict.reason
@@ -336,18 +317,18 @@ def _resolution(verdict: _Recheck, by_id: dict[object, dict[str, object]]) -> st
     return f'@{login} says this isn\'t an issue ("{quote}"), so marginal is closing it.'
 
 
-async def _recheck(model_spec: ModelSpec, prompt: str) -> list[_Recheck]:
+async def _recheck(model_spec: ModelSpec, prompt: str) -> list[Recheck]:
     provider = get_provider(model_spec)
-    result = await provider.generate_structured(prompt, schema=_RecheckResponse)
-    if not isinstance(result, _RecheckResponse):
+    result = await provider.generate_structured(prompt, schema=RecheckResponse)
+    if not isinstance(result, RecheckResponse):
         raise ProviderResponseError(
-            f"expected a _RecheckResponse from generate_structured, got {type(result).__name__}"
+            f"expected a RecheckResponse from generate_structured, got {type(result).__name__}"
         )
     return result.results
 
 
 def _summary_lines(
-    pr_number: int, findings: list[dict[str, object]], verdicts: dict[object, _Recheck]
+    pr_number: int, findings: list[dict[str, object]], verdicts: dict[object, Recheck]
 ) -> list[str]:
     resolved = sum(1 for c in findings if c["id"] in verdicts and _is_closed(verdicts[c["id"]]))
     lines = [

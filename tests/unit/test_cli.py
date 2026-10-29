@@ -13,7 +13,6 @@ from marginal.cli import main
 from marginal.cli.init import WORKFLOW_TEMPLATE
 from marginal.cli.review import (
     FINDING_PROMPT_INSTRUCTIONS,
-    MAX_FINDINGS_PER_REVIEW,
     MAX_GRAPH_CONTEXT_CALLERS,
     MAX_REPLY_THREADS,
     NO_REVIEWER_NOTICE,
@@ -28,7 +27,6 @@ from marginal.cli.review import (
     _coverage_warning_lines,
     _estimate_tokens,
     _finding_badge,
-    _FindingsResponse,
     _is_ignored,
     _is_test_path,
     _missing_patch_filenames,
@@ -51,6 +49,7 @@ from marginal.providers.errors import MissingCredentialsError, ProviderResponseE
 from marginal.review import Checks, Evidence, Finding, Severity
 from marginal.review.dedup import finding_fingerprint, fingerprint_marker
 from marginal.review.replies import ReplyThread
+from marginal.review.schema import MAX_FINDINGS_PER_REVIEW, FindingsResponse
 
 
 def test_init_creates_all_artifacts(tmp_path, capsys):
@@ -756,7 +755,7 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(
         severity=Severity.HIGH,
         message="This introduces a blocking sleep in an async retry loop.",
     )
-    provider.generate_structured = AsyncMock(return_value=_FindingsResponse(findings=[finding]))
+    provider.generate_structured = AsyncMock(return_value=FindingsResponse(findings=[finding]))
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
 
@@ -766,7 +765,7 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(
     assert "This introduces a blocking sleep in an async retry loop." in out
 
     call = provider.generate_structured.call_args
-    assert call.kwargs["schema"] is _FindingsResponse
+    assert call.kwargs["schema"] is FindingsResponse
     prompt = call.args[0]
     assert "marginal/retry.py" in prompt
     assert "time.sleep(1)" in prompt
@@ -832,7 +831,7 @@ def test_review_with_finding_missing_line_falls_back_to_filename(
     client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(
+        return_value=FindingsResponse(
             findings=[
                 _evidenced(
                     in_tree=tmp_path,
@@ -863,7 +862,7 @@ def test_review_with_unanchored_finding_posts_it_in_the_summary_body_not_inline(
     client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(
+        return_value=FindingsResponse(
             findings=[
                 _evidenced(
                     in_tree=tmp_path,
@@ -1055,7 +1054,7 @@ def test_findings_response_rejects_more_than_the_schema_bound():
     ]
 
     with pytest.raises(ValidationError):
-        _FindingsResponse(findings=findings)
+        FindingsResponse(findings=findings)
 
 
 def test_review_with_malformed_structured_output_maps_to_clean_message(
@@ -1150,7 +1149,7 @@ def test_review_with_comment_reviews_a_pr_no_skip_rule_matches(
     client.list_review_comments.return_value = []
     client.list_reviews.return_value = []
     mock_provider.return_value.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(findings=[])
+        return_value=FindingsResponse(findings=[])
     )
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
@@ -1170,7 +1169,7 @@ def test_review_without_comment_still_reviews_a_draft(
     client.get_pull_request_files.return_value = [{"filename": "a.py", "patch": "+x"}]
     client.list_review_comments.return_value = []
     mock_provider.return_value.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(findings=[])
+        return_value=FindingsResponse(findings=[])
     )
 
     assert main(["review", "--repo", "acme/widgets", "--pr", "42"]) == 0
@@ -1206,7 +1205,7 @@ def test_review_folds_a_configured_policy_file_into_the_prompt(
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(
+        return_value=FindingsResponse(
             findings=[
                 _evidenced(
                     file="marginal/retry.py",
@@ -1236,7 +1235,7 @@ def test_review_with_a_missing_policy_file_does_not_crash(
     client.get_pull_request_files.return_value = [{"filename": "marginal/retry.py"}]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(
+        return_value=FindingsResponse(
             findings=[
                 _evidenced(
                     file="marginal/retry.py",
@@ -1273,7 +1272,7 @@ def _review_prompt_with_anti_policies(tmp_path, monkeypatch, mock_github_client,
         {"filename": "marginal/dedup.py", "patch": "@@ -1,3 +1,4 @@\n+WINDOW = 1"}
     ]
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_FindingsResponse(findings=[]))
+    provider.generate_structured = AsyncMock(return_value=FindingsResponse(findings=[]))
 
     assert main(["review", "--repo", "acme/widgets", "--pr", "42"]) == 0
     return provider.generate_structured.call_args.args[0]
@@ -1584,7 +1583,7 @@ def test_review_includes_graph_context_for_an_out_of_diff_caller(
         }
     ]
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_FindingsResponse(findings=[]))
+    provider.generate_structured = AsyncMock(return_value=FindingsResponse(findings=[]))
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
@@ -1616,7 +1615,7 @@ def test_review_redacts_secrets_in_an_out_of_diff_caller_snippet(
         }
     ]
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_FindingsResponse(findings=[]))
+    provider.generate_structured = AsyncMock(return_value=FindingsResponse(findings=[]))
 
     main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
@@ -1652,7 +1651,7 @@ def test_review_omits_graph_context_when_code_graph_is_disabled(
         }
     ]
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_FindingsResponse(findings=[]))
+    provider.generate_structured = AsyncMock(return_value=FindingsResponse(findings=[]))
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
@@ -1674,7 +1673,7 @@ def test_review_skips_graph_context_outside_a_git_repo(
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = [{"filename": "pkg/a.py", "patch": "+x = 1"}]
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_FindingsResponse(findings=[]))
+    provider.generate_structured = AsyncMock(return_value=FindingsResponse(findings=[]))
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
 
@@ -1715,7 +1714,7 @@ def _finding(file="marginal/config.py", message="not important"):
 
 
 def _findings_response(*findings):
-    return _FindingsResponse(findings=list(findings))
+    return FindingsResponse(findings=list(findings))
 
 
 def test_review_warns_in_the_summary_when_a_secret_is_redacted(
@@ -2051,7 +2050,7 @@ def test_review_format_json_includes_surviving_findings(
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(
+        return_value=FindingsResponse(
             findings=[
                 _evidenced(
                     file="marginal/retry.py",
@@ -2136,7 +2135,7 @@ def test_review_format_json_reports_redacted_files(
         {"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"}
     ]
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_FindingsResponse(findings=[_finding()]))
+    provider.generate_structured = AsyncMock(return_value=FindingsResponse(findings=[_finding()]))
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--format", "json"])
 
@@ -2195,7 +2194,7 @@ def test_review_posts_the_same_review_under_both_formats(
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(
+        return_value=FindingsResponse(
             findings=[
                 _evidenced(
                     file="marginal/config.py",
@@ -2324,7 +2323,7 @@ def _review_prompt(mock_github_client, mock_provider, base_files, pr_files):
     client.get_pull_request_files.return_value = pr_files
     client.list_review_comments.return_value = []
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_FindingsResponse(findings=[]))
+    provider.generate_structured = AsyncMock(return_value=FindingsResponse(findings=[]))
     main(["review", "--repo", "acme/widgets", "--pr", "42"])
     call = provider.generate_structured.call_args
     return call.args[0] if call else None
@@ -2490,7 +2489,7 @@ def test_review_of_two_commits_reviews_the_compare_diff_with_base_config(
         {"filename": "marginal/retry.py", "status": "modified", "patch": _RETRY_PATCH}
     ]
     mock_provider.return_value.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(findings=[_finding_at(2, "Blocks the retry loop.")])
+        return_value=FindingsResponse(findings=[_finding_at(2, "Blocks the retry loop.")])
     )
 
     exit_code = main(
@@ -2599,7 +2598,7 @@ def _run_review_posting(
         )
     ]
     mock_provider.return_value.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(findings=findings)
+        return_value=FindingsResponse(findings=findings)
     )
     return main(["review", "--repo", "acme/widgets", "--pr", "42", *args])
 
@@ -2768,7 +2767,7 @@ def test_rerun_after_a_rename_does_not_post_the_finding_again(
         message="time.sleep() here stalls the event loop between retries.",
     )
     mock_provider.return_value.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(findings=[renamed])
+        return_value=FindingsResponse(findings=[renamed])
     )
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
@@ -2870,7 +2869,7 @@ def test_review_fails_cleanly_when_reading_existing_comments_fails(
     client.get_pull_request_files.return_value = []
     client.list_reviews.side_effect = GitHubAPIError(500, "Internal Server Error")
     mock_provider.return_value.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(findings=[])
+        return_value=FindingsResponse(findings=[])
     )
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
@@ -2910,7 +2909,7 @@ def test_review_fails_cleanly_when_reading_comments_fails_without_comment_flag(
     client.get_pull_request_files.return_value = []
     client.list_review_comments.side_effect = GitHubAPIError(500, "Internal Server Error")
     mock_provider.return_value.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(findings=[])
+        return_value=FindingsResponse(findings=[])
     )
 
     exit_code = main(["review", "--repo", "acme/widgets", "--pr", "42"])
@@ -2964,7 +2963,7 @@ def _prompt_with_comments(tmp_path, monkeypatch, mock_github_client, mock_provid
     ]
     client.list_review_comments.return_value = comments
     provider = mock_provider.return_value
-    provider.generate_structured = AsyncMock(return_value=_FindingsResponse(findings=[]))
+    provider.generate_structured = AsyncMock(return_value=FindingsResponse(findings=[]))
     assert main(["review", "--repo", "acme/widgets", "--pr", "42"]) == 0
     return provider.generate_structured.call_args.args[0]
 
@@ -3334,7 +3333,7 @@ def _rereview(
     """Run `marginal review --comment` on a PR where marginal flagged line 2
     before, with the model generating no new findings and answering the
     re-check of that earlier finding with `still_applies`."""
-    from marginal.cli.compact import _Recheck, _RecheckResponse
+    from marginal.review.schema import Recheck, RecheckResponse
 
     _write_reviewer_config(tmp_path)
     monkeypatch.chdir(tmp_path)
@@ -3352,12 +3351,12 @@ def _rereview(
     ]
 
     async def generate(prompt, schema):
-        if schema is _FindingsResponse:
-            return _FindingsResponse(findings=[])
+        if schema is FindingsResponse:
+            return FindingsResponse(findings=[])
         if recheck_error:
             raise recheck_error
-        return _RecheckResponse(
-            results=[_Recheck(id=1, still_applies=still_applies, reason="Checked the diff.")]
+        return RecheckResponse(
+            results=[Recheck(id=1, still_applies=still_applies, reason="Checked the diff.")]
         )
 
     mock_provider.return_value.generate_structured = AsyncMock(side_effect=generate)
@@ -3516,7 +3515,7 @@ def test_a_finding_in_a_file_without_a_patch_goes_in_the_body(
     client.list_reviews.return_value = []
     client.list_review_comments.return_value = []
     mock_provider.return_value.generate_structured = AsyncMock(
-        return_value=_FindingsResponse(
+        return_value=FindingsResponse(
             findings=[
                 _evidenced(
                     in_tree=tmp_path, file="logo.png", line=1, severity=Severity.LOW, message="x"

@@ -8,7 +8,16 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
-__all__ = ["Checks", "Evidence", "Finding", "Severity"]
+__all__ = [
+    "MAX_FINDINGS_PER_REVIEW",
+    "Checks",
+    "Evidence",
+    "Finding",
+    "FindingsResponse",
+    "Recheck",
+    "RecheckResponse",
+    "Severity",
+]
 
 
 class Severity(str, Enum):
@@ -101,3 +110,37 @@ _LEAKED_STRUCTURE = re.compile(
     r"""\s*['"]\s*,\s*['"](?:file|line|severity|message|trigger|evidence|assumptions)['"]?"""
     r"""[^A-Za-z]*[\]}][^A-Za-z]*$"""
 )
+
+
+# A model can return at most this many findings from one review -- well above
+# `config.review.max_comments`'s default, so that setting has real findings
+# left to cap rather than just passing everything through.
+MAX_FINDINGS_PER_REVIEW = 20
+
+
+class FindingsResponse(BaseModel):
+    """Structured-output wrapper: the bounded list of findings for one review."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    findings: list[Finding] = Field(max_length=MAX_FINDINGS_PER_REVIEW)
+
+
+class Recheck(BaseModel):
+    """`marginal compact`'s verdict on one still-open finding."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    still_applies: bool
+    reason: str
+    # A person's comment id that disputes this finding, if any.
+    dismissed_by: int | None = None
+
+
+class RecheckResponse(BaseModel):
+    """Structured-output wrapper: one verdict per re-checked finding."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    results: list[Recheck]

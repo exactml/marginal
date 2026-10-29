@@ -8,7 +8,6 @@ import openai
 import pytest
 from pydantic import BaseModel, Field
 
-from marginal.cli.review import _FindingsResponse
 from marginal.config import ModelSpec
 from marginal.providers import (
     MissingCredentialsError,
@@ -22,6 +21,7 @@ from marginal.providers.base import record_usage, reset_usage, usage
 from marginal.providers.credentials import require_env
 from marginal.providers.ollama import OllamaProvider
 from marginal.providers.openai import OpenAIProvider
+from marginal.review.schema import FindingsResponse
 
 
 class Verdict(BaseModel):
@@ -233,9 +233,9 @@ async def test_anthropic_generate_structured_still_enforces_stripped_bounds_loca
 
 async def test_anthropic_generate_structured_findings_response_schema_is_strict_compatible():
     """Regression test for the schema that once broke production: strict
-    tool use rejected `_FindingsResponse` outright over keywords it doesn't
+    tool use rejected `FindingsResponse` outright over keywords it doesn't
     support (`minimum`/`maximum` from a bounded field, back when findings had
-    a confidence, and `maxItems` from `_FindingsResponse.findings`'
+    a confidence, and `maxItems` from `FindingsResponse.findings`'
     `max_length`). It must stay free of them as `Finding` changes."""
     client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
     client.messages.create.return_value = SimpleNamespace(
@@ -249,7 +249,7 @@ async def test_anthropic_generate_structured_findings_response_schema_is_strict_
     )
     provider = _anthropic_provider(client)
 
-    await provider.generate_structured("review this", _FindingsResponse)
+    await provider.generate_structured("review this", FindingsResponse)
 
     _, kwargs = client.messages.create.call_args
     sent_schema = json.dumps(kwargs["tools"][0]["input_schema"])

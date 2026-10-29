@@ -13,8 +13,6 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path, PurePosixPath
 from typing import Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field
-
 from marginal.config.errors import ConfigError
 from marginal.config.loader import CONFIG_RELATIVE_PATH, load_config, parse_config
 from marginal.config.schema import MarginalConfig, ModelSpec, PermissionsConfig, ReviewConfig
@@ -37,6 +35,7 @@ from marginal.review.dedup import (
 from marginal.review.evidence import CodeView, Decision, decide
 from marginal.review.redact import redact_secrets
 from marginal.review.replies import ReplyThread, maintainer_replies
+from marginal.review.schema import MAX_FINDINGS_PER_REVIEW, FindingsResponse
 
 SEVERITY_EMOJI = {
     Severity.CRITICAL: "🔴",
@@ -44,11 +43,6 @@ SEVERITY_EMOJI = {
     Severity.MEDIUM: "🟡",
     Severity.LOW: "⚪",
 }
-
-# A model can return at most this many findings from one review -- well above
-# `config.review.max_comments`'s default, so that setting has real findings
-# left to cap rather than just passing everything through.
-MAX_FINDINGS_PER_REVIEW = 20
 
 # A posted finding widens to its verified quotes this close to its own line;
 # a quote further away is context, not the code the comment is about.
@@ -119,14 +113,6 @@ FINDING_PROMPT_INSTRUCTIONS = (
 
 class _PromptOverBudget(Exception):
     """The built prompt's estimated size exceeds `review.max_prompt_tokens`."""
-
-
-class _FindingsResponse(BaseModel):
-    """Structured-output wrapper: the bounded list of findings for one review."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    findings: list[Finding] = Field(max_length=MAX_FINDINGS_PER_REVIEW)
 
 
 def run_review(
@@ -921,10 +907,10 @@ async def _generate_findings(
             f"review.max_prompt_tokens ({max_prompt_tokens:,}), so no model was called"
         )
     provider = get_provider(model_spec)
-    result = await provider.generate_structured(prompt, schema=_FindingsResponse)
-    if not isinstance(result, _FindingsResponse):
+    result = await provider.generate_structured(prompt, schema=FindingsResponse)
+    if not isinstance(result, FindingsResponse):
         raise ProviderResponseError(
-            f"expected a _FindingsResponse from generate_structured, got {type(result).__name__}"
+            f"expected a FindingsResponse from generate_structured, got {type(result).__name__}"
         )
     return result.findings
 
