@@ -156,6 +156,12 @@ def review_cost(usage: dict | None) -> float | None:
     return (tokens_in * price.input + tokens_out * price.output) / 1_000_000
 
 
+def _first_line(finding: dict) -> int | None:
+    """Where a finding starts: marginal reports a multi-line one's first line
+    as `start_line` and keeps `line` for the line it's anchored on."""
+    return finding.get("start_line") or finding["line"]
+
+
 def score_review(case: Case, review: dict) -> dict:
     """Match one review's findings against the case's answer key.
 
@@ -166,7 +172,7 @@ def score_review(case: Case, review: dict) -> dict:
     false_positives = duplicates = 0
     unlabeled = []
     for finding in review["findings"]:
-        file, line, end = finding["file"], finding["line"], finding.get("end_line")
+        file, line, end = finding["file"], _first_line(finding), finding.get("end_line")
         matched = [i for i, entry in enumerate(case.must_find) if entry.contains(file, line, end)]
         if matched:
             free = [i for i in matched if hit_by[i] is None]
@@ -188,7 +194,7 @@ def score_review(case: Case, review: dict) -> dict:
         "expected": len(case.must_find),
         "hits": len(hits),
         "hits_before_rules": sum(
-            any(entry.contains(f["file"], f["line"], f.get("end_line")) for f in raised)
+            any(entry.contains(f["file"], _first_line(f), f.get("end_line")) for f in raised)
             for entry in case.must_find
         ),
         # A tool that rates no severity is left out, never guessed.

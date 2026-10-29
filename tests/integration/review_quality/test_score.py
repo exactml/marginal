@@ -91,6 +91,14 @@ def test_a_finding_with_a_line_range_hits_when_the_range_overlaps():
     assert score_review(bug_case(), review(finding(line=21) | {"end_line": 30}))["hits"] == 0
 
 
+def test_a_finding_with_a_start_line_hits_from_where_it_starts():
+    # marginal keeps `line` as its anchor and reports the span's first line apart.
+    spanning = finding(line=22) | {"start_line": 18, "end_line": 22}
+
+    assert score_review(bug_case(), review(spanning))["hits"] == 1
+    assert score_review(bug_case(), review(finding(line=22)))["hits"] == 0
+
+
 def test_evidence_accuracy_counts_hits_whose_verified_quote_is_on_the_bug():
     def quoted(line, verified=True):
         return finding() | {"evidence": [{"file": "app.py", "line": line, "verified": verified}]}
