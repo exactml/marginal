@@ -308,7 +308,7 @@ cases:
     lines:
     - 299
     - 300
-    severity: low
+    severity: high
   must_not_flag: []
 - id: deprecated-module-imported-eagerly
   upstream: pypa/setuptools
