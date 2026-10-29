@@ -48,7 +48,7 @@ from marginal.github.errors import (
 )
 from marginal.graph import CallSite, ChangedDefinition, Definition
 from marginal.providers.errors import MissingCredentialsError, ProviderResponseError
-from marginal.review import Evidence, Finding, Severity
+from marginal.review import Checks, Evidence, Finding, Severity
 from marginal.review.dedup import finding_fingerprint, fingerprint_marker
 from marginal.review.replies import ReplyThread
 
@@ -449,6 +449,75 @@ def test_build_inline_comments_builds_one_entry_per_anchored_finding():
             "body": f"🟡 **Medium**\n\nissue in c\n\n{marker_c}",
         },
     ]
+
+
+def _quoted_finding(line, quotes):
+    """A finding on `a.py:line` whose `quotes` are `(line, verified)` pairs."""
+    finding = Finding(
+        file="a.py",
+        line=line,
+        severity=Severity.HIGH,
+        message="issue",
+        evidence=[Evidence(file="a.py", line=n, quote="x") for n, _ in quotes],
+    )
+    finding._checks = Checks(
+        quotes=tuple(verified for _, verified in quotes),
+        trigger_concrete=True,
+        caller_shown=False,
+    )
+    return finding
+
+
+# Two hunks: new-file lines 1-30 and 100-110.
+_TWO_HUNKS = {"a.py": "@@ -1,30 +1,30 @@\n x\n@@ -90,11 +100,11 @@\n x"}
+
+
+def test_inline_comment_spans_the_verified_quotes_near_its_line():
+    # Flagged on 12 and quoted on 12 and 13, or on 9 above it: the comment covers the span.
+    below = _quoted_finding(12, [(12, True), (13, True)])
+    above = _quoted_finding(12, [(9, True)])
+
+    comments = _build_inline_comments([below, above], _TWO_HUNKS)
+
+    assert (comments[0]["start_line"], comments[0]["line"]) == (12, 13)
+    assert (comments[1]["start_line"], comments[1]["line"]) == (9, 12)
+
+
+def test_inline_comment_stays_on_its_line_without_a_nearby_verified_quote():
+    findings = [
+        _quoted_finding(12, [(14, False)]),  # not verified
+        _quoted_finding(25, [(105, True)]),  # another hunk
+        _quoted_finding(5, [(16, True)]),  # 11 lines away
+        _quoted_finding(12, [(12, True)]),  # its own line only
+        Finding(file="a.py", line=12, severity=Severity.HIGH, message="unchecked"),
+    ]
+
+    comments = _build_inline_comments(findings, _TWO_HUNKS)
+
+    assert [c["line"] for c in comments] == [12, 25, 5, 12, 12]
+    assert not any("start_line" in c for c in comments)
+
+
+def test_build_json_result_gives_a_multi_line_finding_its_span():
+    spanning = _quoted_finding(12, [(12, True), (13, True)])
+    single = _quoted_finding(20, [(20, True)])
+
+    result = _build_json_result(
+        "acme/widgets",
+        42,
+        _pull_request(),
+        ["a.py"],
+        [spanning, single],
+        [],
+        comment_posted=True,
+        prompt_over_budget=False,
+        dropped=[],
+        patches=_TWO_HUNKS,
+    )
+
+    first, second = result["findings"]
+    assert (first["line"], first["start_line"], first["end_line"]) == (12, 12, 13)
+    assert "start_line" not in second and "end_line" not in second
 
 
 # -- review: badge and body template --------------------------------------
@@ -2374,6 +2443,7 @@ def test_build_json_result_serializes_a_finding_as_plain_json():
         comment_posted=True,
         prompt_over_budget=False,
         dropped=[],
+        patches={},
     )
 
     # Round-trips cleanly -- severity is a plain string, not an enum repr.

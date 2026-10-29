@@ -55,6 +55,10 @@ SEVERITY_EMOJI = {
 # left to cap rather than just passing everything through.
 MAX_FINDINGS_PER_REVIEW = 20
 
+# A posted finding widens to its verified quotes this close to its own line;
+# a quote further away is context, not the code the comment is about.
+_MAX_SPAN_DISTANCE = 10
+
 # Total out-of-diff caller snippets folded into the prompt across every
 # changed definition -- bounds the prompt against a definition with a huge
 # fan-out, independent of repo size.
@@ -395,9 +399,9 @@ def run_review(
             )
         )
 
+    patches = {str(file["filename"]): file.get("patch") for file in files}
     comment_posted = False
     if comment:
-        patches = {str(file["filename"]): file.get("patch") for file in files}
         try:
             reviews = client.list_reviews(pr_number)
             posted = posted_fingerprints(
@@ -476,6 +480,7 @@ def run_review(
             comment_posted=comment_posted,
             prompt_over_budget=over_budget is not None,
             dropped=dropped,
+            patches=patches,
         )
         # Summed over every model call above: findings, its retry, the re-check.
         model = f"{reviewer_model.provider}:{reviewer_model.model}" if reviewer_model else None
@@ -733,7 +738,7 @@ def _build_inline_comments(
     return [
         {
             "path": finding.file,
-            "line": finding.line,
+            **_span_fields(_span(finding, patches)),
             "body": "\n".join(
                 [
                     _finding_badge(finding, with_location=False),
@@ -761,6 +766,37 @@ def _anchorable(finding: Finding, patches: dict[str, str | None]) -> bool:
         and bool(patch)
         and any(start <= finding.line <= end for start, end in _hunk_ranges(str(patch)))
     )
+
+
+def _span(finding: Finding, patches: dict[str, str | None]) -> tuple[int, int] | None:
+    """The lines `finding` covers: its own line widened to its verified quotes
+    in the same diff hunk, at most `_MAX_SPAN_DISTANCE` lines away. GitHub
+    accepts a multi-line comment only within one hunk. `None` without a line."""
+    if finding.line is None:
+        return None
+    line = finding.line
+    hunks = _hunk_ranges(str(patches.get(finding.file) or ""))
+    hunk = next((h for h in hunks if h[0] <= line <= h[1]), None)
+    checks = finding.checks
+    if hunk is None or checks is None:
+        return line, line
+    quoted = [
+        e.line
+        for e, verified in zip(finding.evidence, checks.quotes, strict=False)
+        if verified
+        and e.file == finding.file
+        and hunk[0] <= e.line <= hunk[1]
+        and abs(e.line - line) <= _MAX_SPAN_DISTANCE
+    ]
+    return min([line, *quoted]), max([line, *quoted])
+
+
+def _span_fields(span: tuple[int, int] | None) -> dict[str, int | None]:
+    """A review comment's `line`, plus `start_line` when it spans more than one."""
+    if span is None:
+        return {"line": None}
+    start, end = span
+    return {"start_line": start, "line": end} if start < end else {"line": end}
 
 
 def _fingerprint(finding: Finding, patches: dict[str, str | None]) -> str:
@@ -794,6 +830,7 @@ def _build_json_result(
     comment_posted: bool,
     prompt_over_budget: bool,
     dropped: list[Decision],
+    patches: dict[str, str | None],
 ) -> dict[str, object]:
     """Build the `--format json` payload for one review run.
 
@@ -806,10 +843,12 @@ def _build_json_result(
     prompt exceeded `review.max_prompt_tokens` (so empty `findings` mean
     "not reviewed", not "nothing found").
     A finding's `line` being `None` means what it does for
-    `_build_inline_comments`. Reviewing two commits (`pr_number=None`) leaves
-    `title` and `state` `None`. Every finding, posted or not, carries the
-    `checks` marginal ran on it; `dropped_findings` are the ones the posting
-    rule or `review.max_comments` kept off the PR, each with its `reason`.
+    `_build_inline_comments`; one posted across several lines also carries
+    the `start_line` and `end_line` its comment spans (`_span`). Reviewing
+    two commits (`pr_number=None`) leaves `title` and `state` `None`. Every
+    finding, posted or not, carries the `checks` marginal ran on it;
+    `dropped_findings` are the ones the posting rule or `review.max_comments`
+    kept off the PR, each with its `reason`.
     """
     is_pr = pr_number is not None
     return {
@@ -820,16 +859,21 @@ def _build_json_result(
         "base_sha": str(pull_request["base"]["sha"]),
         "head_sha": str(pull_request["head"]["sha"]),
         "changed_files": filenames,
-        "findings": [_finding_json(finding) for finding in findings],
-        "dropped_findings": [_finding_json(d.finding) | {"reason": d.reason} for d in dropped],
+        "findings": [_finding_json(finding, patches) for finding in findings],
+        "dropped_findings": [
+            _finding_json(d.finding, patches) | {"reason": d.reason} for d in dropped
+        ],
         "redacted_files": redacted_files,
         "comment_posted": comment_posted,
         "prompt_over_budget": prompt_over_budget,
     }
 
 
-def _finding_json(finding: Finding) -> dict[str, object]:
+def _finding_json(finding: Finding, patches: dict[str, str | None]) -> dict[str, object]:
     data = finding.model_dump(mode="json")
+    span = _span(finding, patches)
+    if span is not None and span[0] < span[1]:
+        data["start_line"], data["end_line"] = span
     checks = finding.checks
     if checks is not None:
         for item, verified in zip(data["evidence"], checks.quotes, strict=False):
