@@ -7,7 +7,7 @@ from collections import defaultdict
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from marginal.graph.model import CallSite, Definition, SymbolGraph
+from marginal.graph.schema import CallSite, Definition, SymbolGraph
 
 __all__ = ["ChangedDefinition", "find_out_of_diff_callers"]
 

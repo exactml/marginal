@@ -8,7 +8,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from marginal.graph.model import CallSite, Definition, SymbolGraph
+from marginal.graph.schema import CallSite, Definition, SymbolGraph
 
 __all__ = ["build_symbol_graph"]
 
