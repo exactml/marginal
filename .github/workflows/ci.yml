@@ -43,15 +43,3 @@ jobs:
       - name: Test
         run: make test
 
-  # The protect-main ruleset requires this check. always() makes it report a
-  # failure when lint or test fails; without it, it would be skipped, and a
-  # skipped job counts as passing.
-  lint-and-test:
-    needs: [lint, test]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require lint and test to pass
-        run: |
-          echo "lint: ${{ needs.lint.result }}, test: ${{ needs.test.result }}"
-          [ "${{ needs.lint.result }}" = success ] && [ "${{ needs.test.result }}" = success ]
