@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from marginal.graph.diff import ChangedDefinition, find_out_of_diff_callers
-from marginal.graph.symbols import CallSite, Definition, SymbolGraph, build_symbol_graph
+from marginal.graph.model import CallSite, Definition, SymbolGraph
+from marginal.graph.symbols import build_symbol_graph
 
 __all__ = [
     "CallSite",
