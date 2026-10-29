@@ -19,12 +19,7 @@ from marginal.config.errors import ConfigError
 from marginal.config.loader import CONFIG_RELATIVE_PATH, load_config, parse_config
 from marginal.config.schema import MarginalConfig, ModelSpec, PermissionsConfig, ReviewConfig
 from marginal.github.client import GitHubClient
-from marginal.github.errors import (
-    GitHubAPIError,
-    GitHubAuthenticationError,
-    GitHubError,
-    PermissionDeniedError,
-)
+from marginal.github.errors import GitHubError
 from marginal.graph import CallSite, ChangedDefinition, build_symbol_graph, find_out_of_diff_callers
 from marginal.graph.diff import _hunk_ranges
 from marginal.policy import load_policies
@@ -295,7 +290,7 @@ def run_review(
     except ConfigError as exc:
         print(f"marginal review: {exc}", file=sys.stderr)
         return 1
-    except (PermissionDeniedError, GitHubAuthenticationError, GitHubAPIError) as exc:
+    except GitHubError as exc:
         print(f"marginal review: {exc}", file=sys.stderr)
         return 1
     client = GitHubClient(repo, config.permissions)
@@ -313,7 +308,7 @@ def run_review(
             if pr_number is not None and (reviewer_model is not None or comment)
             else []
         )
-    except (PermissionDeniedError, GitHubAuthenticationError, GitHubAPIError) as exc:
+    except GitHubError as exc:
         print(f"marginal review: {exc}", file=sys.stderr)
         return 1
 
@@ -457,7 +452,7 @@ def run_review(
                     "so nothing was posted",
                     file=sys.stderr,
                 )
-        except (PermissionDeniedError, GitHubAuthenticationError, GitHubAPIError) as exc:
+        except GitHubError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
             return 1
         # Labels only add triage signal, so failing to add them never fails the review.
