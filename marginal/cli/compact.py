@@ -37,6 +37,7 @@ RECHECK_INSTRUCTIONS = (
 # Characters kept from each person's comment quoted in the re-check prompt.
 _ANSWER_CHARS = 600
 
+
 def run_compact(repo: str, pr_number: int, path: str = ".", *, comment: bool = False) -> int:
     """Re-check marginal's still-open inline findings on `pr_number` against
     the PR's current diff, and print which are resolved.
