@@ -9,7 +9,7 @@ from marginal.cli.review import _estimate_tokens, _load_base_config, _redact_pat
 from marginal.config.errors import ConfigError
 from marginal.config.schema import ModelSpec, PermissionsConfig
 from marginal.github.client import GitHubClient
-from marginal.github.errors import GitHubAPIError, GitHubAuthenticationError, PermissionDeniedError
+from marginal.github.errors import GitHubError
 from marginal.providers.errors import MissingCredentialsError, ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
 from marginal.review.dedup import _MARKER
@@ -36,9 +36,6 @@ RECHECK_INSTRUCTIONS = (
 
 # Characters kept from each person's comment quoted in the re-check prompt.
 _ANSWER_CHARS = 600
-
-_GITHUB_ERRORS = (PermissionDeniedError, GitHubAuthenticationError, GitHubAPIError)
-
 
 def run_compact(repo: str, pr_number: int, path: str = ".", *, comment: bool = False) -> int:
     """Re-check marginal's still-open inline findings on `pr_number` against
@@ -69,7 +66,7 @@ def run_compact(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
     except ConfigError as exc:
         print(f"marginal compact: {exc}", file=sys.stderr)
         return 1
-    except _GITHUB_ERRORS as exc:
+    except GitHubError as exc:
         print(f"marginal compact: {exc}", file=sys.stderr)
         return 1
     reviewer_model = config.models.get("reviewer")
@@ -86,7 +83,7 @@ def run_compact(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
         comments = client.list_review_comments(pr_number)
         threads = client.list_review_threads(pr_number)
         issue_comments = client.list_issue_comments(pr_number)
-    except _GITHUB_ERRORS as exc:
+    except GitHubError as exc:
         print(f"marginal compact: {exc}", file=sys.stderr)
         return 1
 
@@ -109,7 +106,7 @@ def run_compact(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
     except MissingCredentialsError as exc:
         print(f"marginal compact: {exc}", file=sys.stderr)
         return 3
-    except (ProviderError, *_GITHUB_ERRORS) as exc:
+    except (ProviderError, GitHubError) as exc:
         print(f"marginal compact: {exc}", file=sys.stderr)
         return 1
 
@@ -221,7 +218,7 @@ def _resolve_thread(
     can't resolve threads costs only the collapse, not the run."""
     try:
         client.resolve_review_thread(thread_id)
-    except _GITHUB_ERRORS as exc:
+    except GitHubError as exc:
         print(
             f"{log_prefix}: replied on {_location(comment)} but couldn't resolve its thread "
             f"(in GitHub Actions the job needs `permissions: contents: write`): {exc}",
