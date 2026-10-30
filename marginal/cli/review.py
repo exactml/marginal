@@ -28,9 +28,9 @@ from marginal.providers.factory import get_provider
 from marginal.review import Finding, Severity
 from marginal.review.dedup import (
     current_fingerprints,
-    finding_fingerprint,
     fingerprint_marker,
-    nearby_fingerprints,
+    fingerprint_of,
+    nearby_fingerprints_of,
     posted_fingerprints,
 )
 from marginal.review.evidence import OVER_MAX_COMMENTS, CodeView, Decision, decide
@@ -354,7 +354,7 @@ def run_review(
                 + [c.get("body") for c in review_comments]
             )
             posted |= current_fingerprints(review_comments, patches)
-            new_findings = [f for f in findings if not _nearby_fingerprints(f, patches) & posted]
+            new_findings = [f for f in findings if not nearby_fingerprints_of(f, patches) & posted]
             if len(new_findings) < len(findings):
                 print(
                     f"marginal review: skipped {len(findings) - len(new_findings)} finding(s) "
@@ -374,7 +374,7 @@ def run_review(
                         if not _anchorable(f, patches)
                         for line in [
                             *_finding_lines(f),
-                            fingerprint_marker(_fingerprint(f, patches)),
+                            fingerprint_marker(fingerprint_of(f, patches)),
                         ]
                     ]
                 )
@@ -683,7 +683,7 @@ def _build_inline_comments(
                     finding.message,
                     *_why_lines(finding),
                     "",
-                    fingerprint_marker(_fingerprint(finding, patches)),
+                    fingerprint_marker(fingerprint_of(finding, patches)),
                 ]
             ),
         }
@@ -734,26 +734,6 @@ def _span_fields(span: tuple[int, int] | None) -> dict[str, int | None]:
         return {"line": None}
     start, end = span
     return {"start_line": start, "line": end} if start < end else {"line": end}
-
-
-def _fingerprint(finding: Finding, patches: dict[str, str | None]) -> str:
-    return finding_fingerprint(*_identity(finding, patches))
-
-
-def _nearby_fingerprints(finding: Finding, patches: dict[str, str | None]) -> set[str]:
-    return nearby_fingerprints(*_identity(finding, patches))
-
-
-def _identity(
-    finding: Finding, patches: dict[str, str | None]
-) -> tuple[str, int | None, str, str, str | None]:
-    return (
-        finding.file,
-        finding.line,
-        finding.severity.value,
-        finding.message,
-        patches.get(finding.file),
-    )
 
 
 def _build_json_result(
