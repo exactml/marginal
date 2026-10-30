@@ -15,7 +15,6 @@ from marginal.cli.review import (
     NO_REVIEWER_NOTICE,
     REVIEW_HEADING,
     _base_lines,
-    _build_graph_context,
     _build_inline_comments,
     _build_json_result,
     _coverage_warning_lines,
@@ -28,6 +27,7 @@ from marginal.cli.review import (
     run_review,
 )
 from marginal.config import MarginalConfig, load_config
+from marginal.context import build_graph_context
 from marginal.github.errors import (
     GitHubAPIError,
     GitHubAuthenticationError,
@@ -3752,7 +3752,7 @@ def test_build_graph_context_keeps_callers_when_a_file_does_not_parse(tmp_path, 
         }
     ]
 
-    context = _build_graph_context(str(tmp_path), files, enabled=True)
+    context = build_graph_context(str(tmp_path), files, enabled=True)
 
     # The broken file used to drop the whole graph; now only it is left out.
     assert [c.definition.qualified_name for c in context] == ["a.helper"]
