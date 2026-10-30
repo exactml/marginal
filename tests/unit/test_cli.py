@@ -12,18 +12,7 @@ from pydantic import ValidationError
 from marginal.cli import main
 from marginal.cli.init import WORKFLOW_TEMPLATE
 from marginal.cli.review import (
-    NO_REVIEWER_NOTICE,
-    REVIEW_HEADING,
-    _base_lines,
-    _build_inline_comments,
     _build_json_result,
-    _coverage_warning_lines,
-    _finding_badge,
-    _is_ignored,
-    _missing_patch_filenames,
-    _redaction_warning_lines,
-    _verdict,
-    _why_lines,
     run_review,
 )
 from marginal.config import MarginalConfig, load_config
@@ -49,6 +38,19 @@ from marginal.review.prompt import (
     is_test_path,
 )
 from marginal.review.redact import redact_patches, redacted_filenames
+from marginal.review.render import (
+    NO_REVIEWER_NOTICE,
+    REVIEW_HEADING,
+    build_inline_comments,
+    coverage_warning_lines,
+    finding_badge,
+    header_lines,
+    is_ignored,
+    missing_patch_filenames,
+    redaction_warning_lines,
+    verdict_line,
+    why_lines,
+)
 from marginal.review.replies import ReplyThread
 from marginal.review.schema import MAX_FINDINGS_PER_REVIEW, FindingsResponse
 
@@ -420,7 +422,7 @@ def test_build_inline_comments_skips_findings_without_a_line():
         Finding(file="a.py", line=None, severity=Severity.LOW, message="no line here"),
     ]
 
-    assert _build_inline_comments(findings, {}) == []
+    assert build_inline_comments(findings, {}) == []
 
 
 def test_build_inline_comments_builds_one_entry_per_anchored_finding():
@@ -437,7 +439,7 @@ def test_build_inline_comments_builds_one_entry_per_anchored_finding():
 
     marker_a = fingerprint_marker(finding_fingerprint("a.py", 10, "high", "issue in a", None))
     marker_c = fingerprint_marker(finding_fingerprint("c.py", 3, "medium", "issue in c", None))
-    assert _build_inline_comments(findings, {}) == [
+    assert build_inline_comments(findings, {}) == [
         {
             "path": "a.py",
             "line": 10,
@@ -477,7 +479,7 @@ def test_inline_comment_spans_the_verified_quotes_near_its_line():
     below = _quoted_finding(12, [(12, True), (13, True)])
     above = _quoted_finding(12, [(9, True)])
 
-    comments = _build_inline_comments([below, above], _TWO_HUNKS)
+    comments = build_inline_comments([below, above], _TWO_HUNKS)
 
     assert (comments[0]["start_line"], comments[0]["line"]) == (12, 13)
     assert (comments[1]["start_line"], comments[1]["line"]) == (9, 12)
@@ -492,7 +494,7 @@ def test_inline_comment_stays_on_its_line_without_a_nearby_verified_quote():
         Finding(file="a.py", line=12, severity=Severity.HIGH, message="unchecked"),
     ]
 
-    comments = _build_inline_comments(findings, _TWO_HUNKS)
+    comments = build_inline_comments(findings, _TWO_HUNKS)
 
     assert [c["line"] for c in comments] == [12, 25, 5, 12, 12]
     assert not any("start_line" in c for c in comments)
@@ -526,24 +528,24 @@ def test_build_json_result_gives_a_multi_line_finding_its_span():
 def test_finding_badge_shows_the_severity():
     finding = Finding(file="a.py", line=5, severity=Severity.CRITICAL, message="x")
 
-    assert _finding_badge(finding, with_location=False) == "🔴 **Critical**"
+    assert finding_badge(finding, with_location=False) == "🔴 **Critical**"
 
 
 def test_finding_badge_with_location_includes_file_and_line():
     finding = Finding(file="a.py", line=5, severity=Severity.CRITICAL, message="x")
 
-    assert _finding_badge(finding, with_location=True) == "🔴 **Critical** — `a.py:5`"
+    assert finding_badge(finding, with_location=True) == "🔴 **Critical** — `a.py:5`"
 
 
 def test_finding_badge_with_location_omits_the_line_when_absent():
     finding = Finding(file="a.py", line=None, severity=Severity.LOW, message="x")
 
-    assert _finding_badge(finding, with_location=True) == "⚪ **Low** — `a.py`"
+    assert finding_badge(finding, with_location=True) == "⚪ **Low** — `a.py`"
 
 
 def test_base_lines_collapses_the_file_list_behind_details():
     rendered = "\n".join(
-        _base_lines(42, _pull_request(), ["marginal/retry.py", "tests/test_retry.py"])
+        header_lines(42, _pull_request(), ["marginal/retry.py", "tests/test_retry.py"])
     )
 
     assert "### 🤖 marginal review" in rendered
@@ -558,7 +560,7 @@ def test_base_lines_collapses_the_file_list_behind_details():
 
 
 def test_base_lines_skips_the_details_block_with_no_files():
-    rendered = "\n".join(_base_lines(42, _pull_request(), []))
+    rendered = "\n".join(header_lines(42, _pull_request(), []))
 
     assert "0 files changed" in rendered
     assert "<details>" not in rendered
@@ -617,11 +619,11 @@ def test_redacted_filenames_returns_only_files_whose_patch_changed():
 
 
 def test_redaction_warning_lines_empty_when_nothing_redacted():
-    assert _redaction_warning_lines([]) == []
+    assert redaction_warning_lines([]) == []
 
 
 def test_redaction_warning_lines_names_every_redacted_file():
-    rendered = "\n".join(_redaction_warning_lines(["config.py", "settings.py"]))
+    rendered = "\n".join(redaction_warning_lines(["config.py", "settings.py"]))
 
     assert "⚠️ **Redacted a likely secret**" in rendered
     assert "`config.py`" in rendered
@@ -638,27 +640,27 @@ def test_missing_patch_filenames_returns_only_files_without_a_patch():
         {"filename": "empty_patch.py", "patch": ""},
     ]
 
-    assert _missing_patch_filenames(files) == ["no_patch.py", "empty_patch.py"]
+    assert missing_patch_filenames(files) == ["no_patch.py", "empty_patch.py"]
 
 
 def test_coverage_warning_lines_empty_when_fully_covered():
     pull_request = {"changed_files": 1}
     files = [{"filename": "a.py", "patch": "+x = 1"}]
 
-    assert _coverage_warning_lines(pull_request, files) == []
+    assert coverage_warning_lines(pull_request, files) == []
 
 
 def test_coverage_warning_lines_empty_when_changed_files_is_absent():
     files = [{"filename": "a.py", "patch": "+x = 1"}]
 
-    assert _coverage_warning_lines({}, files) == []
+    assert coverage_warning_lines({}, files) == []
 
 
 def test_coverage_warning_lines_warns_on_file_count_mismatch():
     pull_request = {"changed_files": 3}
     files = [{"filename": "a.py", "patch": "+x = 1"}]
 
-    rendered = "\n".join(_coverage_warning_lines(pull_request, files))
+    rendered = "\n".join(coverage_warning_lines(pull_request, files))
 
     assert "⚠️ **Incomplete review coverage**" in rendered
     assert "reviewed 1 of 3 changed files" in rendered
@@ -668,7 +670,7 @@ def test_coverage_warning_lines_warns_on_missing_patch():
     pull_request = {"changed_files": 1}
     files = [{"filename": "huge.bin"}]
 
-    rendered = "\n".join(_coverage_warning_lines(pull_request, files))
+    rendered = "\n".join(coverage_warning_lines(pull_request, files))
 
     assert "⚠️ **No diff available**" in rendered
     assert "`huge.bin`" in rendered
@@ -678,7 +680,7 @@ def test_coverage_warning_lines_can_report_both_gaps_at_once():
     pull_request = {"changed_files": 2}
     files = [{"filename": "huge.bin"}]
 
-    rendered = "\n".join(_coverage_warning_lines(pull_request, files))
+    rendered = "\n".join(coverage_warning_lines(pull_request, files))
 
     assert "⚠️ **Incomplete review coverage**" in rendered
     assert "⚠️ **No diff available**" in rendered
@@ -803,7 +805,7 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(
                         "🟠 **High**",
                         "",
                         "This introduces a blocking sleep in an async retry loop.",
-                        *_why_lines(finding),
+                        *why_lines(finding),
                         "",
                     ]
                 )
@@ -1881,7 +1883,7 @@ def test_review_with_comment_flag_posts_the_coverage_warning_in_the_body(
 def test_is_ignored_matches_bare_patterns_by_name_and_slashed_ones_by_path(
     filename, patterns, ignored
 ):
-    assert _is_ignored(filename, patterns) is ignored
+    assert is_ignored(filename, patterns) is ignored
 
 
 def test_review_keeps_ignored_files_from_the_model_and_says_so(
@@ -3147,7 +3149,7 @@ _MARGINAL_BOT = {"login": "github-actions[bot]", "type": "Bot"}
 
 def _marginal_comment(id, message, line=2):
     finding = _finding_at(line, message)
-    body = _build_inline_comments([finding], {"marginal/retry.py": _RETRY_PATCH})[0]["body"]
+    body = build_inline_comments([finding], {"marginal/retry.py": _RETRY_PATCH})[0]["body"]
     return {
         "id": id,
         "body": body,
@@ -3445,22 +3447,22 @@ def test_verdict_counts_findings_by_severity_most_serious_first():
         _finding_of(Severity.HIGH),
     ]
 
-    assert _verdict(findings) == "**4 findings** · 🔴 1 critical · 🟠 2 high · 🟡 1 medium"
+    assert verdict_line(findings) == "**4 findings** · 🔴 1 critical · 🟠 2 high · 🟡 1 medium"
 
 
 def test_verdict_with_one_finding_is_singular():
-    assert _verdict([_finding_of(Severity.LOW)]) == "**1 finding** · ⚪ 1 low"
+    assert verdict_line([_finding_of(Severity.LOW)]) == "**1 finding** · ⚪ 1 low"
 
 
 def test_verdict_with_no_findings_says_so():
-    assert _verdict([]) == "✅ **No issues found**"
+    assert verdict_line([]) == "✅ **No issues found**"
 
 
 def test_verdict_mentions_findings_already_flagged_earlier():
-    assert _verdict([_finding_of(Severity.MEDIUM)], already_posted=2) == (
+    assert verdict_line([_finding_of(Severity.MEDIUM)], already_posted=2) == (
         "**1 finding** · 🟡 1 medium · 2 already flagged earlier on this PR"
     )
-    assert _verdict([], already_posted=2) == (
+    assert verdict_line([], already_posted=2) == (
         "✅ **No new issues** · 2 already flagged earlier on this PR"
     )
 
@@ -3500,7 +3502,7 @@ def test_base_lines_shortens_shas_to_seven_characters():
         "head": {"sha": "f6bbd55fefc17e63e6c5ed1b57794982aea8ee56"},
     }
 
-    assert "`22e1206` → `f6bbd55`" in _base_lines(1, pull_request, [])[2]
+    assert "`22e1206` → `f6bbd55`" in header_lines(1, pull_request, [])[2]
 
 
 def test_review_over_the_prompt_budget_gives_no_verdict(
@@ -3521,7 +3523,7 @@ def test_review_over_the_prompt_budget_gives_no_verdict(
 
 
 def _earlier_finding_comment(id=1, line=2):
-    body = _build_inline_comments(
+    body = build_inline_comments(
         [_finding_at(line, "This sleep blocks the async retry loop.")],
         {"marginal/retry.py": _RETRY_PATCH},
     )[0]["body"]

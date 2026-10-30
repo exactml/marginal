@@ -12,6 +12,7 @@ import re
 from collections.abc import Iterable
 
 from marginal.review.redact import redact_secrets
+from marginal.review.schema import Finding
 
 _MARKER = re.compile(r"<!-- marginal:finding:([0-9a-f]{16}) -->")
 _HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
@@ -122,3 +123,23 @@ def _new_line_text(patch: str | None, line: int) -> str | None:
             return " ".join(raw[1:].split())
         current += 1
     return None
+
+
+def fingerprint_of(finding: Finding, patches: dict[str, str | None]) -> str:
+    return finding_fingerprint(*_identity(finding, patches))
+
+
+def nearby_fingerprints_of(finding: Finding, patches: dict[str, str | None]) -> set[str]:
+    return nearby_fingerprints(*_identity(finding, patches))
+
+
+def _identity(
+    finding: Finding, patches: dict[str, str | None]
+) -> tuple[str, int | None, str, str, str | None]:
+    return (
+        finding.file,
+        finding.line,
+        finding.severity.value,
+        finding.message,
+        patches.get(finding.file),
+    )

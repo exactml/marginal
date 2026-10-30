@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import fnmatch
 import json
 import sys
 from collections import Counter
-from collections.abc import Sequence
 from typing import Literal, get_args
 
 from marginal.config.errors import ConfigError
@@ -21,16 +19,15 @@ from marginal.context import (
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubError
 from marginal.graph import ChangedDefinition
-from marginal.graph.diff import _hunk_ranges
 from marginal.providers.base import reset_usage, usage
 from marginal.providers.errors import MissingCredentialsError, ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
-from marginal.review import Finding, Severity
+from marginal.review import Finding
 from marginal.review.dedup import (
     current_fingerprints,
-    finding_fingerprint,
     fingerprint_marker,
-    nearby_fingerprints,
+    fingerprint_of,
+    nearby_fingerprints_of,
     posted_fingerprints,
 )
 from marginal.review.evidence import OVER_MAX_COMMENTS, CodeView, Decision, decide
@@ -40,33 +37,29 @@ from marginal.review.prompt import (
     build_graph_context_section,
     estimate_tokens,
 )
-from marginal.review.redact import redact_patches, redact_secrets, redacted_filenames
+from marginal.review.redact import redact_patches, redacted_filenames
+from marginal.review.render import (
+    NO_REVIEWER_NOTICE,
+    REVIEW_HEADING,
+    anchorable,
+    budget_warning_lines,
+    build_inline_comments,
+    comment_span,
+    config_change_lines,
+    coverage_warning_lines,
+    finding_lines,
+    header_lines,
+    ignored_lines,
+    is_ignored,
+    redaction_warning_lines,
+    severity_labels,
+    stale_severity_labels,
+    verdict_line,
+)
 from marginal.review.replies import ReplyThread, maintainer_replies
 from marginal.review.schema import FindingsResponse
 
-SEVERITY_EMOJI = {
-    Severity.CRITICAL: "🔴",
-    Severity.HIGH: "🟠",
-    Severity.MEDIUM: "🟡",
-    Severity.LOW: "⚪",
-}
-
-# A posted finding widens to its verified quotes this close to its own line;
-# a quote further away is context, not the code the comment is about.
-_MAX_SPAN_DISTANCE = 10
-
 OutputFormat = Literal["text", "json"]
-
-# Every review marginal posts opens with this, which is how a re-run spots
-# that it has already reviewed a PR.
-REVIEW_HEADING = "### 🤖 marginal review"
-
-# Shown when no model reviewed the diff; without it, a fresh `marginal init`
-# setup posts just a title and file list with nothing pointing at the gap.
-NO_REVIEWER_NOTICE = (
-    "ℹ️ **No reviewer model configured**, so only the PR's metadata is shown. Set "
-    "`models.reviewer` in `.marginal/config.yaml` to have a model review the diff."
-)
 
 
 def run_review(
@@ -161,7 +154,7 @@ def run_review(
     happens with or without `comment`.
 
     Changed files matching `config.review.ignore_paths` (lockfiles and
-    minified assets by default; see `_is_ignored`) stay in the file list but
+    minified assets by default; see `is_ignored`) stay in the file list but
     never reach the model or the code graph, and the summary says how many
     were left out. If every changed file is ignored, the model isn't called
     at all and the summary carries no verdict, since nothing was reviewed.
@@ -266,10 +259,10 @@ def run_review(
     coverage_lines: list[str] = []
     over_budget: PromptOverBudget | None = None
     ignore_paths = config.review.ignore_paths
-    reviewed_files = [f for f in files if not _is_ignored(str(f["filename"]), ignore_paths)]
+    reviewed_files = [f for f in files if not is_ignored(str(f["filename"]), ignore_paths)]
     if reviewer_model is not None:
-        coverage_lines = _ignored_lines(len(files) - len(reviewed_files))
-        coverage_lines += _coverage_warning_lines(pull_request, files, ignore_paths)
+        coverage_lines = ignored_lines(len(files) - len(reviewed_files))
+        coverage_lines += coverage_warning_lines(pull_request, files, ignore_paths)
     # Every changed file is ignored: there's no diff to send, so no model call.
     if reviewer_model is not None and reviewed_files:
         redacted = redact_patches(reviewed_files)
@@ -327,20 +320,20 @@ def run_review(
 
     # Without a model call nothing was reviewed, so there's no verdict to give.
     reviewed = reviewer_model is not None and bool(reviewed_files) and over_budget is None
-    base_lines = _base_lines(
-        pr_number, pull_request, filenames, _verdict(findings) if reviewed else None
+    base_lines = header_lines(
+        pr_number, pull_request, filenames, verdict_line(findings) if reviewed else None
     )
     warning_lines = (
         (["", NO_REVIEWER_NOTICE] if reviewer_model is None else [])
-        + _config_change_lines(filenames, base_sha)
-        + _budget_warning_lines(over_budget)
-        + _redaction_warning_lines(redacted_files)
+        + config_change_lines(filenames, base_sha)
+        + budget_warning_lines(over_budget)
+        + redaction_warning_lines(redacted_files)
         + coverage_lines
     )
     if output_format == "text":
         print(
             "\n".join(
-                base_lines + warning_lines + [line for f in findings for line in _finding_lines(f)]
+                base_lines + warning_lines + [line for f in findings for line in finding_lines(f)]
             )
         )
 
@@ -354,7 +347,7 @@ def run_review(
                 + [c.get("body") for c in review_comments]
             )
             posted |= current_fingerprints(review_comments, patches)
-            new_findings = [f for f in findings if not _nearby_fingerprints(f, patches) & posted]
+            new_findings = [f for f in findings if not nearby_fingerprints_of(f, patches) & posted]
             if len(new_findings) < len(findings):
                 print(
                     f"marginal review: skipped {len(findings) - len(new_findings)} finding(s) "
@@ -364,17 +357,19 @@ def run_review(
                 )
             already_reviewed = any(REVIEW_HEADING in (r.get("body") or "") for r in reviews)
             if new_findings or not already_reviewed or over_budget is not None:
-                verdict = _verdict(new_findings, already_posted=len(findings) - len(new_findings))
+                verdict = verdict_line(
+                    new_findings, already_posted=len(findings) - len(new_findings)
+                )
                 body = "\n".join(
-                    _base_lines(pr_number, pull_request, filenames, verdict if reviewed else None)
+                    header_lines(pr_number, pull_request, filenames, verdict if reviewed else None)
                     + warning_lines
                     + [
                         line
                         for f in new_findings
-                        if not _anchorable(f, patches)
+                        if not anchorable(f, patches)
                         for line in [
-                            *_finding_lines(f),
-                            fingerprint_marker(_fingerprint(f, patches)),
+                            *finding_lines(f),
+                            fingerprint_marker(fingerprint_of(f, patches)),
                         ]
                     ]
                 )
@@ -382,8 +377,8 @@ def run_review(
                     pr_number,
                     body,
                     event="COMMENT",
-                    comments=_build_inline_comments(
-                        [f for f in new_findings if _anchorable(f, patches)], patches
+                    comments=build_inline_comments(
+                        [f for f in new_findings if anchorable(f, patches)], patches
                     ),
                 )
                 comment_posted = True
@@ -399,7 +394,7 @@ def run_review(
         # Labels only add triage signal, so failing to add or remove one never
         # fails the review.
         if config.permissions.write.labels:
-            wanted = _severity_labels(findings)
+            wanted = severity_labels(findings)
             if wanted:
                 try:
                     client.add_labels(pr_number, wanted)
@@ -409,8 +404,8 @@ def run_review(
             # and a finding capped by `review.max_comments` is still there.
             if reviewed:
                 capped = [d.finding for d in dropped if d.reason == OVER_MAX_COMMENTS]
-                kept = _severity_labels(findings + capped)
-                for name in _stale_severity_labels(pull_request, kept):
+                kept = severity_labels(findings + capped)
+                for name in stale_severity_labels(pull_request, kept):
                     try:
                         client.remove_label(pr_number, name)
                     except GitHubError as exc:
@@ -449,17 +444,6 @@ def run_review(
         print(json.dumps(result, indent=2))
 
     return 0
-
-
-def _config_change_lines(filenames: list[str], base_sha: str | None) -> list[str]:
-    """Say so when the PR edits `.marginal/`, since this review didn't use its edits."""
-    if base_sha is None or not any(name.startswith(".marginal/") for name in filenames):
-        return []
-    return [
-        "",
-        "ℹ️ This PR changes `.marginal/`. Review settings and policies come from the base "
-        "branch, so the changes apply after it merges.",
-    ]
 
 
 def _skip_reason(review: ReviewConfig, pull_request: dict[str, object]) -> str | None:
@@ -517,245 +501,6 @@ def _close_resolved_findings(
         )
 
 
-def _base_lines(
-    pr_number: int | None,
-    pull_request: dict[str, object],
-    filenames: list[str],
-    verdict: str | None = None,
-) -> list[str]:
-    """Render the review header: the `verdict` line (if any), a title line,
-    and a collapsed file list.
-
-    The verdict leads so the outcome is readable without opening a single
-    inline thread. The file list sits behind a `<details>` block so it
-    doesn't dominate the review on larger PRs -- expanding it is one click,
-    not a wall of text.
-    """
-    file_word = "file" if len(filenames) == 1 else "files"
-    lines = [REVIEW_HEADING, ""]
-    if verdict is not None:
-        lines += [verdict, ""]
-    base_sha = str(pull_request["base"]["sha"])[:7]
-    head_sha = str(pull_request["head"]["sha"])[:7]
-    if pr_number is None:
-        repo = pull_request["base"]["repo"]["full_name"]
-        lines.append(f"**{repo} {base_sha}...{head_sha}** · {len(filenames)} {file_word} changed")
-    else:
-        lines.append(
-            f"**PR #{pr_number}: {pull_request['title']}** · {pull_request['state']} · "
-            f"`{base_sha}` → `{head_sha}` · {len(filenames)} {file_word} changed"
-        )
-    if filenames:
-        lines += [
-            "",
-            "<details>",
-            f"<summary>Changed files ({len(filenames)})</summary>",
-            "",
-            *(f"- `{filename}`" for filename in filenames),
-            "",
-            "</details>",
-        ]
-    return lines
-
-
-def _verdict(findings: list[Finding], *, already_posted: int = 0) -> str:
-    """One line summing up a review's findings by severity, most serious first,
-    e.g. `**3 findings** · 🔴 1 critical · 🟠 2 high`, or that there were none.
-
-    `already_posted` counts findings left out because an earlier run on this
-    PR already flagged them, so "nothing new" isn't read as "nothing wrong".
-    """
-    if findings:
-        counts = Counter(finding.severity for finding in findings)
-        noun = "finding" if len(findings) == 1 else "findings"
-        verdict = f"**{len(findings)} {noun}** · " + " · ".join(
-            f"{emoji} {counts[severity]} {severity.value}"
-            for severity, emoji in SEVERITY_EMOJI.items()
-            if counts[severity]
-        )
-    else:
-        verdict = "✅ **No new issues**" if already_posted else "✅ **No issues found**"
-    if already_posted:
-        verdict += f" · {already_posted} already flagged earlier on this PR"
-    return verdict
-
-
-_SEVERITY_LABELS = {f"marginal:{severity.value}" for severity in Severity}
-
-
-def _severity_labels(findings: list[Finding]) -> list[str]:
-    """One `marginal:<severity>` label per severity among `findings`, most
-    serious first. The fixed prefix keeps marginal off labels it doesn't own."""
-    present = {finding.severity for finding in findings}
-    return [f"marginal:{severity.value}" for severity in SEVERITY_EMOJI if severity in present]
-
-
-def _stale_severity_labels(pull_request: dict[str, object], wanted: list[str]) -> list[str]:
-    """The severity labels on `pull_request` that aren't in `wanted` -- a
-    severity no finding still earns. Any other label, even one starting
-    `marginal:`, isn't marginal's."""
-    names = [str(label["name"]) for label in pull_request.get("labels") or []]
-    return [name for name in names if name in _SEVERITY_LABELS and name not in wanted]
-
-
-def _finding_badge(finding: Finding, *, with_location: bool) -> str:
-    """Render a finding's severity as one line, e.g. `🔴 **Critical**` --
-    optionally suffixed with its file location, for contexts (like a review's
-    overall body) that aren't already anchored to that location the way an
-    inline comment is.
-    """
-    badge = f"{SEVERITY_EMOJI[finding.severity]} **{finding.severity.value.title()}**"
-    if with_location:
-        location = finding.file if finding.line is None else f"{finding.file}:{finding.line}"
-        badge += f" — `{location}`"
-    return badge
-
-
-def _finding_lines(finding: Finding) -> list[str]:
-    """Render one `Finding` as its badge, message and "Why" block, each its
-    own paragraph."""
-    badge = _finding_badge(finding, with_location=True)
-    return ["", badge, "", finding.message, *_why_lines(finding)]
-
-
-def _why_lines(finding: Finding) -> list[str]:
-    """A folded "Why marginal flagged this" block: the trigger, each verified
-    quote, and the assumptions. Model-written text goes through
-    `redact_secrets`, like everything else marginal posts."""
-    checks = finding.checks
-    if checks is None:
-        return []
-    verified = [e for e, ok in zip(finding.evidence, checks.quotes, strict=False) if ok]
-    lines = ["", "<details><summary>Why marginal flagged this</summary>", ""]
-    if finding.trigger:
-        lines.append(f"- **Trigger:** {redact_secrets(finding.trigger)}")
-    if verified:
-        lines.append(
-            "- **Evidence:** "
-            + " · ".join(f"`{e.file}:{e.line}` {_code_span(e.quote)} ✓" for e in verified)
-        )
-    if finding.assumptions:
-        lines.append("- **Assumed:** " + "; ".join(redact_secrets(a) for a in finding.assumptions))
-    return [*lines, "", "</details>"]
-
-
-def _code_span(text: str) -> str:
-    text = redact_secrets(" ".join(text.split()))
-    return f"`` {text} ``" if "`" in text else f"`{text}`"
-
-
-def _redaction_warning_lines(redacted_files: list[str]) -> list[str]:
-    """Render a warning naming `redacted_files`, or `[]` if none were redacted.
-
-    Folded into the same review body as the header and findings rather than
-    a second comment -- `marginal review --comment` posts exactly one
-    `create_review` per run, so this rides along with it.
-    """
-    if not redacted_files:
-        return []
-    files_list = ", ".join(f"`{filename}`" for filename in redacted_files)
-    return [
-        "",
-        f"⚠️ **Redacted a likely secret** in {files_list} before this diff reached "
-        "the review model -- rotate it if it was real.",
-    ]
-
-
-def _build_inline_comments(
-    findings: list[Finding], patches: dict[str, str | None]
-) -> list[dict[str, object]]:
-    """Build one GitHub review `comments` entry per line-anchored finding.
-
-    A finding with no `line` is left out here -- callers should fall back to
-    including it in the review's overall body instead, so it isn't silently
-    dropped. The comment's own file/line already anchors it in the diff, so
-    its badge skips repeating the location. Each body ends with the
-    finding's hidden fingerprint marker, so a later run can skip it.
-    """
-    return [
-        {
-            "path": finding.file,
-            **_span_fields(_span(finding, patches)),
-            "body": "\n".join(
-                [
-                    _finding_badge(finding, with_location=False),
-                    "",
-                    finding.message,
-                    *_why_lines(finding),
-                    "",
-                    fingerprint_marker(_fingerprint(finding, patches)),
-                ]
-            ),
-        }
-        for finding in findings
-        if finding.line is not None
-    ]
-
-
-def _anchorable(finding: Finding, patches: dict[str, str | None]) -> bool:
-    """Whether GitHub accepts an inline comment at `finding`'s line: it must
-    fall inside one of its file's diff hunks. GitHub rejects the whole review
-    (422) over a single comment anchored anywhere else, so such a finding goes
-    in the review body instead."""
-    patch = patches.get(finding.file)
-    return (
-        finding.line is not None
-        and bool(patch)
-        and any(start <= finding.line <= end for start, end in _hunk_ranges(str(patch)))
-    )
-
-
-def _span(finding: Finding, patches: dict[str, str | None]) -> tuple[int, int] | None:
-    """The lines `finding` covers: its own line widened to its verified quotes
-    in the same diff hunk, at most `_MAX_SPAN_DISTANCE` lines away. GitHub
-    accepts a multi-line comment only within one hunk. `None` without a line."""
-    if finding.line is None:
-        return None
-    line = finding.line
-    hunks = _hunk_ranges(str(patches.get(finding.file) or ""))
-    hunk = next((h for h in hunks if h[0] <= line <= h[1]), None)
-    checks = finding.checks
-    if hunk is None or checks is None:
-        return line, line
-    quoted = [
-        e.line
-        for e, verified in zip(finding.evidence, checks.quotes, strict=False)
-        if verified
-        and e.file == finding.file
-        and hunk[0] <= e.line <= hunk[1]
-        and abs(e.line - line) <= _MAX_SPAN_DISTANCE
-    ]
-    return min([line, *quoted]), max([line, *quoted])
-
-
-def _span_fields(span: tuple[int, int] | None) -> dict[str, int | None]:
-    """A review comment's `line`, plus `start_line` when it spans more than one."""
-    if span is None:
-        return {"line": None}
-    start, end = span
-    return {"start_line": start, "line": end} if start < end else {"line": end}
-
-
-def _fingerprint(finding: Finding, patches: dict[str, str | None]) -> str:
-    return finding_fingerprint(*_identity(finding, patches))
-
-
-def _nearby_fingerprints(finding: Finding, patches: dict[str, str | None]) -> set[str]:
-    return nearby_fingerprints(*_identity(finding, patches))
-
-
-def _identity(
-    finding: Finding, patches: dict[str, str | None]
-) -> tuple[str, int | None, str, str, str | None]:
-    return (
-        finding.file,
-        finding.line,
-        finding.severity.value,
-        finding.message,
-        patches.get(finding.file),
-    )
-
-
 def _build_json_result(
     repo: str,
     pr_number: int | None,
@@ -780,8 +525,8 @@ def _build_json_result(
     prompt exceeded `review.max_prompt_tokens` (so empty `findings` mean
     "not reviewed", not "nothing found").
     A finding's `line` being `None` means what it does for
-    `_build_inline_comments`; one posted across several lines also carries
-    the `start_line` and `end_line` its comment spans (`_span`). Reviewing
+    `build_inline_comments`; one posted across several lines also carries
+    the `start_line` and `end_line` its comment spans (`comment_span`). Reviewing
     two commits (`pr_number=None`) leaves `title` and `state` `None`. Every
     finding, posted or not, carries the `checks` marginal ran on it;
     `dropped_findings` are the ones the posting rule or `review.max_comments`
@@ -808,7 +553,7 @@ def _build_json_result(
 
 def _finding_json(finding: Finding, patches: dict[str, str | None]) -> dict[str, object]:
     data = finding.model_dump(mode="json")
-    span = _span(finding, patches)
+    span = comment_span(finding, patches)
     if span is not None and span[0] < span[1]:
         data["start_line"], data["end_line"] = span
     checks = finding.checks
@@ -860,78 +605,3 @@ async def _generate_findings(
             f"expected a FindingsResponse from generate_structured, got {type(result).__name__}"
         )
     return result.findings
-
-
-def _budget_warning_lines(over_budget: PromptOverBudget | None) -> list[str]:
-    """Render a warning that generation was skipped for size, or `[]`.
-
-    First among the warnings: with no model call, nothing in the diff was
-    reviewed, so the empty findings list must not read as a clean bill.
-    """
-    if over_budget is None:
-        return []
-    return ["", f"⚠️ **Review skipped** -- {over_budget}, so nothing in this diff was reviewed."]
-
-
-def _missing_patch_filenames(files: list[dict[str, object]]) -> list[str]:
-    """Filenames GitHub returned with no patch content.
-
-    GitHub omits a file's `patch` entirely once its diff is too large or
-    it's binary -- the file still appears in the files list, but there's no
-    diff for `build_finding_prompt` to include, so it was never reviewed.
-    """
-    return [str(file["filename"]) for file in files if not file.get("patch")]
-
-
-def _is_ignored(filename: str, patterns: Sequence[str]) -> bool:
-    """Whether `filename` matches a `review.ignore_paths` pattern: one with no
-    `/` against the file name alone, otherwise against the whole path."""
-    name = filename.rsplit("/", 1)[-1]
-    return any(fnmatch.fnmatchcase(filename if "/" in p else name, p) for p in patterns)
-
-
-def _ignored_lines(count: int) -> list[str]:
-    """Name how many changed files `review.ignore_paths` kept from the model."""
-    if not count:
-        return []
-    return [
-        "",
-        f"ℹ️ **{count} file(s) not reviewed** -- they match `review.ignore_paths`.",
-    ]
-
-
-def _coverage_warning_lines(
-    pull_request: dict[str, object],
-    files: list[dict[str, object]],
-    ignore_paths: Sequence[str] = (),
-) -> list[str]:
-    """Warn about any gap between what changed in `pull_request` and what
-    `files` actually gave the reviewer model something to look at.
-
-    Two independent gaps, each optional: `pull_request["changed_files"]`
-    (when GitHub reports it) exceeding `len(files)` means GitHub's own
-    3000-file-per-PR cap truncated the file list; a file present in `files`
-    but missing its `patch` means that file's diff never reached the model.
-    Neither is fatal -- both just get named so a review's silence about a
-    file isn't mistaken for "nothing to flag there."
-    """
-    lines: list[str] = []
-    changed_files = pull_request.get("changed_files")
-    if isinstance(changed_files, int) and changed_files > len(files):
-        lines += [
-            "",
-            f"⚠️ **Incomplete review coverage** -- reviewed {len(files)} of "
-            f"{changed_files} changed files; GitHub did not return the rest.",
-        ]
-    # An ignored file was never going to be reviewed, so its missing patch isn't a gap.
-    missing_patch = [
-        name for name in _missing_patch_filenames(files) if not _is_ignored(name, ignore_paths)
-    ]
-    if missing_patch:
-        files_list = ", ".join(f"`{filename}`" for filename in missing_patch)
-        lines += [
-            "",
-            f"⚠️ **No diff available** for {files_list} -- GitHub omitted the patch "
-            "(large diff or binary file), so this file wasn't reviewed.",
-        ]
-    return lines
