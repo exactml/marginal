@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 import sys
 
-from marginal.cli.review import _load_base_config
 from marginal.config.errors import ConfigError
 from marginal.config.schema import ModelSpec, PermissionsConfig
+from marginal.context import load_base_config
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubError
 from marginal.providers.errors import MissingCredentialsError, ProviderError, ProviderResponseError
@@ -49,7 +49,7 @@ def run_compact(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
     # From the PR's base commit, like `marginal review`: the PR can't change it.
     base_client = GitHubClient(repo, PermissionsConfig())
     try:
-        config, _ = _load_base_config(base_client, base_client.get_pull_request(pr_number), path)
+        config, _ = load_base_config(base_client, base_client.get_pull_request(pr_number), path)
     except ConfigError as exc:
         print(f"marginal compact: {exc}", file=sys.stderr)
         return 1

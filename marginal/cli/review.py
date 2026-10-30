@@ -5,21 +5,23 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import json
-import os
 import sys
 from collections import Counter
 from collections.abc import Sequence
-from pathlib import PurePosixPath
 from typing import Literal, get_args
 
 from marginal.config.errors import ConfigError
-from marginal.config.loader import CONFIG_RELATIVE_PATH, load_config, parse_config
-from marginal.config.schema import MarginalConfig, ModelSpec, PermissionsConfig, ReviewConfig
+from marginal.config.schema import ModelSpec, PermissionsConfig, ReviewConfig
+from marginal.context import (
+    build_graph_context,
+    load_base_config,
+    load_base_policies,
+    read_ci_conclusion,
+)
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubError
-from marginal.graph import ChangedDefinition, build_symbol_graph, find_out_of_diff_callers
+from marginal.graph import ChangedDefinition
 from marginal.graph.diff import _hunk_ranges
-from marginal.policy import load_policies
 from marginal.providers.base import reset_usage, usage
 from marginal.providers.errors import MissingCredentialsError, ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
@@ -85,7 +87,7 @@ def run_review(
     maintainer replies or dedup, and `comment` must be off.
 
     Fetches the pull request, then loads `.marginal/config.yaml` and its
-    policy files as of the PR's base commit (`_load_base_config`), so the PR
+    policy files as of the PR's base commit (`load_base_config`), so the PR
     can't change the rules it's reviewed by; only when the base has no config
     yet does it fall back to the one under `path`. It builds a `GitHubClient`
     gated by that config's `permissions` and fetches the changed files.
@@ -219,13 +221,13 @@ def run_review(
             # Just enough of a PR's shape for the shared code below.
             else {"base": {"sha": base, "repo": {"full_name": repo}}, "head": {"sha": head}}
         )
-        config, base_sha = _load_base_config(base_client, pull_request, path)
+        config, base_sha = load_base_config(base_client, pull_request, path)
         reviewer_model = config.models.get("reviewer")
         policies: list[tuple[str, str]] = []
         anti_policies: list[tuple[str, str]] = []
         if reviewer_model is not None:
-            policies = _load_base_policies(base_client, base_sha, path, config.policies)
-            anti_policies = _load_base_policies(base_client, base_sha, path, config.anti_policies)
+            policies = load_base_policies(base_client, base_sha, path, config.policies)
+            anti_policies = load_base_policies(base_client, base_sha, path, config.anti_policies)
     except ConfigError as exc:
         print(f"marginal review: {exc}", file=sys.stderr)
         return 1
@@ -272,11 +274,11 @@ def run_review(
     if reviewer_model is not None and reviewed_files:
         redacted = redact_patches(reviewed_files)
         redacted_files = redacted_filenames(reviewed_files, redacted)
-        graph_context = _build_graph_context(
-            path, reviewed_files, enabled=config.context.code_graph
-        )
+        graph_context = build_graph_context(path, reviewed_files, enabled=config.context.code_graph)
         replies = maintainer_replies(review_comments)
-        ci_conclusion = _ci_conclusion(client, config.permissions, str(pull_request["head"]["sha"]))
+        ci_conclusion = read_ci_conclusion(
+            client, config.permissions, str(pull_request["head"]["sha"])
+        )
         try:
             findings = asyncio.run(
                 _generate_findings(
@@ -447,41 +449,6 @@ def run_review(
         print(json.dumps(result, indent=2))
 
     return 0
-
-
-def _load_base_config(
-    client: GitHubClient, pull_request: dict[str, object], path: str
-) -> tuple[MarginalConfig, str | None]:
-    """`.marginal/config.yaml` as of the PR's base commit, and that commit.
-
-    When the base has no config yet -- the PR that first sets marginal up --
-    falls back to the one under `path` and returns `None` for the commit.
-    """
-    base_sha = str(pull_request["base"]["sha"])
-    text = client.get_file(CONFIG_RELATIVE_PATH.as_posix(), base_sha)
-    if text is None:
-        return load_config(path), None
-    return parse_config(text, f"{CONFIG_RELATIVE_PATH.as_posix()} at {base_sha[:7]}"), base_sha
-
-
-def _load_base_policies(
-    client: GitHubClient, base_sha: str | None, path: str, policy_paths: list[str]
-) -> list[tuple[str, str]]:
-    """`policy_paths` as of `base_sha`, like `load_policies` reads them under `path`."""
-    if base_sha is None:
-        return load_policies(path, policy_paths)
-    policies = []
-    for policy_path in policy_paths:
-        # The contents API 404s on `./x`, which a local read accepted.
-        content = client.get_file(PurePosixPath(policy_path).as_posix(), base_sha)
-        if content is None:
-            print(
-                f"marginal review: warning: policy file not found, skipping: {policy_path}",
-                file=sys.stderr,
-            )
-            continue
-        policies.append((policy_path, content))
-    return policies
 
 
 def _config_change_lines(filenames: list[str], base_sha: str | None) -> list[str]:
@@ -895,58 +862,6 @@ async def _generate_findings(
     return result.findings
 
 
-# GitHub's documented workflow run conclusions; `None` while a run is in progress.
-_CI_CONCLUSIONS = {
-    "action_required",
-    "cancelled",
-    "failure",
-    "neutral",
-    "skipped",
-    "stale",
-    "startup_failure",
-    "success",
-    "timed_out",
-}
-
-
-def _ci_conclusion(
-    client: GitHubClient, permissions: PermissionsConfig, head_sha: str
-) -> str | None:
-    """The conclusion of the workflow run whose completion triggered this
-    review, from the GitHub Actions `workflow_run` event, or `None` if there's
-    no such run, it didn't run on `head_sha`, it's still in progress, or it
-    can't be read."""
-    if os.environ.get("GITHUB_EVENT_NAME") != "workflow_run":
-        return None
-    if not permissions.read.repository:
-        return None
-    try:
-        with open(os.environ["GITHUB_EVENT_PATH"]) as event:
-            run_id = json.load(event)["workflow_run"]["id"]
-    except (OSError, KeyError, TypeError, ValueError):
-        return None
-    if not isinstance(run_id, int):
-        return None
-    try:
-        run = client.get_workflow_run(run_id)
-    except GitHubError as exc:
-        print(
-            f"marginal review: warning: couldn't read the CI run's conclusion, skipping: {exc}",
-            file=sys.stderr,
-        )
-        return None
-    # A run from an earlier push, or another branch, says nothing about this diff.
-    if run.get("head_sha") != head_sha:
-        print(
-            "marginal review: warning: the CI run that triggered this review didn't run on "
-            f"the PR's head commit {head_sha[:7]}, skipping its conclusion",
-            file=sys.stderr,
-        )
-        return None
-    conclusion = run.get("conclusion")
-    return conclusion if conclusion in _CI_CONCLUSIONS else None
-
-
 def _budget_warning_lines(over_budget: PromptOverBudget | None) -> list[str]:
     """Render a warning that generation was skipped for size, or `[]`.
 
@@ -956,39 +871,6 @@ def _budget_warning_lines(over_budget: PromptOverBudget | None) -> list[str]:
     if over_budget is None:
         return []
     return ["", f"⚠️ **Review skipped** -- {over_budget}, so nothing in this diff was reviewed."]
-
-
-def _build_graph_context(
-    repo_root: str, files: list[dict[str, object]], *, enabled: bool
-) -> list[ChangedDefinition]:
-    """The PR's changed definitions and their out-of-diff callers, or `[]`.
-
-    `[]` both when `enabled` is `False` and when building the graph fails for
-    any reason (`repo_root` isn't a git working tree, `git` isn't installed,
-    a tracked file has invalid syntax) -- this context is a best-effort
-    addition to the prompt, never something that should fail the review
-    itself, the same way a missing policy file only warns rather than
-    aborting.
-    """
-    if not enabled:
-        return []
-    try:
-        graph = build_symbol_graph(repo_root)
-        if graph.unparsed_files:
-            shown = ", ".join(graph.unparsed_files[:3])
-            more = len(graph.unparsed_files) - 3
-            print(
-                f"marginal review: warning: code graph skipped {len(graph.unparsed_files)} "
-                f"file(s) it couldn't parse: {shown}" + (f" (+{more} more)" if more > 0 else ""),
-                file=sys.stderr,
-            )
-        return find_out_of_diff_callers(graph, files)
-    except Exception as exc:
-        print(
-            f"marginal review: warning: couldn't build code-graph context, skipping: {exc}",
-            file=sys.stderr,
-        )
-        return []
 
 
 def _missing_patch_filenames(files: list[dict[str, object]]) -> list[str]:
