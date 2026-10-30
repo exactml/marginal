@@ -11,10 +11,7 @@ from pydantic import ValidationError
 
 from marginal.cli import main
 from marginal.cli.init import WORKFLOW_TEMPLATE
-from marginal.cli.review import (
-    _build_json_result,
-    run_review,
-)
+from marginal.cli.review import run_review
 from marginal.config import MarginalConfig, load_config
 from marginal.context import build_graph_context
 from marginal.github.errors import (
@@ -27,6 +24,7 @@ from marginal.graph import CallSite, ChangedDefinition, Definition
 from marginal.providers.errors import MissingCredentialsError, ProviderResponseError
 from marginal.review import Checks, Evidence, Finding, Severity
 from marginal.review.dedup import finding_fingerprint, fingerprint_marker
+from marginal.review.output import build_json_result
 from marginal.review.prompt import (
     FINDING_PROMPT_INSTRUCTIONS,
     MAX_GRAPH_CONTEXT_CALLERS,
@@ -504,7 +502,7 @@ def test_build_json_result_gives_a_multi_line_finding_its_span():
     spanning = _quoted_finding(12, [(12, True), (13, True)])
     single = _quoted_finding(20, [(20, True)])
 
-    result = _build_json_result(
+    result = build_json_result(
         "acme/widgets",
         42,
         _pull_request(),
@@ -2441,7 +2439,7 @@ def test_review_format_json_prints_nothing_on_an_invalid_config(
 def test_build_json_result_serializes_a_finding_as_plain_json():
     finding = Finding(file="a.py", line=None, severity=Severity.HIGH, message="issue")
 
-    result = _build_json_result(
+    result = build_json_result(
         "acme/widgets",
         42,
         _pull_request(),
