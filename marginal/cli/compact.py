@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import sys
 
-from marginal.cli.review import _load_base_config, _redact_patches
+from marginal.cli.review import _load_base_config
 from marginal.config.errors import ConfigError
 from marginal.config.schema import ModelSpec, PermissionsConfig
 from marginal.github.client import GitHubClient
@@ -14,7 +14,7 @@ from marginal.providers.errors import MissingCredentialsError, ProviderError, Pr
 from marginal.providers.factory import get_provider
 from marginal.review.dedup import _MARKER
 from marginal.review.prompt import RECHECK_INSTRUCTIONS, estimate_tokens
-from marginal.review.redact import redact_secrets
+from marginal.review.redact import redact_patches, redact_secrets
 from marginal.review.replies import RESOLVED_MARKER, is_marginal_comment
 from marginal.review.schema import Recheck, RecheckResponse
 
@@ -148,7 +148,7 @@ def close_resolved_findings(
     if not findings:
         return [], {}
 
-    patches = {str(f["filename"]): str(f["patch"]) for f in _redact_patches(files)}
+    patches = {str(f["filename"]): str(f["patch"]) for f in redact_patches(files)}
     verdicts = {
         c["id"]: Recheck(
             id=c["id"], still_applies=False, reason="its file is no longer changed by this PR"

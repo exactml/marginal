@@ -22,8 +22,6 @@ from marginal.cli.review import (
     _finding_badge,
     _is_ignored,
     _missing_patch_filenames,
-    _redact_patches,
-    _redacted_filenames,
     _redaction_warning_lines,
     _verdict,
     _why_lines,
@@ -50,6 +48,7 @@ from marginal.review.prompt import (
     estimate_tokens,
     is_test_path,
 )
+from marginal.review.redact import redact_patches, redacted_filenames
 from marginal.review.replies import ReplyThread
 from marginal.review.schema import MAX_FINDINGS_PER_REVIEW, FindingsResponse
 
@@ -602,7 +601,7 @@ def test_build_finding_prompt_folds_policy_content_in():
 def test_build_finding_prompt_redacts_a_secret_in_the_patch():
     files = [{"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"}]
 
-    prompt = build_finding_prompt(_redact_patches(files), [], [], ".")
+    prompt = build_finding_prompt(redact_patches(files), [], [], ".")
 
     assert "AKIAIOSFODNN7EXAMPLE" not in prompt
     assert prompt.endswith("--- marginal/config.py ---\n+api_key = '[REDACTED]'")
@@ -614,7 +613,7 @@ def test_redacted_filenames_returns_only_files_whose_patch_changed():
         {"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"},
     ]
 
-    assert _redacted_filenames(files, _redact_patches(files)) == ["marginal/config.py"]
+    assert redacted_filenames(files, redact_patches(files)) == ["marginal/config.py"]
 
 
 def test_redaction_warning_lines_empty_when_nothing_redacted():
@@ -3286,7 +3285,7 @@ _BUDGET_FILES = [{"filename": "marginal/retry.py", "patch": _RETRY_PATCH}]
 def _budget_prompt_tokens():
     """The estimate `run_review` computes for `_BUDGET_FILES` in a non-git
     tmp dir with no policies (so no graph context either)."""
-    return estimate_tokens(build_finding_prompt(_redact_patches(_BUDGET_FILES), [], [], "."))
+    return estimate_tokens(build_finding_prompt(redact_patches(_BUDGET_FILES), [], [], "."))
 
 
 def _run_budgeted_review(mock_github_client, mock_provider, *extra_args):

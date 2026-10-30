@@ -38,7 +38,7 @@ from marginal.review.prompt import (
     build_graph_context_section,
     estimate_tokens,
 )
-from marginal.review.redact import redact_secrets
+from marginal.review.redact import redact_patches, redact_secrets, redacted_filenames
 from marginal.review.replies import ReplyThread, maintainer_replies
 from marginal.review.schema import FindingsResponse
 
@@ -270,8 +270,8 @@ def run_review(
         coverage_lines += _coverage_warning_lines(pull_request, files, ignore_paths)
     # Every changed file is ignored: there's no diff to send, so no model call.
     if reviewer_model is not None and reviewed_files:
-        redacted = _redact_patches(reviewed_files)
-        redacted_files = _redacted_filenames(reviewed_files, redacted)
+        redacted = redact_patches(reviewed_files)
+        redacted_files = redacted_filenames(reviewed_files, redacted)
         graph_context = _build_graph_context(
             path, reviewed_files, enabled=config.context.code_graph
         )
@@ -1053,19 +1053,3 @@ def _coverage_warning_lines(
             "(large diff or binary file), so this file wasn't reviewed.",
         ]
     return lines
-
-
-def _redact_patches(files: list[dict[str, object]]) -> list[dict[str, object]]:
-    """`files` with each `patch` run through `redact_secrets` -- once per run."""
-    return [{**file, "patch": redact_secrets(str(file.get("patch", "")))} for file in files]
-
-
-def _redacted_filenames(
-    files: list[dict[str, object]], redacted: list[dict[str, object]]
-) -> list[str]:
-    """Filenames whose patch `_redact_patches` changed, i.e. masked a likely secret."""
-    return [
-        str(file["filename"])
-        for file, clean in zip(files, redacted, strict=True)
-        if clean["patch"] != str(file.get("patch", ""))
-    ]
