@@ -8,8 +8,9 @@ import sys
 from collections import Counter
 from typing import Literal, get_args
 
+from marginal.cli.compact import CompactSkipped, close_resolved_findings, is_closed
 from marginal.config.errors import ConfigError
-from marginal.config.schema import ModelSpec, PermissionsConfig, ReviewConfig
+from marginal.config.schema import MarginalConfig, ModelSpec, PermissionsConfig, ReviewConfig
 from marginal.context import (
     build_graph_context,
     load_base_config,
@@ -214,19 +215,11 @@ def run_review(
             # Just enough of a PR's shape for the shared code below.
             else {"base": {"sha": base, "repo": {"full_name": repo}}, "head": {"sha": head}}
         )
-        config, base_sha = load_base_config(base_client, pull_request, path)
-        reviewer_model = config.models.get("reviewer")
-        policies: list[tuple[str, str]] = []
-        anti_policies: list[tuple[str, str]] = []
-        if reviewer_model is not None:
-            policies = load_base_policies(base_client, base_sha, path, config.policies)
-            anti_policies = load_base_policies(base_client, base_sha, path, config.anti_policies)
-    except ConfigError as exc:
+        config, base_sha, policies, anti_policies = _load_rules(base_client, pull_request, path)
+    except (ConfigError, GitHubError) as exc:
         print(f"marginal review: {exc}", file=sys.stderr)
         return 1
-    except GitHubError as exc:
-        print(f"marginal review: {exc}", file=sys.stderr)
-        return 1
+    reviewer_model = config.models.get("reviewer")
     client = GitHubClient(repo, config.permissions)
 
     try:
@@ -253,76 +246,33 @@ def run_review(
         return 0
 
     filenames = [str(file["filename"]) for file in files]
-
-    findings: list[Finding] = []
-    redacted_files: list[str] = []
-    coverage_lines: list[str] = []
-    over_budget: PromptOverBudget | None = None
     ignore_paths = config.review.ignore_paths
     reviewed_files = [f for f in files if not is_ignored(str(f["filename"]), ignore_paths)]
+    coverage_lines: list[str] = []
     if reviewer_model is not None:
         coverage_lines = ignored_lines(len(files) - len(reviewed_files))
         coverage_lines += coverage_warning_lines(pull_request, files, ignore_paths)
-    # Every changed file is ignored: there's no diff to send, so no model call.
-    if reviewer_model is not None and reviewed_files:
-        redacted = redact_patches(reviewed_files)
-        redacted_files = redacted_filenames(reviewed_files, redacted)
-        graph_context = build_graph_context(path, reviewed_files, enabled=config.context.code_graph)
-        replies = maintainer_replies(review_comments)
-        ci_conclusion = read_ci_conclusion(
-            client, config.permissions, str(pull_request["head"]["sha"])
-        )
-        try:
-            findings = asyncio.run(
-                _generate_findings(
-                    reviewer_model,
-                    redacted,
-                    policies,
-                    graph_context,
-                    path,
-                    replies,
-                    max_prompt_tokens=config.review.max_prompt_tokens,
-                    anti_policies=anti_policies,
-                    ci_conclusion=ci_conclusion,
-                )
-            )
-        except PromptOverBudget as exc:
-            over_budget = exc
-            print(
-                f"marginal review: skipped generating findings: {exc} -- raise the cap in "
-                ".marginal/config.yaml or split the PR to review it",
-                file=sys.stderr,
-            )
-        except MissingCredentialsError as exc:
-            print(f"marginal review: {exc}", file=sys.stderr)
-            return 3
-        except ProviderError as exc:
-            print(f"marginal review: {exc}", file=sys.stderr)
-            return 1
 
-    decisions: list[Decision] = []
-    if findings:
-        # Checked against what the model was shown: the (redacted) diff and the
-        # caller context, plus the rest of each file from the checkout.
-        context = build_graph_context_section(graph_context, path) or ""
-        decisions = decide(
-            findings, CodeView(path, redacted, context), max_comments=config.review.max_comments
+    try:
+        findings, dropped, redacted_files, over_budget = _review_files(
+            client,
+            config,
+            pull_request,
+            reviewed_files,
+            review_comments,
+            path,
+            policies,
+            anti_policies,
         )
-    findings = [d.finding for d in decisions if d.posted]
-    dropped = [d for d in decisions if not d.posted]
-    if dropped:
-        reasons = Counter(d.reason for d in dropped)
-        print(
-            f"marginal review: dropped {len(dropped)} finding(s): "
-            + ", ".join(f"{count} {reason}" for reason, count in reasons.most_common()),
-            file=sys.stderr,
-        )
+    except MissingCredentialsError as exc:
+        print(f"marginal review: {exc}", file=sys.stderr)
+        return 3
+    except ProviderError as exc:
+        print(f"marginal review: {exc}", file=sys.stderr)
+        return 1
 
     # Without a model call nothing was reviewed, so there's no verdict to give.
     reviewed = reviewer_model is not None and bool(reviewed_files) and over_budget is None
-    base_lines = header_lines(
-        pr_number, pull_request, filenames, verdict_line(findings) if reviewed else None
-    )
     warning_lines = (
         (["", NO_REVIEWER_NOTICE] if reviewer_model is None else [])
         + config_change_lines(filenames, base_sha)
@@ -333,7 +283,11 @@ def run_review(
     if output_format == "text":
         print(
             "\n".join(
-                base_lines + warning_lines + [line for f in findings for line in finding_lines(f)]
+                header_lines(
+                    pr_number, pull_request, filenames, verdict_line(findings) if reviewed else None
+                )
+                + warning_lines
+                + [line for f in findings for line in finding_lines(f)]
             )
         )
 
@@ -341,78 +295,23 @@ def run_review(
     comment_posted = False
     if comment:
         try:
-            reviews = client.list_reviews(pr_number)
-            posted = posted_fingerprints(
-                [review.get("body") for review in reviews]
-                + [c.get("body") for c in review_comments]
+            comment_posted, already_reviewed = _post_review(
+                client,
+                pr_number,
+                pull_request,
+                filenames,
+                findings,
+                warning_lines,
+                review_comments,
+                patches,
+                reviewed=reviewed,
+                over_budget=over_budget is not None,
             )
-            posted |= current_fingerprints(review_comments, patches)
-            new_findings = [f for f in findings if not nearby_fingerprints_of(f, patches) & posted]
-            if len(new_findings) < len(findings):
-                print(
-                    f"marginal review: skipped {len(findings) - len(new_findings)} finding(s) "
-                    "matching one already posted on this PR (same file and severity, same or "
-                    "neighbouring line)",
-                    file=sys.stderr,
-                )
-            already_reviewed = any(REVIEW_HEADING in (r.get("body") or "") for r in reviews)
-            if new_findings or not already_reviewed or over_budget is not None:
-                verdict = verdict_line(
-                    new_findings, already_posted=len(findings) - len(new_findings)
-                )
-                body = "\n".join(
-                    header_lines(pr_number, pull_request, filenames, verdict if reviewed else None)
-                    + warning_lines
-                    + [
-                        line
-                        for f in new_findings
-                        if not anchorable(f, patches)
-                        for line in [
-                            *finding_lines(f),
-                            fingerprint_marker(fingerprint_of(f, patches)),
-                        ]
-                    ]
-                )
-                client.create_review(
-                    pr_number,
-                    body,
-                    event="COMMENT",
-                    comments=build_inline_comments(
-                        [f for f in new_findings if anchorable(f, patches)], patches
-                    ),
-                )
-                comment_posted = True
-            else:
-                print(
-                    "marginal review: nothing new since marginal's last review on this PR, "
-                    "so nothing was posted",
-                    file=sys.stderr,
-                )
         except GitHubError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
             return 1
-        # Labels only add triage signal, so failing to add or remove one never
-        # fails the review.
         if config.permissions.write.labels:
-            wanted = severity_labels(findings)
-            if wanted:
-                try:
-                    client.add_labels(pr_number, wanted)
-                except GitHubError as exc:
-                    print(f"marginal review: couldn't add labels: {exc}", file=sys.stderr)
-            # Without a review there are no current findings to judge a label by,
-            # and a finding capped by `review.max_comments` is still there.
-            if reviewed:
-                capped = [d.finding for d in dropped if d.reason == OVER_MAX_COMMENTS]
-                kept = severity_labels(findings + capped)
-                for name in stale_severity_labels(pull_request, kept):
-                    try:
-                        client.remove_label(pr_number, name)
-                    except GitHubError as exc:
-                        print(
-                            f"marginal review: couldn't remove label {name}: {exc}",
-                            file=sys.stderr,
-                        )
+            _update_labels(client, pr_number, pull_request, findings, dropped, reviewed=reviewed)
         # Each later push also re-checks what marginal flagged before; only a
         # resolved finding gets anything posted.
         if already_reviewed and reviewed:
@@ -446,6 +345,177 @@ def run_review(
     return 0
 
 
+def _load_rules(
+    client: GitHubClient, pull_request: dict[str, object], path: str
+) -> tuple[MarginalConfig, str | None, list[tuple[str, str]], list[tuple[str, str]]]:
+    """The config, the base commit it came from, and its policies and
+    anti-policies, which are only read when a reviewer model will use them."""
+    config, base_sha = load_base_config(client, pull_request, path)
+    if config.models.get("reviewer") is None:
+        return config, base_sha, [], []
+    policies = load_base_policies(client, base_sha, path, config.policies)
+    anti_policies = load_base_policies(client, base_sha, path, config.anti_policies)
+    return config, base_sha, policies, anti_policies
+
+
+def _review_files(
+    client: GitHubClient,
+    config: MarginalConfig,
+    pull_request: dict[str, object],
+    files: list[dict[str, object]],
+    review_comments: list[dict[str, object]],
+    path: str,
+    policies: list[tuple[str, str]],
+    anti_policies: list[tuple[str, str]],
+) -> tuple[list[Finding], list[Decision], list[str], PromptOverBudget | None]:
+    """Have the reviewer model review `files`, then check what it found.
+
+    Returns the findings to post, the dropped ones with their reason, the
+    files whose diff had a likely secret redacted, and the over-budget error
+    if the prompt was too big to send. Nothing happens without a reviewer
+    model or when every changed file is ignored. Raises `ProviderError`.
+    """
+    reviewer_model = config.models.get("reviewer")
+    if reviewer_model is None or not files:
+        return [], [], [], None
+    redacted = redact_patches(files)
+    redacted_files = redacted_filenames(files, redacted)
+    graph_context = build_graph_context(path, files, enabled=config.context.code_graph)
+    try:
+        findings = asyncio.run(
+            _generate_findings(
+                reviewer_model,
+                redacted,
+                policies,
+                graph_context,
+                path,
+                maintainer_replies(review_comments),
+                max_prompt_tokens=config.review.max_prompt_tokens,
+                anti_policies=anti_policies,
+                ci_conclusion=read_ci_conclusion(
+                    client, config.permissions, str(pull_request["head"]["sha"])
+                ),
+            )
+        )
+    except PromptOverBudget as exc:
+        print(
+            f"marginal review: skipped generating findings: {exc} -- raise the cap in "
+            ".marginal/config.yaml or split the PR to review it",
+            file=sys.stderr,
+        )
+        return [], [], redacted_files, exc
+    if not findings:
+        return [], [], redacted_files, None
+
+    # Checked against what the model was shown: the (redacted) diff and the
+    # caller context, plus the rest of each file from the checkout.
+    context = build_graph_context_section(graph_context, path) or ""
+    decisions = decide(
+        findings, CodeView(path, redacted, context), max_comments=config.review.max_comments
+    )
+    dropped = [d for d in decisions if not d.posted]
+    if dropped:
+        reasons = Counter(d.reason for d in dropped)
+        print(
+            f"marginal review: dropped {len(dropped)} finding(s): "
+            + ", ".join(f"{count} {reason}" for reason, count in reasons.most_common()),
+            file=sys.stderr,
+        )
+    return [d.finding for d in decisions if d.posted], dropped, redacted_files, None
+
+
+def _post_review(
+    client: GitHubClient,
+    pr_number: int,
+    pull_request: dict[str, object],
+    filenames: list[str],
+    findings: list[Finding],
+    warning_lines: list[str],
+    review_comments: list[dict[str, object]],
+    patches: dict[str, str | None],
+    *,
+    reviewed: bool,
+    over_budget: bool,
+) -> tuple[bool, bool]:
+    """Post the review, leaving out findings already posted on this PR.
+
+    Posts nothing when there's nothing new and marginal already reviewed the
+    PR, unless the prompt was over budget. Returns whether it posted, and
+    whether marginal had reviewed this PR before. Raises `GitHubError`.
+    """
+    reviews = client.list_reviews(pr_number)
+    posted = posted_fingerprints(
+        [review.get("body") for review in reviews] + [c.get("body") for c in review_comments]
+    )
+    posted |= current_fingerprints(review_comments, patches)
+    new_findings = [f for f in findings if not nearby_fingerprints_of(f, patches) & posted]
+    if len(new_findings) < len(findings):
+        print(
+            f"marginal review: skipped {len(findings) - len(new_findings)} finding(s) "
+            "matching one already posted on this PR (same file and severity, same or "
+            "neighbouring line)",
+            file=sys.stderr,
+        )
+    already_reviewed = any(REVIEW_HEADING in (r.get("body") or "") for r in reviews)
+    if not (new_findings or not already_reviewed or over_budget):
+        print(
+            "marginal review: nothing new since marginal's last review on this PR, "
+            "so nothing was posted",
+            file=sys.stderr,
+        )
+        return False, already_reviewed
+    verdict = verdict_line(new_findings, already_posted=len(findings) - len(new_findings))
+    body = "\n".join(
+        header_lines(pr_number, pull_request, filenames, verdict if reviewed else None)
+        + warning_lines
+        + [
+            line
+            for f in new_findings
+            if not anchorable(f, patches)
+            for line in [*finding_lines(f), fingerprint_marker(fingerprint_of(f, patches))]
+        ]
+    )
+    client.create_review(
+        pr_number,
+        body,
+        event="COMMENT",
+        comments=build_inline_comments(
+            [f for f in new_findings if anchorable(f, patches)], patches
+        ),
+    )
+    return True, already_reviewed
+
+
+def _update_labels(
+    client: GitHubClient,
+    pr_number: int,
+    pull_request: dict[str, object],
+    findings: list[Finding],
+    dropped: list[Decision],
+    *,
+    reviewed: bool,
+) -> None:
+    """Add a `marginal:<severity>` label per severity found, and remove the
+    ones no finding earns any more. Labels only add triage signal, so failing
+    to add or remove one never fails the review."""
+    wanted = severity_labels(findings)
+    if wanted:
+        try:
+            client.add_labels(pr_number, wanted)
+        except GitHubError as exc:
+            print(f"marginal review: couldn't add labels: {exc}", file=sys.stderr)
+    # Without a review there are no current findings to judge a label by,
+    # and a finding capped by `review.max_comments` is still there.
+    if reviewed:
+        capped = [d.finding for d in dropped if d.reason == OVER_MAX_COMMENTS]
+        kept = severity_labels(findings + capped)
+        for name in stale_severity_labels(pull_request, kept):
+            try:
+                client.remove_label(pr_number, name)
+            except GitHubError as exc:
+                print(f"marginal review: couldn't remove label {name}: {exc}", file=sys.stderr)
+
+
 def _skip_reason(review: ReviewConfig, pull_request: dict[str, object]) -> str | None:
     """Why `--comment` should post nothing for `pull_request`, or `None`."""
     if not review.enabled:
@@ -473,9 +543,6 @@ def _close_resolved_findings(
 ) -> None:
     """Best-effort `marginal compact --comment` for a re-review: logs one line
     to stderr and never fails the review or touches stdout."""
-    # Imported here: `marginal.cli.compact` imports helpers from this module.
-    from marginal.cli.compact import CompactSkipped, _is_closed, close_resolved_findings
-
     try:
         findings, verdicts = close_resolved_findings(
             client,
@@ -493,7 +560,7 @@ def _close_resolved_findings(
         print(f"marginal review: couldn't re-check earlier findings: {exc}", file=sys.stderr)
         return
     if findings:
-        resolved = sum(1 for v in verdicts.values() if _is_closed(v))
+        resolved = sum(1 for v in verdicts.values() if is_closed(v))
         print(
             f"marginal review: re-checked {len(findings)} earlier finding(s): "
             f"{resolved} resolved, {len(findings) - resolved} still open",

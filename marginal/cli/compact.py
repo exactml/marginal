@@ -179,7 +179,7 @@ def close_resolved_findings(
         by_id = {a["id"]: a for found in answers.values() for a in found}
         for c in findings:
             verdict = verdicts.get(c["id"])
-            if verdict is None or not _is_closed(verdict):
+            if verdict is None or not is_closed(verdict):
                 continue
             client.reply_to_review_comment(
                 pr_number,
@@ -286,7 +286,7 @@ def _quote(comment: dict[str, object], kind: str) -> str:
     return f"{kind} {comment['id']} by @{login}: {text}"
 
 
-def _is_closed(verdict: Recheck) -> bool:
+def is_closed(verdict: Recheck) -> bool:
     return not verdict.still_applies or verdict.dismissed_by is not None
 
 
@@ -314,7 +314,7 @@ async def _recheck(model_spec: ModelSpec, prompt: str) -> list[Recheck]:
 def _summary_lines(
     pr_number: int, findings: list[dict[str, object]], verdicts: dict[object, Recheck]
 ) -> list[str]:
-    resolved = sum(1 for c in findings if c["id"] in verdicts and _is_closed(verdicts[c["id"]]))
+    resolved = sum(1 for c in findings if c["id"] in verdicts and is_closed(verdicts[c["id"]]))
     lines = [
         COMPACT_HEADING,
         "",
