@@ -71,3 +71,19 @@ def redact_secrets(text: str) -> str:
     text = _URL_CREDENTIALS.sub(rf"\g<scheme>{_REDACTED}@", text)
     text = _GENERIC_ASSIGNMENT.sub(_redact_generic_assignment, text)
     return text
+
+
+def redact_patches(files: list[dict[str, object]]) -> list[dict[str, object]]:
+    """`files` with each `patch` run through `redact_secrets` -- once per run."""
+    return [{**file, "patch": redact_secrets(str(file.get("patch", "")))} for file in files]
+
+
+def redacted_filenames(
+    files: list[dict[str, object]], redacted: list[dict[str, object]]
+) -> list[str]:
+    """Filenames whose patch `redact_patches` changed, i.e. masked a likely secret."""
+    return [
+        str(file["filename"])
+        for file, clean in zip(files, redacted, strict=True)
+        if clean["patch"] != str(file.get("patch", ""))
+    ]

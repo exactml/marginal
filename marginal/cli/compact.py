@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import sys
 
-from marginal.cli.review import _estimate_tokens, _load_base_config, _redact_patches
+from marginal.cli.review import _load_base_config
 from marginal.config.errors import ConfigError
 from marginal.config.schema import ModelSpec, PermissionsConfig
 from marginal.github.client import GitHubClient
@@ -13,26 +13,12 @@ from marginal.github.errors import GitHubError
 from marginal.providers.errors import MissingCredentialsError, ProviderError, ProviderResponseError
 from marginal.providers.factory import get_provider
 from marginal.review.dedup import _MARKER
-from marginal.review.redact import redact_secrets
+from marginal.review.prompt import RECHECK_INSTRUCTIONS, estimate_tokens
+from marginal.review.redact import redact_patches, redact_secrets
 from marginal.review.replies import RESOLVED_MARKER, is_marginal_comment
 from marginal.review.schema import Recheck, RecheckResponse
 
 COMPACT_HEADING = "### 🧹 marginal compact"
-
-RECHECK_INSTRUCTIONS = (
-    "You previously posted the review findings below on this pull request. The "
-    "pull request has changed since. For each finding, decide from the current "
-    "diff of its file whether the problem it describes is still present. Answer "
-    "still_applies=false only if the current code clearly no longer has the "
-    "problem (it was fixed, or the code was removed); if you're unsure, answer "
-    "true. Give a one-sentence reason either way, and return one result per "
-    "finding id.\n"
-    "People may have answered a finding, in its own replies or in the other pull "
-    "request comments listed after the findings. If a person's comment says that "
-    "specific finding is wrong, not an issue, or intentional, set dismissed_by to "
-    'that comment\'s id. A general approval ("LGTM"), a question, or a comment '
-    "about something else dismisses nothing -- leave dismissed_by null."
-)
 
 # Characters kept from each person's comment quoted in the re-check prompt.
 _ANSWER_CHARS = 600
@@ -162,7 +148,7 @@ def close_resolved_findings(
     if not findings:
         return [], {}
 
-    patches = {str(f["filename"]): str(f["patch"]) for f in _redact_patches(files)}
+    patches = {str(f["filename"]): str(f["patch"]) for f in redact_patches(files)}
     verdicts = {
         c["id"]: Recheck(
             id=c["id"], still_applies=False, reason="its file is no longer changed by this PR"
@@ -174,7 +160,7 @@ def close_resolved_findings(
     answers = _answers(to_check, comments, issue_comments)
     if to_check:
         prompt = _build_recheck_prompt(to_check, patches, answers)
-        estimated_tokens = _estimate_tokens(prompt)
+        estimated_tokens = estimate_tokens(prompt)
         if estimated_tokens > max_prompt_tokens:
             raise CompactSkipped(
                 f"the prompt is an estimated {estimated_tokens:,} tokens, over "

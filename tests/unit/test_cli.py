@@ -12,26 +12,16 @@ from pydantic import ValidationError
 from marginal.cli import main
 from marginal.cli.init import WORKFLOW_TEMPLATE
 from marginal.cli.review import (
-    FINDING_PROMPT_INSTRUCTIONS,
-    MAX_GRAPH_CONTEXT_CALLERS,
-    MAX_REPLY_THREADS,
     NO_REVIEWER_NOTICE,
     REVIEW_HEADING,
     _base_lines,
-    _build_finding_prompt,
     _build_graph_context,
-    _build_graph_context_section,
     _build_inline_comments,
     _build_json_result,
-    _build_replies_section,
     _coverage_warning_lines,
-    _estimate_tokens,
     _finding_badge,
     _is_ignored,
-    _is_test_path,
     _missing_patch_filenames,
-    _redact_patches,
-    _redacted_filenames,
     _redaction_warning_lines,
     _verdict,
     _why_lines,
@@ -48,6 +38,17 @@ from marginal.graph import CallSite, ChangedDefinition, Definition
 from marginal.providers.errors import MissingCredentialsError, ProviderResponseError
 from marginal.review import Checks, Evidence, Finding, Severity
 from marginal.review.dedup import finding_fingerprint, fingerprint_marker
+from marginal.review.prompt import (
+    FINDING_PROMPT_INSTRUCTIONS,
+    MAX_GRAPH_CONTEXT_CALLERS,
+    MAX_REPLY_THREADS,
+    build_finding_prompt,
+    build_graph_context_section,
+    build_replies_section,
+    estimate_tokens,
+    is_test_path,
+)
+from marginal.review.redact import redact_patches, redacted_filenames
 from marginal.review.replies import ReplyThread
 from marginal.review.schema import MAX_FINDINGS_PER_REVIEW, FindingsResponse
 
@@ -575,7 +576,7 @@ def test_finding_prompt_defines_every_severity():
 def test_build_finding_prompt_without_policies_is_unchanged():
     files = [{"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}]
 
-    prompt = _build_finding_prompt(files, [], [], ".")
+    prompt = build_finding_prompt(files, [], [], ".")
 
     assert "policies" not in prompt.lower()
     assert prompt.endswith("--- marginal/retry.py ---\n@@ -1,3 +1,4 @@\n+time.sleep(1)")
@@ -585,7 +586,7 @@ def test_build_finding_prompt_folds_policy_content_in():
     files = [{"filename": "marginal/retry.py", "patch": "+time.sleep(1)"}]
     policies = [(".marginal/policies/coding.md", "Never use a blocking sleep in async code.")]
 
-    prompt = _build_finding_prompt(files, policies, [], ".")
+    prompt = build_finding_prompt(files, policies, [], ".")
 
     assert ".marginal/policies/coding.md" in prompt
     assert "Never use a blocking sleep in async code." in prompt
@@ -600,7 +601,7 @@ def test_build_finding_prompt_folds_policy_content_in():
 def test_build_finding_prompt_redacts_a_secret_in_the_patch():
     files = [{"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"}]
 
-    prompt = _build_finding_prompt(_redact_patches(files), [], [], ".")
+    prompt = build_finding_prompt(redact_patches(files), [], [], ".")
 
     assert "AKIAIOSFODNN7EXAMPLE" not in prompt
     assert prompt.endswith("--- marginal/config.py ---\n+api_key = '[REDACTED]'")
@@ -612,7 +613,7 @@ def test_redacted_filenames_returns_only_files_whose_patch_changed():
         {"filename": "marginal/config.py", "patch": "+api_key = 'AKIAIOSFODNN7EXAMPLE'"},
     ]
 
-    assert _redacted_filenames(files, _redact_patches(files)) == ["marginal/config.py"]
+    assert redacted_filenames(files, redact_patches(files)) == ["marginal/config.py"]
 
 
 def test_redaction_warning_lines_empty_when_nothing_redacted():
@@ -1700,7 +1701,7 @@ def test_build_graph_context_section_skips_unreadable_callers_to_reach_a_readabl
         callers=[*unreadable_callers, CallSite(file="readable.py", line=2)],
     )
 
-    section = _build_graph_context_section([changed], str(tmp_path))
+    section = build_graph_context_section([changed], str(tmp_path))
 
     assert section is not None
     assert "readable.py:2" in section
@@ -3221,7 +3222,7 @@ def test_review_prompt_is_unchanged_without_maintainer_replies(
     )
 
     # Byte-identical to the prompt built with no replies argument at all.
-    assert baseline == _build_finding_prompt(
+    assert baseline == build_finding_prompt(
         [{"filename": "marginal/retry.py", "patch": _RETRY_PATCH}], [], [], "."
     )
     assert unanswered == baseline
@@ -3236,7 +3237,7 @@ def test_build_replies_section_keeps_only_the_most_recent_threads_and_clips_them
     ]
     threads[-1] = ReplyThread(path="a.py", line=99, comment="c" * 5000, replies=("r" * 5000,))
 
-    section = _build_replies_section(threads)
+    section = build_replies_section(threads)
 
     assert section.count("--- a.py:") == MAX_REPLY_THREADS
     assert "reply 4\n" not in section and "reply 5" in section
@@ -3253,7 +3254,7 @@ def test_build_replies_section_redacts_a_secret_quoted_in_a_reply():
         replies=("AKIAIOSFODNN7EXAMPLE is fake",),
     )
 
-    section = _build_replies_section([thread])
+    section = build_replies_section([thread])
 
     assert "AKIAIOSFODNN7EXAMPLE" not in section
     assert "[REDACTED] is fake" in section
@@ -3284,7 +3285,7 @@ _BUDGET_FILES = [{"filename": "marginal/retry.py", "patch": _RETRY_PATCH}]
 def _budget_prompt_tokens():
     """The estimate `run_review` computes for `_BUDGET_FILES` in a non-git
     tmp dir with no policies (so no graph context either)."""
-    return _estimate_tokens(_build_finding_prompt(_redact_patches(_BUDGET_FILES), [], [], "."))
+    return estimate_tokens(build_finding_prompt(redact_patches(_BUDGET_FILES), [], [], "."))
 
 
 def _run_budgeted_review(mock_github_client, mock_provider, *extra_args):
@@ -3298,9 +3299,9 @@ def _run_budgeted_review(mock_github_client, mock_provider, *extra_args):
 
 
 def test_estimate_tokens_rounds_characters_up_to_whole_tokens():
-    assert _estimate_tokens("") == 0
-    assert _estimate_tokens("abc") == 1
-    assert _estimate_tokens("abcd") == 2
+    assert estimate_tokens("") == 0
+    assert estimate_tokens("abc") == 1
+    assert estimate_tokens("abcd") == 2
 
 
 def test_review_at_exactly_the_prompt_budget_still_calls_the_model(
@@ -3778,7 +3779,7 @@ def test_build_graph_context_section_shares_callers_fairly_and_puts_tests_last(t
         changed("lib.Model.method", "lib.py", 10, 12, [33, 34, 35]),
     ]
 
-    section = _build_graph_context_section(context, str(tmp_path))
+    section = build_graph_context_section(context, str(tmp_path))
 
     shown = re.findall(r"^`([^`]+)` \(defined in", section, re.M)
     # Library code before tests, the method before the class around it.
@@ -3789,7 +3790,7 @@ def test_build_graph_context_section_shares_callers_fairly_and_puts_tests_last(t
 
 
 def test_is_test_path():
-    assert _is_test_path("tests/basic/tests.py")
-    assert _is_test_path("pkg/test_utils.py")
-    assert _is_test_path("pkg/utils_test.py")
-    assert not _is_test_path("django/db/models/base.py")
+    assert is_test_path("tests/basic/tests.py")
+    assert is_test_path("pkg/test_utils.py")
+    assert is_test_path("pkg/utils_test.py")
+    assert not is_test_path("django/db/models/base.py")
