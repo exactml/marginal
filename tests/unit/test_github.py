@@ -373,6 +373,42 @@ def test_add_labels_posts_them_on_the_issue(monkeypatch):
     assert call.kwargs["json"] == {"labels": ["marginal:high"]}
 
 
+def test_remove_label_deletes_it_with_the_name_url_encoded(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = _response(200, [])
+    client = _client(PermissionsConfig(write=PermissionsWrite(labels=True)), session)
+
+    client.remove_label(7, "marginal:critical")
+
+    call = session.request.call_args
+    assert call.args == (
+        "DELETE",
+        "https://api.github.com/repos/acme/widgets/issues/7/labels/marginal%3Acritical",
+    )
+
+
+def test_remove_label_already_gone_is_not_an_error(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = _response(404, {"message": "Label does not exist"})
+    client = _client(PermissionsConfig(write=PermissionsWrite(labels=True)), session)
+
+    client.remove_label(7, "marginal:critical")
+
+    session.request.assert_called_once()
+
+
+def test_remove_label_denied_without_write_labels(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    client = _client(session=session)
+
+    with pytest.raises(PermissionDeniedError, match="permissions.write.labels"):
+        client.remove_label(7, "marginal:critical")
+    session.request.assert_not_called()
+
+
 def test_add_labels_denied_without_write_labels(monkeypatch):
     monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
     session = MagicMock()

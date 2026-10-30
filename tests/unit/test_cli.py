@@ -2576,7 +2576,14 @@ def _finding_at(line, message, severity=Severity.HIGH):
 
 
 def _run_review_posting(
-    tmp_path, monkeypatch, mock_github_client, mock_provider, findings, posted, args=("--comment",)
+    tmp_path,
+    monkeypatch,
+    mock_github_client,
+    mock_provider,
+    findings,
+    posted,
+    args=("--comment",),
+    labels=(),
 ):
     """Run `marginal review --comment` with `posted` as what GitHub already has.
 
@@ -2586,7 +2593,10 @@ def _run_review_posting(
     monkeypatch.chdir(tmp_path)
     client = mock_github_client.return_value
     client.reset_mock()
-    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request.return_value = {
+        **_pull_request(),
+        "labels": [{"name": name} for name in labels],
+    }
     client.get_pull_request_files.return_value = [
         {"filename": "marginal/retry.py", "patch": _RETRY_PATCH}
     ]
@@ -2705,6 +2715,204 @@ def test_review_warns_when_labelling_fails_and_still_finishes_the_run(
     assert json.loads(captured.out)["comment_posted"] is False
     assert (
         "marginal review: couldn't add labels: GitHub API error 403: "
+        "Resource not accessible by integration" in captured.err
+    )
+    assert "Traceback" not in captured.err
+
+
+def test_review_removes_a_severity_label_no_finding_earns_any_more(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config_with_labels(tmp_path)
+
+    _run_review_posting(
+        tmp_path,
+        monkeypatch,
+        mock_github_client,
+        mock_provider,
+        [],
+        [],
+        labels=["marginal:critical", "bug", "marginal-foo", "marginal", "marginal:wip"],
+    )
+
+    client = mock_github_client.return_value
+    # A team's own `marginal:` label isn't a severity marginal set.
+    assert (42, "marginal:wip") not in [c.args for c in client.remove_label.call_args_list]
+    client.remove_label.assert_called_once_with(42, "marginal:critical")
+    client.add_labels.assert_not_called()
+
+
+def test_review_keeps_the_severity_labels_its_findings_still_earn(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config_with_labels(tmp_path)
+    findings = [_finding_at(2, "This sleep blocks the async retry loop.")]
+
+    _run_review_posting(
+        tmp_path,
+        monkeypatch,
+        mock_github_client,
+        mock_provider,
+        findings,
+        [],
+        labels=["marginal:critical", "marginal:high"],
+    )
+
+    client = mock_github_client.return_value
+    client.add_labels.assert_called_once_with(42, ["marginal:high"])
+    client.remove_label.assert_called_once_with(42, "marginal:critical")
+
+
+def test_review_keeps_the_label_of_a_finding_it_already_posted(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config_with_labels(tmp_path)
+    client = mock_github_client.return_value
+    findings = [_finding_at(2, "This sleep blocks the async retry loop.", Severity.CRITICAL)]
+    _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, findings, [])
+    first_post = client.create_review.call_args
+
+    _run_review_posting(
+        tmp_path,
+        monkeypatch,
+        mock_github_client,
+        mock_provider,
+        findings,
+        [first_post],
+        labels=["marginal:critical"],
+    )
+
+    client.create_review.assert_not_called()
+    client.remove_label.assert_not_called()
+
+
+def test_review_removes_no_labels_with_write_labels_off(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config(tmp_path)
+
+    _run_review_posting(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, [], [], labels=["marginal:low"]
+    )
+
+    mock_github_client.return_value.remove_label.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        # Over the prompt budget: no model call.
+        "models:\n  reviewer:\n    provider: anthropic\n    model: claude-3-5-sonnet\n"
+        "review:\n  max_prompt_tokens: 1\n",
+        # No reviewer model configured.
+        "",
+        # Every changed file ignored.
+        "models:\n  reviewer:\n    provider: anthropic\n    model: claude-3-5-sonnet\n"
+        "review:\n  ignore_paths: ['marginal/retry.py']\n",
+    ],
+    ids=["over-budget", "no-reviewer", "all-ignored"],
+)
+def test_review_that_reviewed_nothing_removes_no_labels(
+    tmp_path, monkeypatch, mock_github_client, mock_provider, config
+):
+    config_dir = tmp_path / ".marginal"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text(
+        "version: 1\n" + config + "permissions:\n  write:\n    labels: true\n"
+    )
+
+    _run_review_posting(
+        tmp_path,
+        monkeypatch,
+        mock_github_client,
+        mock_provider,
+        [],
+        [],
+        labels=["marginal:critical"],
+    )
+
+    mock_github_client.return_value.create_review.assert_called_once()
+    mock_github_client.return_value.remove_label.assert_not_called()
+
+
+def test_review_keeps_the_label_of_a_finding_over_max_comments(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    config_dir = tmp_path / ".marginal"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text(
+        "version: 1\nmodels:\n  reviewer:\n    provider: anthropic\n    model: claude-3-5-sonnet\n"
+        "review:\n  max_comments: 1\npermissions:\n  write:\n    labels: true\n"
+    )
+    client = mock_github_client.return_value
+    low = _finding_at(2, "The sleep length is hardcoded.", Severity.LOW)
+    _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, [low], [])
+    first_post = client.create_review.call_args
+
+    # A new critical takes the one slot; the posted low is still there.
+    critical = _finding_at(2, "This sleep blocks the async retry loop.", Severity.CRITICAL)
+    _run_review_posting(
+        tmp_path,
+        monkeypatch,
+        mock_github_client,
+        mock_provider,
+        [critical, low],
+        [first_post],
+        labels=["marginal:low"],
+    )
+
+    client.add_labels.assert_called_once_with(42, ["marginal:critical"])
+    client.remove_label.assert_not_called()
+
+
+def test_review_removes_no_labels_without_comment(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config_with_labels(tmp_path)
+
+    _run_review_posting(
+        tmp_path,
+        monkeypatch,
+        mock_github_client,
+        mock_provider,
+        [],
+        [],
+        args=(),
+        labels=["marginal:low"],
+    )
+
+    mock_github_client.return_value.remove_label.assert_not_called()
+
+
+def test_review_warns_when_removing_a_label_fails_and_still_finishes_the_run(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config_with_labels(tmp_path)
+    client = mock_github_client.return_value
+    findings = [_finding_at(2, "This sleep blocks the async retry loop.")]
+    _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, findings, [])
+    first_post = client.create_review.call_args
+    capsys.readouterr()
+
+    client.remove_label.side_effect = GitHubAPIError(403, "Resource not accessible by integration")
+    exit_code = _run_review_posting(
+        tmp_path,
+        monkeypatch,
+        mock_github_client,
+        mock_provider,
+        findings,
+        [first_post],
+        args=("--comment", "--format", "json"),
+        labels=["marginal:critical", "marginal:low"],
+    )
+
+    assert exit_code == 0
+    assert client.remove_label.call_count == 2
+    client.list_review_threads.assert_called_once_with(42)
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["comment_posted"] is False
+    assert (
+        "marginal review: couldn't remove label marginal:critical: GitHub API error 403: "
         "Resource not accessible by integration" in captured.err
     )
     assert "Traceback" not in captured.err

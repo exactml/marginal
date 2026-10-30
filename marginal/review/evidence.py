@@ -33,6 +33,10 @@ _NOT_A_NAME = {"self", "cls", "None", "True", "False", "return", "def", "class",
 _SEVERITY_RANK = {severity: rank for rank, severity in enumerate(Severity)}
 
 
+# A finding that passed every check but didn't fit under `review.max_comments`.
+OVER_MAX_COMMENTS = "over review.max_comments"
+
+
 @dataclass(frozen=True)
 class Decision:
     """Whether a checked finding is posted, and why, in one phrase."""
@@ -136,9 +140,7 @@ def decide(findings: list[Finding], view: CodeView, *, max_comments: int) -> lis
     passing.sort(key=lambda f: (-_SEVERITY_RANK[f.severity], -f._checks.quotes_verified))
     posted = [Decision(f, posted=True, reason=_posted_reason(f._checks)) for f in passing]
     for decision in posted[max_comments:]:
-        decisions.append(
-            Decision(decision.finding, posted=False, reason="over review.max_comments")
-        )
+        decisions.append(Decision(decision.finding, posted=False, reason=OVER_MAX_COMMENTS))
     return posted[:max_comments] + decisions
 
 

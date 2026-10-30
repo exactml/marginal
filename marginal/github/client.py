@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from typing import Literal
+from urllib.parse import quote
 
 import requests
 
@@ -198,6 +199,17 @@ class GitHubClient:
         return self._request(
             "POST", f"/repos/{self._repo}/issues/{number}/labels", json={"labels": labels}
         )
+
+    def remove_label(self, number: int, name: str) -> None:
+        """Remove label `name` from PR `number`; one that's already gone is
+        not an error. Requires `permissions.write.labels`."""
+        self._require_write("labels")
+        try:
+            self._request(
+                "DELETE", f"/repos/{self._repo}/issues/{number}/labels/{quote(name, safe='')}"
+            )
+        except GitHubNotFoundError:
+            pass
 
     def resolve_review_thread(self, thread_id: str) -> None:
         """Mark review thread `thread_id` resolved, as the "Resolve conversation"
