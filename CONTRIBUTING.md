@@ -138,7 +138,7 @@ The evidence is tied to the PR's latest commit, so run it again after a push.
 marginal/
 ├── config/     # repo-local config loading
 ├── providers/  # model provider abstraction (BYOK)
-├── context/    # diff, git history, dependency detection
+├── context/    # base-commit config and policies, caller graph, CI conclusion
 ├── graph/      # code graph
 ├── policy/     # policy engine
 ├── review/     # findings, evidence checks, dedup, redaction
