@@ -144,11 +144,14 @@ checkpoint.
 A worker commits a run's knowledge and finishes its job in one transaction. The
 owner-checked finish update runs first, and if it changes no row the
 transaction rolls back, so a worker that lost the job commits nothing. Commits
-of knowledge also carry the job's idempotency key, and are inserted with
+of knowledge are recorded once per job: the transaction first inserts one
+`knowledge_commits` row carrying the job's idempotency key, with
 `ON CONFLICT (idempotency_key) DO NOTHING`, which SQLite and Postgres both
-support. A commit that hits the key inserts nothing and raises nothing, so the
-transaction and its finish update still commit on either engine. The knowledge
-is already in, and the job finishes as done. A setting caps how many agent runs happen at once.
+support. Only if that row went in does the worker insert the run's claims,
+evidence, entities and links, each referencing the commit row. If the key
+already exists, all of the run's knowledge is already in, so the worker inserts
+none of it and raises nothing. The transaction and its finish update still
+commit on either engine, and the job finishes as done. A setting caps how many agent runs happen at once.
 
 | Option | Pros | Cons |
 |---|---|---|
