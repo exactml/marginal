@@ -230,6 +230,24 @@ def test_investigation_transitions_stamp_start_and_completion():
     assert inv.completed_at == FEB_5
 
 
+def test_an_investigation_cannot_finish_before_it_starts():
+    running = Investigation(
+        organization_id="org",
+        title="t",
+        objective="o",
+        initiated_by="eslem",
+        status=InvestigationStatus.RUNNING,
+        started_at=FEB_5,
+    )
+    with pytest.raises(ValidationError, match="before started_at"):
+        transition_investigation(running, InvestigationStatus.COMPLETED, at=FEB_1)
+
+
+def test_a_raw_string_status_is_stored_as_the_enum():
+    claim = transition_claim(_claim(), "active")
+    assert claim.status is ClaimStatus.ACTIVE
+
+
 def test_a_naive_transition_time_is_rejected():
     inv = Investigation(
         organization_id="org",

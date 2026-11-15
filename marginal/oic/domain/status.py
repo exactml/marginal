@@ -60,7 +60,7 @@ def transition_claim(claim: Claim, to: ClaimStatus) -> Claim:
     """Return `claim` with status `to`, or raise if the lifecycle forbids it."""
     if to not in CLAIM_TRANSITIONS[claim.status]:
         raise IllegalTransitionError(f"claim {claim.id}: {claim.status.value} -> {to.value}")
-    return claim.model_copy(update={"status": to})
+    return Claim.model_validate({**claim.model_dump(), "status": to})
 
 
 def transition_investigation(

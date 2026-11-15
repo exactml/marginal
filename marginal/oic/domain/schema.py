@@ -50,7 +50,8 @@ def _now() -> datetime:
 
 
 class _Model(BaseModel):
-    # Frozen: a change is a new object, so history is never edited in place.
+    # Frozen: fields can't be reassigned, so a status or time change is a new object.
+    # Dict fields aren't deep-frozen; the append-only store keeps history immutable.
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
@@ -305,6 +306,12 @@ class Investigation(_Model):
     current_checkpoint_id: str | None = None
     failure_reason: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _finishes_after_it_starts(self) -> Investigation:
+        if self.started_at and self.completed_at and self.completed_at < self.started_at:
+            raise ValueError("completed_at is before started_at")
+        return self
 
 
 class InvestigationEvent(_Model):
