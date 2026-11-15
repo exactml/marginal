@@ -401,3 +401,36 @@ def test_links_never_cross_organizations(knowledge):
                 claim_id=ours.id, evidence_id="missing", relation=EvidenceRelation.SUPPORTS
             )
         )
+
+
+def test_a_claim_cannot_reference_another_organizations_records(knowledge, conn):
+    knowledge.add_organization(Organization(id="other", name="Other"))
+    knowledge.add_scope(
+        Scope(
+            id="their-repo", organization_id="other", scope_type=ScopeType.REPOSITORY, scope_key="x"
+        )
+    )
+    knowledge.add_entity(
+        Entity(
+            id="their-svc",
+            organization_id="other",
+            entity_type=EntityType.SERVICE,
+            canonical_name="S",
+        )
+    )
+    their_inv = Investigation(organization_id="other", title="t", objective="o", initiated_by="e")
+    InvestigationRepository(conn).add(their_inv)
+
+    for claim, kw in [
+        (_claim("x", scope_ids=("repo-a", "their-repo")), {}),
+        (_claim("x", subject_entity_id="their-svc"), {}),
+        (_claim("x", object_entity_id="their-svc"), {}),
+        (_claim("x"), {"investigation_id": their_inv.id}),
+    ]:
+        with pytest.raises(ValueError, match="another organization"):
+            knowledge.add_claim(claim, by="a", reason="r", **kw)
+
+    ours = _claim("ours")
+    knowledge.add_claim(ours, by="a", reason="r")
+    with pytest.raises(ValueError, match="another organization"):
+        knowledge.revise_claim(ours, by="a", reason="r", investigation_id=their_inv.id)

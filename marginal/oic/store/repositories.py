@@ -256,7 +256,28 @@ class KnowledgeRepository(_Repository):
         row = self.conn.execute(query).first()
         return self._version(row) if row else None
 
+    def _other_org_ids(self, organization_id: str, table: Table, ids) -> list[str]:
+        """Which of `ids` exist in `table` under another organization."""
+        ids = [i for i in ids if i]
+        if not ids:
+            return []
+        query = select(table.c.id).where(
+            table.c.id.in_(ids), table.c.organization_id != organization_id
+        )
+        return list(self.conn.execute(query).scalars())
+
     def _write_version(self, claim, version, by, reason, investigation_id, at) -> int:
+        # Foreign keys check that these rows exist; this checks they're in the claim's org.
+        org = claim.organization_id
+        foreign = [
+            *self._other_org_ids(org, t.scopes, claim.scope_ids),
+            *self._other_org_ids(
+                org, t.entities, (claim.subject_entity_id, claim.object_entity_id)
+            ),
+            *self._other_org_ids(org, t.investigations, (investigation_id,)),
+        ]
+        if foreign:
+            raise ValueError(f"claim {claim.id} references another organization's {foreign}")
         self.conn.execute(
             insert(t.claim_versions).values(
                 **_row(claim),
