@@ -50,7 +50,7 @@ INVESTIGATION_TRANSITIONS: dict[InvestigationStatus, frozenset[InvestigationStat
     _I.WAITING_FOR_USER: frozenset({_I.QUEUED, _I.CANCELLED}),
     _I.WAITING_FOR_APPROVAL: frozenset({_I.QUEUED, _I.COMPLETED, _I.CANCELLED}),
     _I.PAUSED: frozenset({_I.QUEUED, _I.CANCELLED}),
-    _I.FAILED: frozenset({_I.QUEUED}),
+    _I.FAILED: frozenset({_I.QUEUED, _I.CANCELLED}),
     _I.COMPLETED: frozenset(),
     _I.CANCELLED: frozenset(),
 }
@@ -81,7 +81,10 @@ def transition_investigation(
         update["started_at"] = at
     if to in (InvestigationStatus.COMPLETED, InvestigationStatus.CANCELLED):
         update["completed_at"] = at
-    return investigation.model_copy(update=update)
+    if investigation.status is InvestigationStatus.FAILED and to is InvestigationStatus.QUEUED:
+        update["failure_reason"] = None  # a retry starts without the old failure
+    # model_validate, not model_copy, so a naive `at` is rejected like anywhere else.
+    return Investigation.model_validate({**investigation.model_dump(), **update})
 
 
 def supersede(old: Claim, new: Claim, at: datetime) -> tuple[Claim, Claim]:

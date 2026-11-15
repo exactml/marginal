@@ -220,6 +220,33 @@ def test_investigation_transitions_stamp_start_and_completion():
     assert inv.completed_at == FEB_5
 
 
+def test_a_naive_transition_time_is_rejected():
+    inv = Investigation(
+        organization_id="org",
+        title="t",
+        objective="o",
+        initiated_by="eslem",
+        status=InvestigationStatus.QUEUED,
+    )
+    with pytest.raises(ValidationError):
+        transition_investigation(inv, InvestigationStatus.RUNNING, at=datetime(2026, 2, 1))
+
+
+def test_a_failed_investigation_can_be_retried_or_cancelled():
+    failed = Investigation(
+        organization_id="org",
+        title="t",
+        objective="o",
+        initiated_by="eslem",
+        status=InvestigationStatus.FAILED,
+        failure_reason="agent crashed",
+    )
+    assert transition_investigation(failed, InvestigationStatus.QUEUED).failure_reason is None
+    cancelled = transition_investigation(failed, InvestigationStatus.CANCELLED, at=FEB_5)
+    assert cancelled.completed_at == FEB_5
+    assert cancelled.failure_reason == "agent crashed"
+
+
 def test_a_failed_investigation_has_no_completion_time():
     inv = Investigation(
         organization_id="org",
