@@ -14,6 +14,8 @@ PACKAGES = [
     "marginal.cli",
     "marginal.oic.domain.schema",
     "marginal.oic.domain.status",
+    "marginal.oic.store.database",
+    "marginal.oic.store.repositories",
 ]
 
 
