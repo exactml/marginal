@@ -79,7 +79,13 @@ Claim history is append-only, so a new version is a new row and older rows are
 never updated in place.
 
 On a replaced host, `litestream restore` rebuilds the database from S3 before
-the server starts. That means the EC2 disk is never the only copy.
+the server starts. Litestream replicates asynchronously, about once a second, so
+the recovery point is the last few seconds: writes committed in that window can
+be lost with the host. A job whose result was lost restores as `queued` or as
+an expired `running` job, and reruns. Its idempotency key protects only commits
+that reached S3, which is acceptable for v1 because a rerun repeats an agent
+run, not a human decision. Anything older than that window is never only on the
+EC2 disk.
 
 CI runs the store tests on SQLite. A Postgres CI job is added together with the
 first Postgres deployment, not before.
@@ -122,7 +128,10 @@ above. When its attempts are used up, the claim can no longer match, so each
 poll also fails such jobs: `UPDATE jobs SET status = 'failed' WHERE status =
 'running' AND lease_until < now AND attempts >= max_attempts`. Their
 investigations move to `failed` with the reason, so a job can't stay `running`
-forever. An agent that asks a person a question doesn't hold a lease while it
+forever. A live worker whose agent run raises applies the same rule: it puts the
+job back in `queued` with a later `run_after` only while `attempts <
+max_attempts`, and otherwise marks it `failed`. So no job waits in `queued`
+with no attempts left. An agent that asks a person a question doesn't hold a lease while it
 waits: the run checkpoints and ends, the investigation moves to
 `waiting_for_user`, and the answer queues a new job that resumes from the
 checkpoint. Commits of knowledge carry the job's idempotency key, so a retried
