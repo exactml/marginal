@@ -92,6 +92,11 @@ def supersede(old: Claim, new: Claim, at: datetime) -> tuple[Claim, Claim]:
     always has one active claim. Its `recorded_at` is untouched, so learning
     about a change late stays visible.
     """
+    if new.id == old.id:
+        raise ValueError("a claim cannot supersede itself")
+    if old.valid_until is not None and at > old.valid_until:
+        # Moving valid_until later would make the old claim true when it wasn't.
+        raise ValueError("cannot supersede a claim after its validity already ended")
     if new.organization_id != old.organization_id:
         raise ValueError("a claim can only be superseded by a claim in the same organization")
     if new.status not in (ClaimStatus.PROPOSED, ClaimStatus.ACTIVE):

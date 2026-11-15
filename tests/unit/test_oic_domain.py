@@ -181,6 +181,20 @@ def test_a_dead_claim_cannot_be_the_replacement(status):
         supersede(_claim(status=ClaimStatus.ACTIVE), _claim("y", status=status), at=FEB_1)
 
 
+def test_a_claim_cannot_supersede_itself():
+    claim = _claim(status=ClaimStatus.ACTIVE)
+    with pytest.raises(ValueError, match="itself"):
+        supersede(claim, claim, at=FEB_1)
+
+
+def test_supersession_never_extends_the_old_validity():
+    ended = _claim(status=ClaimStatus.ACTIVE, valid_from=JAN_10, valid_until=FEB_1)
+    with pytest.raises(ValueError, match="already ended"):
+        supersede(ended, _claim("y"), at=FEB_5)
+    closed, _ = supersede(ended, _claim("y"), at=FEB_1)
+    assert closed.valid_until == FEB_1
+
+
 def test_the_replacement_must_be_in_the_same_organization():
     other_org = Claim(
         organization_id="other",
