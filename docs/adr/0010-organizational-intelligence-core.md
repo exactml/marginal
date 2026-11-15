@@ -95,11 +95,20 @@ first Postgres deployment, not before.
 
 Investigations run as rows in a `jobs` table: status, attempts, `run_after`,
 `lease_until` and a unique `idempotency_key`. A worker (`marginal oic worker`)
-claims a job by setting its lease in one transaction. SQLite serializes writers,
-so two workers can't claim the same job. On restart, jobs whose lease has
-expired go back to the queue. Commits of knowledge carry the job's idempotency
-key, so a retried job can't commit the same proposal twice. A setting caps how
-many agent runs happen at once.
+claims a job with one conditional `UPDATE ... SET lease_until = ?, worker = ?
+WHERE id = ? AND (status = 'queued' OR lease_until < now)` and owns it only if
+exactly one row changed. That is atomic on SQLite and on Postgres alike, so two
+workers can't claim the same job on either engine.
+
+While an agent run is active, the worker renews its lease on a heartbeat well
+inside the lease length, so a long run is never reclaimed while it is still
+alive. Only a dead worker's lease expires, and then the job goes back to the
+queue. An agent that asks a person a question doesn't hold a lease while it
+waits: the run checkpoints and ends, the investigation moves to
+`waiting_for_user`, and the answer queues a new job that resumes from the
+checkpoint. Commits of knowledge carry the job's idempotency key, so a retried
+job can't commit the same proposal twice. A setting caps how many agent runs
+happen at once.
 
 | Option | Pros | Cons |
 |---|---|---|
@@ -141,16 +150,23 @@ or API responses.
 
 ### 7. Auth for v1
 
-There is one organization and one trust domain.
+There is one organization and one trust domain. The host is the trust
+boundary: it runs only the four processes listed below, and the auth proxy is
+its only listener reachable from outside.
 
-- **People** sign in through an auth proxy in front of the server, for example
-  oauth2-proxy with GitHub or Google. The server reads the user from the
-  proxy's header, and it listens only on localhost or a private interface so
-  the header can't be forged from outside.
-- **Machines**, including the reviewer, send `Authorization: Bearer <token>`.
-  Tokens are created with `marginal oic token create`, stored only as hashes,
-  and can be revoked.
-- No request is anonymous. Per-user permissions come later.
+- **People** sign in through the auth proxy, for example oauth2-proxy with
+  GitHub or Google. The proxy drops any user header a client sends and sets its
+  own. The server listens only on localhost, so the user header can come only
+  from the proxy.
+- **Machines**, including the reviewer on a GitHub-hosted runner, send
+  `Authorization: Bearer <token>` to the proxy's public address. The proxy
+  passes a request that carries a Bearer token through to the server without a
+  login redirect. The server validates that token itself and ignores the user
+  header on any request that has one, so a token request can't claim to be a
+  person. Tokens are created with `marginal oic token create`, stored only as
+  hashes, and can be revoked.
+- No request is anonymous: the server rejects a request that has neither a
+  valid token nor a user header. Per-user permissions come later.
 
 | Option | Pros | Cons |
 |---|---|---|
