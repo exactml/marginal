@@ -35,6 +35,8 @@ marginal = "marginal.cli:main"
 anthropic = ["anthropic>=0.34"]
 openai = ["openai>=1.40"]
 ollama = ["openai>=1.40"]
+# The Organizational Intelligence Core; `pip install marginal-review` stays without it.
+oic = ["sqlalchemy>=2", "alembic>=1.13"]
 dev = ["ruff>=0.6", "pytest>=8", "pytest-asyncio>=0.24", "towncrier>=24.7", "anthropic>=0.34", "openai>=1.40"]
 
 [tool.setuptools.packages.find]
@@ -42,6 +44,7 @@ include = ["marginal*"]
 
 [tool.setuptools.package-data]
 "marginal.review" = ["prompts/*.md"]
+"marginal.oic.store" = ["migrations/*.py", "migrations/*.mako", "migrations/versions/*.py"]
 
 [tool.towncrier]
 directory = "changelog.d"
