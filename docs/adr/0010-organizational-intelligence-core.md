@@ -99,8 +99,9 @@ first Postgres deployment, not before.
 
 ### 4. Jobs
 
-Investigations run as rows in a `jobs` table: status, attempts, `run_after`,
-`lease_until` and a unique `idempotency_key`. A worker (`marginal oic worker`)
+Investigations run as rows in a `jobs` table: `status`, `worker`, `attempts`,
+`max_attempts` (per job, defaulting from a setting), `run_after`, `lease_until`
+and a unique `idempotency_key`. A worker (`marginal oic worker`)
 claims a job with one conditional update and owns it only if exactly one row
 changed:
 
@@ -138,9 +139,14 @@ therefore changes no row and stops, instead of overwriting the status of a run
 another worker now owns. An agent that asks a person a question doesn't hold a lease while it
 waits: the run checkpoints and ends, the investigation moves to
 `waiting_for_user`, and the answer queues a new job that resumes from the
-checkpoint. Commits of knowledge carry the job's idempotency key, so a retried
-job can't commit the same proposal twice. A setting caps how many agent runs
-happen at once.
+checkpoint.
+
+A worker commits a run's knowledge and finishes its job in one transaction. The
+owner-checked finish update runs first, and if it changes no row the
+transaction rolls back, so a worker that lost the job commits nothing. Commits
+of knowledge also carry the job's idempotency key. If a commit hits that key,
+the knowledge is already in, and the worker treats it as done, not as an error
+to retry. A setting caps how many agent runs happen at once.
 
 | Option | Pros | Cons |
 |---|---|---|
