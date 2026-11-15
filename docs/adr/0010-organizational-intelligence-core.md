@@ -112,8 +112,17 @@ Postgres alike, so two workers can't claim the same job on either engine.
 
 While an agent run is active, the worker renews its lease on a heartbeat well
 inside the lease length, so a long run is never reclaimed while it is still
-alive. Only a dead worker's lease expires, and then the job goes back to the
-queue. An agent that asks a person a question doesn't hold a lease while it
+alive. The renewal is conditional too: `UPDATE jobs SET lease_until = ? WHERE
+id = ? AND worker = ? AND status = 'running'`. If it changes no row, another
+worker has taken the job over, and this worker stops its agent run instead of
+taking the lease back.
+
+Only a dead worker's lease expires, and then the job is taken over by the claim
+above. When its attempts are used up, the claim can no longer match, so each
+poll also fails such jobs: `UPDATE jobs SET status = 'failed' WHERE status =
+'running' AND lease_until < now AND attempts >= max_attempts`. Their
+investigations move to `failed` with the reason, so a job can't stay `running`
+forever. An agent that asks a person a question doesn't hold a lease while it
 waits: the run checkpoints and ends, the investigation moves to
 `waiting_for_user`, and the answer queues a new job that resumes from the
 checkpoint. Commits of knowledge carry the job's idempotency key, so a retried
