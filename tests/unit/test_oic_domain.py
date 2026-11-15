@@ -195,6 +195,16 @@ def test_supersession_never_extends_the_old_validity():
     assert closed.valid_until == FEB_1
 
 
+def test_supersession_never_overwrites_the_replacements_own_history():
+    old = _claim(status=ClaimStatus.ACTIVE)
+    with pytest.raises(ValueError, match="already supersedes"):
+        supersede(old, _claim("y", supersedes_claim_id="another"), at=FEB_1)
+    with pytest.raises(ValueError, match="already starts"):
+        supersede(old, _claim("y", valid_from=FEB_5), at=FEB_1)
+    _, opened = supersede(old, _claim("y", valid_from=FEB_1), at=FEB_1)
+    assert opened.valid_from == FEB_1
+
+
 def test_the_replacement_must_be_in_the_same_organization():
     other_org = Claim(
         organization_id="other",

@@ -100,6 +100,10 @@ def supersede(old: Claim, new: Claim, at: datetime) -> tuple[Claim, Claim]:
     if old.valid_until is not None and at > old.valid_until:
         # Moving valid_until later would make the old claim true when it wasn't.
         raise ValueError("cannot supersede a claim after its validity already ended")
+    if new.supersedes_claim_id not in (None, old.id):
+        raise ValueError(f"claim {new.id} already supersedes {new.supersedes_claim_id}")
+    if new.valid_from is not None and new.valid_from != at:
+        raise ValueError(f"claim {new.id} already starts at {new.valid_from}, not {at}")
     if new.organization_id != old.organization_id:
         raise ValueError("a claim can only be superseded by a claim in the same organization")
     if new.status not in (ClaimStatus.PROPOSED, ClaimStatus.ACTIVE):
