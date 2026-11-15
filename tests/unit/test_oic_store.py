@@ -520,3 +520,9 @@ def test_a_saved_record_keeps_its_owner(knowledge, conn):
     knowledge.add_organization(Organization(id="other", name="Other"))
     with pytest.raises(ValueError, match="organization_id"):
         repo.save(inv.model_copy(update={"organization_id": "other"}))
+
+
+def test_a_repeated_scope_is_stored_once(knowledge):
+    c = _claim("x", scope_ids=("repo-a", "repo-a"), status=ClaimStatus.ACTIVE)
+    knowledge.add_claim(c, by="a", reason="r")
+    assert [x.id for x in knowledge.claims_valid_at("org", FEB_1, scope_id="repo-a")] == [c.id]

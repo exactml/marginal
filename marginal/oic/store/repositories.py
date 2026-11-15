@@ -309,7 +309,7 @@ class KnowledgeRepository(_Repository):
                 insert(t.claim_version_scopes),
                 [
                     {"claim_id": claim.id, "version": version, "scope_id": s}
-                    for s in claim.scope_ids
+                    for s in dict.fromkeys(claim.scope_ids)  # a repeated scope is one row
                 ],
             )
         return version
