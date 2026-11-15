@@ -201,9 +201,11 @@ its only listener reachable from outside.
 - No request is anonymous: the server rejects a request that has neither a
   valid token nor a user header. Per-user permissions come later.
 - **Local development** has no proxy, so `marginal serve --dev-user <name>`
-  treats every request as that user. The server refuses to start with
-  `--dev-user` unless it is bound to localhost, so the flag can't open a
-  deployed host.
+  treats every request as that user. Binding to localhost isn't a guard here,
+  because the deployed server listens on localhost too. Instead, the server
+  refuses to start with `--dev-user` when its database holds any API token. A
+  deployed host always has at least the reviewer's token, and a local dev
+  database has none. The deployment's service definition never passes the flag.
 
 | Option | Pros | Cons |
 |---|---|---|
