@@ -131,7 +131,11 @@ investigations move to `failed` with the reason, so a job can't stay `running`
 forever. A live worker whose agent run raises applies the same rule: it puts the
 job back in `queued` with a later `run_after` only while `attempts <
 max_attempts`, and otherwise marks it `failed`. So no job waits in `queued`
-with no attempts left. An agent that asks a person a question doesn't hold a lease while it
+with no attempts left. Every status change a worker makes after claiming, from
+renewing to requeueing, failing or finishing, uses the same `WHERE id = ? AND
+worker = ? AND status = 'running'` check. A stalled worker that lost the job
+therefore changes no row and stops, instead of overwriting the status of a run
+another worker now owns. An agent that asks a person a question doesn't hold a lease while it
 waits: the run checkpoints and ends, the investigation moves to
 `waiting_for_user`, and the answer queues a new job that resumes from the
 checkpoint. Commits of knowledge carry the job's idempotency key, so a retried
@@ -196,6 +200,10 @@ its only listener reachable from outside.
   hashes, and can be revoked.
 - No request is anonymous: the server rejects a request that has neither a
   valid token nor a user header. Per-user permissions come later.
+- **Local development** has no proxy, so `marginal serve --dev-user <name>`
+  treats every request as that user. The server refuses to start with
+  `--dev-user` unless it is bound to localhost, so the flag can't open a
+  deployed host.
 
 | Option | Pros | Cons |
 |---|---|---|
