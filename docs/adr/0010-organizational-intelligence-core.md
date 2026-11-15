@@ -95,10 +95,20 @@ first Postgres deployment, not before.
 
 Investigations run as rows in a `jobs` table: status, attempts, `run_after`,
 `lease_until` and a unique `idempotency_key`. A worker (`marginal oic worker`)
-claims a job with one conditional `UPDATE ... SET lease_until = ?, worker = ?
-WHERE id = ? AND (status = 'queued' OR lease_until < now)` and owns it only if
-exactly one row changed. That is atomic on SQLite and on Postgres alike, so two
-workers can't claim the same job on either engine.
+claims a job with one conditional update and owns it only if exactly one row
+changed:
+
+```sql
+UPDATE jobs SET status = 'running', worker = ?, lease_until = ?, attempts = attempts + 1
+WHERE id = ? AND attempts < max_attempts
+  AND ((status = 'queued' AND run_after <= now)
+       OR (status = 'running' AND lease_until < now))
+```
+
+The update moves the job out of `queued`, so a second worker's identical update
+changes no row. Only a `running` job whose lease has expired can be taken over;
+finished and waiting jobs never match. The statement is atomic on SQLite and on
+Postgres alike, so two workers can't claim the same job on either engine.
 
 While an agent run is active, the worker renews its lease on a heartbeat well
 inside the lease length, so a long run is never reclaimed while it is still
@@ -154,16 +164,17 @@ There is one organization and one trust domain. The host is the trust
 boundary: it runs only the four processes listed below, and the auth proxy is
 its only listener reachable from outside.
 
+- **Every request**: the proxy drops any user header the client sent, on every
+  request, before anything else. The server listens only on localhost, so a
+  user header can come only from the proxy's own login.
 - **People** sign in through the auth proxy, for example oauth2-proxy with
-  GitHub or Google. The proxy drops any user header a client sends and sets its
-  own. The server listens only on localhost, so the user header can come only
-  from the proxy.
+  GitHub or Google, which then sets the user header.
 - **Machines**, including the reviewer on a GitHub-hosted runner, send
   `Authorization: Bearer <token>` to the proxy's public address. The proxy
   passes a request that carries a Bearer token through to the server without a
-  login redirect. The server validates that token itself and ignores the user
-  header on any request that has one, so a token request can't claim to be a
-  person. Tokens are created with `marginal oic token create`, stored only as
+  login redirect. The server rejects any request whose Bearer token is invalid,
+  revoked or unknown, and on a request with a token it never reads the user
+  header. Tokens are created with `marginal oic token create`, stored only as
   hashes, and can be revoked.
 - No request is anonymous: the server rejects a request that has neither a
   valid token nor a user header. Per-user permissions come later.
