@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from pydantic import AwareDatetime, TypeAdapter
+
 from marginal.oic.domain.schema import Claim, ClaimStatus, Investigation, InvestigationStatus
 
 __all__ = [
@@ -95,6 +97,8 @@ def supersede(old: Claim, new: Claim, at: datetime) -> tuple[Claim, Claim]:
     always has one active claim. Its `recorded_at` is untouched, so learning
     about a change late stays visible.
     """
+    # Validate first, so a naive `at` fails like anywhere else, not in a comparison.
+    at = TypeAdapter(AwareDatetime).validate_python(at)
     if new.id == old.id:
         raise ValueError("a claim cannot supersede itself")
     if old.valid_until is not None and at > old.valid_until:

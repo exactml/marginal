@@ -205,6 +205,15 @@ def test_supersession_never_overwrites_the_replacements_own_history():
     assert opened.valid_from == FEB_1
 
 
+@pytest.mark.parametrize(
+    ("old_kw", "new_kw"), [({"valid_until": FEB_5}, {}), ({}, {"valid_from": FEB_1})]
+)
+def test_a_naive_supersession_time_is_a_validation_error(old_kw, new_kw):
+    old = _claim(status=ClaimStatus.ACTIVE, **old_kw)
+    with pytest.raises(ValidationError):
+        supersede(old, _claim("y", **new_kw), at=datetime(2026, 2, 1))
+
+
 def test_the_replacement_must_be_in_the_same_organization():
     other_org = Claim(
         organization_id="other",
