@@ -168,6 +168,55 @@ def test_only_an_active_like_claim_can_be_superseded():
         supersede(_claim(), _claim("y"), at=FEB_1)
 
 
+def test_the_replacement_becomes_active():
+    _, opened = supersede(_claim(status=ClaimStatus.ACTIVE), _claim("y"), at=FEB_1)
+    assert opened.status is ClaimStatus.ACTIVE
+
+
+@pytest.mark.parametrize(
+    "status", [ClaimStatus.REJECTED, ClaimStatus.RETRACTED, ClaimStatus.SUPERSEDED]
+)
+def test_a_dead_claim_cannot_be_the_replacement(status):
+    with pytest.raises(IllegalTransitionError):
+        supersede(_claim(status=ClaimStatus.ACTIVE), _claim("y", status=status), at=FEB_1)
+
+
+def test_the_replacement_must_be_in_the_same_organization():
+    other_org = Claim(
+        organization_id="other",
+        claim_type=ClaimType.OWNERSHIP,
+        claim_text="y",
+        scope_ids=("repo-a",),
+        created_by="agent",
+    )
+    with pytest.raises(ValueError, match="same organization"):
+        supersede(_claim(status=ClaimStatus.ACTIVE), other_org, at=FEB_1)
+
+
+def test_investigation_transitions_stamp_start_and_completion():
+    inv = Investigation(organization_id="org", title="t", objective="o", initiated_by="eslem")
+    inv = transition_investigation(inv, InvestigationStatus.QUEUED, at=JAN_10)
+    inv = transition_investigation(inv, InvestigationStatus.RUNNING, at=FEB_1)
+    inv = transition_investigation(inv, InvestigationStatus.WAITING_FOR_USER, at=FEB_1)
+    inv = transition_investigation(inv, InvestigationStatus.QUEUED, at=FEB_5)
+    inv = transition_investigation(inv, InvestigationStatus.RUNNING, at=FEB_5)
+    assert inv.started_at == FEB_1  # the first start is kept on resume
+    assert inv.completed_at is None
+    inv = transition_investigation(inv, InvestigationStatus.COMPLETED, at=FEB_5)
+    assert inv.completed_at == FEB_5
+
+
+def test_a_failed_investigation_has_no_completion_time():
+    inv = Investigation(
+        organization_id="org",
+        title="t",
+        objective="o",
+        initiated_by="eslem",
+        status=InvestigationStatus.RUNNING,
+    )
+    assert transition_investigation(inv, InvestigationStatus.FAILED).completed_at is None
+
+
 def test_supporting_and_contradicting_evidence_coexist_on_one_claim():
     claim = _claim(status=ClaimStatus.ACTIVE)
     pr, incident = _evidence("exactml/x#1"), _evidence("exactml/x#2")

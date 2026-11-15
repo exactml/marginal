@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from marginal.oic.domain.schema import Claim, ClaimStatus, Investigation, InvestigationStatus
 
@@ -64,27 +64,49 @@ def transition_claim(claim: Claim, to: ClaimStatus) -> Claim:
 
 
 def transition_investigation(
-    investigation: Investigation, to: InvestigationStatus
+    investigation: Investigation, to: InvestigationStatus, at: datetime | None = None
 ) -> Investigation:
-    """Return `investigation` with status `to`, or raise if the lifecycle forbids it."""
+    """Return `investigation` with status `to`, or raise if the lifecycle forbids it.
+
+    Also stamps `started_at` on the first move to RUNNING and `completed_at` on
+    COMPLETED or CANCELLED. FAILED gets no `completed_at`: it can be retried.
+    """
     if to not in INVESTIGATION_TRANSITIONS[investigation.status]:
         raise IllegalTransitionError(
             f"investigation {investigation.id}: {investigation.status.value} -> {to.value}"
         )
-    return investigation.model_copy(update={"status": to})
+    at = at or datetime.now(timezone.utc)
+    update: dict = {"status": to}
+    if to is InvestigationStatus.RUNNING and investigation.started_at is None:
+        update["started_at"] = at
+    if to in (InvestigationStatus.COMPLETED, InvestigationStatus.CANCELLED):
+        update["completed_at"] = at
+    return investigation.model_copy(update=update)
 
 
 def supersede(old: Claim, new: Claim, at: datetime) -> tuple[Claim, Claim]:
     """Replace `old` with `new` from valid time `at`, keeping both.
 
     The old claim's validity closes at `at` and it becomes superseded; the new
-    one starts at `at` and points back at the old one. Its `recorded_at` is
-    untouched, so learning about a change late stays visible.
+    one becomes active from `at` and points back at the old one, so the fact
+    always has one active claim. Its `recorded_at` is untouched, so learning
+    about a change late stays visible.
     """
+    if new.organization_id != old.organization_id:
+        raise ValueError("a claim can only be superseded by a claim in the same organization")
+    if new.status not in (ClaimStatus.PROPOSED, ClaimStatus.ACTIVE):
+        raise IllegalTransitionError(
+            f"claim {new.id} is {new.status.value} and cannot replace claim {old.id}"
+        )
     closed = transition_claim(old, ClaimStatus.SUPERSEDED)
     # model_validate, not model_copy, so the valid-interval check runs again.
     closed = Claim.model_validate({**closed.model_dump(), "valid_until": at})
     opened = Claim.model_validate(
-        {**new.model_dump(), "valid_from": at, "supersedes_claim_id": old.id}
+        {
+            **new.model_dump(),
+            "status": ClaimStatus.ACTIVE,
+            "valid_from": at,
+            "supersedes_claim_id": old.id,
+        }
     )
     return closed, opened
