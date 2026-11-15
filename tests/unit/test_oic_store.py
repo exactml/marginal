@@ -13,7 +13,7 @@ import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
-from sqlalchemy import inspect
+from sqlalchemy import insert, inspect
 from sqlalchemy.exc import IntegrityError
 
 from marginal.oic.domain.schema import (
@@ -48,7 +48,7 @@ from marginal.oic.domain.status import (
 )
 from marginal.oic.store.database import alembic_config, open_engine, upgrade
 from marginal.oic.store.repositories import InvestigationRepository, KnowledgeRepository
-from marginal.oic.store.tables import metadata
+from marginal.oic.store.tables import metadata, scopes
 
 JAN_1 = datetime(2026, 1, 1, tzinfo=timezone.utc)
 JAN_10 = datetime(2026, 1, 10, tzinfo=timezone.utc)
@@ -245,8 +245,22 @@ def test_revision_needs_an_existing_claim_and_add_needs_a_new_one(knowledge):
 
 
 def test_a_claim_cannot_reference_an_unknown_scope(knowledge):
-    with pytest.raises(IntegrityError):
+    with pytest.raises(ValueError, match="outside organization"):
         knowledge.add_claim(_claim("x", scope_ids=("nowhere",)), by="a", reason="r")
+
+
+def test_foreign_keys_are_enforced_on_sqlite_too(conn):
+    # The repositories check first; this proves the database is a second guard.
+    with pytest.raises(IntegrityError):
+        conn.execute(
+            insert(scopes).values(
+                id="s",
+                organization_id="missing",
+                scope_type="team",
+                scope_key="k",
+                metadata={},
+            )
+        )
 
 
 def test_times_come_back_timezone_aware(knowledge):
@@ -427,10 +441,82 @@ def test_a_claim_cannot_reference_another_organizations_records(knowledge, conn)
         (_claim("x", object_entity_id="their-svc"), {}),
         (_claim("x"), {"investigation_id": their_inv.id}),
     ]:
-        with pytest.raises(ValueError, match="another organization"):
+        with pytest.raises(ValueError, match="outside organization"):
             knowledge.add_claim(claim, by="a", reason="r", **kw)
 
     ours = _claim("ours")
     knowledge.add_claim(ours, by="a", reason="r")
-    with pytest.raises(ValueError, match="another organization"):
+    with pytest.raises(ValueError, match="outside organization"):
         knowledge.revise_claim(ours, by="a", reason="r", investigation_id=their_inv.id)
+
+
+def test_every_write_refuses_references_outside_its_organization(knowledge, conn):
+    knowledge.add_organization(Organization(id="other", name="Other"))
+    knowledge.add_scope(
+        Scope(
+            id="their-repo", organization_id="other", scope_type=ScopeType.REPOSITORY, scope_key="x"
+        )
+    )
+    investigations = InvestigationRepository(conn)
+    their_inv = Investigation(organization_id="other", title="t", objective="o", initiated_by="e")
+    investigations.add(their_inv)
+
+    writes = [
+        lambda: knowledge.add_scope(
+            Scope(
+                organization_id="org",
+                scope_type=ScopeType.TEAM,
+                scope_key="t",
+                parent_scope_id="their-repo",
+            )
+        ),
+        lambda: knowledge.add_entity(
+            Entity(
+                organization_id="org",
+                entity_type=EntityType.TEAM,
+                canonical_name="T",
+                scope_ids=("their-repo",),
+            )
+        ),
+        lambda: knowledge.add_evidence(
+            _evidence("acme/api#1").model_copy(update={"investigation_id": their_inv.id})
+        ),
+        # A JSON id list gets no foreign key, so a missing id is caught here too.
+        lambda: knowledge.add_evidence(
+            _evidence("acme/api#2").model_copy(update={"scope_ids": ("missing",)})
+        ),
+        lambda: investigations.add(
+            Investigation(
+                organization_id="org",
+                title="t",
+                objective="o",
+                initiated_by="e",
+                scope_ids=("their-repo",),
+            )
+        ),
+    ]
+    for write in writes:
+        with pytest.raises(ValueError, match="outside organization"):
+            write()
+
+
+def test_a_saved_record_keeps_its_owner(knowledge, conn):
+    repo = InvestigationRepository(conn)
+    inv = Investigation(organization_id="org", title="t", objective="o", initiated_by="e")
+    other = Investigation(organization_id="org", title="t2", objective="o", initiated_by="e")
+    repo.add(inv)
+    repo.add(other)
+    run = AgentRun(investigation_id=inv.id, provider="fake")
+    proposal = KnowledgeProposal(
+        investigation_id=inv.id, proposal_type=ProposalType.NEW_CLAIM, payload={}
+    )
+    repo.add_agent_run(run)
+    repo.add_proposal(proposal)
+
+    with pytest.raises(ValueError, match="investigation_id"):
+        repo.save_agent_run(run.model_copy(update={"investigation_id": other.id}))
+    with pytest.raises(ValueError, match="investigation_id"):
+        repo.save_proposal(proposal.model_copy(update={"investigation_id": other.id}))
+    knowledge.add_organization(Organization(id="other", name="Other"))
+    with pytest.raises(ValueError, match="organization_id"):
+        repo.save(inv.model_copy(update={"organization_id": "other"}))

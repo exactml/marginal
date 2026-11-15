@@ -85,10 +85,34 @@ class _Repository:
         return [_model(cls, row) for row in self.conn.execute(query)]
 
     def _replace(self, table: Table, model: BaseModel) -> None:
+        """Update a working record in place; which org or investigation it belongs to is fixed."""
         values = _row(model)
-        result = self.conn.execute(update(table).where(table.c.id == values["id"]).values(**values))
-        if result.rowcount != 1:
+        stored = self.conn.execute(select(table).where(table.c.id == values["id"])).first()
+        if stored is None:
             raise KeyError(f"{table.name} {values['id']} doesn't exist")
+        for owner in ("organization_id", "investigation_id"):
+            if owner in values and values[owner] != stored._mapping[owner]:
+                raise ValueError(f"{table.name} {values['id']} can't change its {owner}")
+        self.conn.execute(update(table).where(table.c.id == values["id"]).values(**values))
+
+    def _check_refs(self, organization_id: str, what: str, refs: dict[Table, object]) -> None:
+        """Refuse references to rows that are missing or in another organization.
+
+        Foreign keys only prove a row exists, and JSON id lists get no check at all.
+        """
+        outside = []
+        for table, ids in refs.items():
+            wanted = {i for i in ids if i}
+            if not wanted:
+                continue
+            query = select(table.c.id).where(
+                table.c.id.in_(wanted), table.c.organization_id == organization_id
+            )
+            outside += sorted(wanted - set(self.conn.execute(query).scalars()))
+        if outside:
+            raise ValueError(
+                f"{what} references records outside organization {organization_id}: {outside}"
+            )
 
 
 class KnowledgeRepository(_Repository):
@@ -105,12 +129,17 @@ class KnowledgeRepository(_Repository):
         return self._get(t.organizations, Organization, organization_id)
 
     def add_scope(self, scope: Scope) -> None:
+        refs = {t.scopes: (scope.parent_scope_id,)}
+        self._check_refs(scope.organization_id, f"scope {scope.id}", refs)
         self._insert(t.scopes, scope)
 
     def scope(self, scope_id: str) -> Scope | None:
         return self._get(t.scopes, Scope, scope_id)
 
     def add_entity(self, entity: Entity) -> None:
+        self._check_refs(
+            entity.organization_id, f"entity {entity.id}", {t.scopes: entity.scope_ids}
+        )
         self._insert(t.entities, entity)
 
     def entity(self, entity_id: str) -> Entity | None:
@@ -207,6 +236,8 @@ class KnowledgeRepository(_Repository):
         return self._all(Claim, query)
 
     def add_evidence(self, evidence: Evidence) -> None:
+        refs = {t.scopes: evidence.scope_ids, t.investigations: (evidence.investigation_id,)}
+        self._check_refs(evidence.organization_id, f"evidence {evidence.id}", refs)
         self._insert(t.evidence, evidence)
 
     def evidence(self, evidence_id: str) -> Evidence | None:
@@ -256,28 +287,13 @@ class KnowledgeRepository(_Repository):
         row = self.conn.execute(query).first()
         return self._version(row) if row else None
 
-    def _other_org_ids(self, organization_id: str, table: Table, ids) -> list[str]:
-        """Which of `ids` exist in `table` under another organization."""
-        ids = [i for i in ids if i]
-        if not ids:
-            return []
-        query = select(table.c.id).where(
-            table.c.id.in_(ids), table.c.organization_id != organization_id
-        )
-        return list(self.conn.execute(query).scalars())
-
     def _write_version(self, claim, version, by, reason, investigation_id, at) -> int:
-        # Foreign keys check that these rows exist; this checks they're in the claim's org.
-        org = claim.organization_id
-        foreign = [
-            *self._other_org_ids(org, t.scopes, claim.scope_ids),
-            *self._other_org_ids(
-                org, t.entities, (claim.subject_entity_id, claim.object_entity_id)
-            ),
-            *self._other_org_ids(org, t.investigations, (investigation_id,)),
-        ]
-        if foreign:
-            raise ValueError(f"claim {claim.id} references another organization's {foreign}")
+        refs = {
+            t.scopes: claim.scope_ids,
+            t.entities: (claim.subject_entity_id, claim.object_entity_id),
+            t.investigations: (investigation_id,),
+        }
+        self._check_refs(claim.organization_id, f"claim {claim.id}", refs)
         self.conn.execute(
             insert(t.claim_versions).values(
                 **_row(claim),
@@ -320,6 +336,8 @@ class InvestigationRepository(_Repository):
     """
 
     def add(self, investigation: Investigation) -> None:
+        refs = {t.scopes: investigation.scope_ids}
+        self._check_refs(investigation.organization_id, f"investigation {investigation.id}", refs)
         self._insert(t.investigations, investigation)
 
     def get(self, investigation_id: str) -> Investigation | None:
@@ -335,6 +353,8 @@ class InvestigationRepository(_Repository):
             raise IllegalTransitionError(
                 f"investigation {investigation.id}: {before.value} -> {after.value}"
             )
+        refs = {t.scopes: investigation.scope_ids}
+        self._check_refs(investigation.organization_id, f"investigation {investigation.id}", refs)
         self._replace(t.investigations, investigation)
 
     def add_event(self, event: InvestigationEvent) -> None:
