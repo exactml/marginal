@@ -292,6 +292,7 @@ class KnowledgeRepository(_Repository):
             t.scopes: claim.scope_ids,
             t.entities: (claim.subject_entity_id, claim.object_entity_id),
             t.investigations: (investigation_id,),
+            t.claim_versions: (claim.supersedes_claim_id,),
         }
         self._check_refs(claim.organization_id, f"claim {claim.id}", refs)
         self.conn.execute(

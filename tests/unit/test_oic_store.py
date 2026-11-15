@@ -526,3 +526,11 @@ def test_a_repeated_scope_is_stored_once(knowledge):
     c = _claim("x", scope_ids=("repo-a", "repo-a"), status=ClaimStatus.ACTIVE)
     knowledge.add_claim(c, by="a", reason="r")
     assert [x.id for x in knowledge.claims_valid_at("org", FEB_1, scope_id="repo-a")] == [c.id]
+
+
+def test_a_claim_can_only_supersede_an_existing_claim_in_its_organization(knowledge):
+    with pytest.raises(ValueError, match="outside organization"):
+        knowledge.add_claim(_claim("x", supersedes_claim_id="missing"), by="a", reason="r")
+    old = _claim("old")
+    knowledge.add_claim(old, by="a", reason="r")
+    knowledge.add_claim(_claim("new", supersedes_claim_id=old.id), by="a", reason="r")
