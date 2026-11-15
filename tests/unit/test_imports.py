@@ -12,6 +12,8 @@ PACKAGES = [
     "marginal.review",
     "marginal.github",
     "marginal.cli",
+    "marginal.oic.domain.schema",
+    "marginal.oic.domain.status",
 ]
 
 
