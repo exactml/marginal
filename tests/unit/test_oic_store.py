@@ -361,3 +361,43 @@ def test_investigation_records_round_trip(knowledge, conn):
     proposal = proposal.model_copy(update={"review_status": ProposalReviewStatus.ACCEPTED})
     repo.save_proposal(proposal)
     assert repo.proposals(inv.id) == [proposal]
+
+
+def test_links_never_cross_organizations(knowledge):
+    knowledge.add_organization(Organization(id="other", name="Other"))
+    knowledge.add_scope(
+        Scope(
+            id="other-repo", organization_id="other", scope_type=ScopeType.REPOSITORY, scope_key="x"
+        )
+    )
+    ours = _claim("ours")
+    theirs = Claim(
+        organization_id="other",
+        claim_type=ClaimType.DESCRIPTIVE,
+        claim_text="theirs",
+        scope_ids=("other-repo",),
+        created_by="agent",
+    )
+    knowledge.add_claim(ours, by="a", reason="r")
+    knowledge.add_claim(theirs, by="a", reason="r")
+    their_evidence = _evidence("other/repo#1").model_copy(update={"organization_id": "other"})
+    knowledge.add_evidence(their_evidence)
+
+    with pytest.raises(ValueError, match="different organizations"):
+        knowledge.link_evidence(
+            ClaimEvidence(
+                claim_id=ours.id, evidence_id=their_evidence.id, relation=EvidenceRelation.SUPPORTS
+            )
+        )
+    with pytest.raises(ValueError, match="different organizations"):
+        knowledge.link_claims(
+            ClaimLink(
+                from_claim_id=ours.id, to_claim_id=theirs.id, link_type=ClaimLinkType.RELATED_TO
+            )
+        )
+    with pytest.raises(KeyError, match="evidence"):
+        knowledge.link_evidence(
+            ClaimEvidence(
+                claim_id=ours.id, evidence_id="missing", relation=EvidenceRelation.SUPPORTS
+            )
+        )

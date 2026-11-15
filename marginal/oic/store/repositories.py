@@ -213,8 +213,13 @@ class KnowledgeRepository(_Repository):
         return self._get(t.evidence, Evidence, evidence_id)
 
     def link_evidence(self, link: ClaimEvidence) -> None:
-        if self.claim(link.claim_id) is None:
+        claim, evidence = self.claim(link.claim_id), self.evidence(link.evidence_id)
+        if claim is None:
             raise KeyError(f"claim {link.claim_id} doesn't exist")
+        if evidence is None:
+            raise KeyError(f"evidence {link.evidence_id} doesn't exist")
+        if evidence.organization_id != claim.organization_id:
+            raise ValueError("evidence and claim belong to different organizations")
         self._insert(t.claim_evidence, link)
 
     def evidence_links(self, claim_id: str) -> list[ClaimEvidence]:
@@ -224,9 +229,13 @@ class KnowledgeRepository(_Repository):
         return self._all(ClaimEvidence, query)
 
     def link_claims(self, link: ClaimLink) -> None:
-        for claim_id in (link.from_claim_id, link.to_claim_id):
-            if self.claim(claim_id) is None:
-                raise KeyError(f"claim {claim_id} doesn't exist")
+        source, target = self.claim(link.from_claim_id), self.claim(link.to_claim_id)
+        if source is None:
+            raise KeyError(f"claim {link.from_claim_id} doesn't exist")
+        if target is None:
+            raise KeyError(f"claim {link.to_claim_id} doesn't exist")
+        if source.organization_id != target.organization_id:
+            raise ValueError("linked claims belong to different organizations")
         self._insert(t.claim_links, link)
 
     def claim_links(self, claim_id: str) -> list[ClaimLink]:
