@@ -164,8 +164,10 @@ def test_init_writes_the_marginal_pair_skill_the_plugin_ships(tmp_path):
     written = (tmp_path / ".claude" / "skills" / "marginal-pair" / "SKILL.md").read_bytes()
     shipped = Path(__file__).parents[2] / "marginal" / "skills" / "marginal-pair" / "SKILL.md"
     assert written.startswith(b"---\nname: marginal-pair\n")
-    # Byte for byte, so its non-ASCII text survives a non-UTF-8 locale.
-    assert written == shipped.read_bytes()
+    assert b"\r" not in written
+    # Decoded as UTF-8, so its non-ASCII text survives a non-UTF-8 locale; read
+    # as text, so a Windows checkout's CRLF copy still matches.
+    assert written.decode("utf-8") == shipped.read_text(encoding="utf-8")
 
 
 def test_init_defaults_to_current_directory(tmp_path, monkeypatch):
