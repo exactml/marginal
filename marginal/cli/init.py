@@ -125,7 +125,7 @@ def run_init(path: str | Path = ".", force: bool = False) -> int:
 
 
 def _pair_skill() -> str:
-    return (files("marginal") / "skills" / "marginal-pair" / "SKILL.md").read_text()
+    return (files("marginal") / "skills" / "marginal-pair" / "SKILL.md").read_text("utf-8")
 
 
 def _write_file(target: Path, content: str, force: bool) -> InitStatus:
@@ -136,7 +136,7 @@ def _write_file(target: Path, content: str, force: bool) -> InitStatus:
     else:
         status = "created"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content)
+    target.write_text(content, encoding="utf-8")
     return status
 
 

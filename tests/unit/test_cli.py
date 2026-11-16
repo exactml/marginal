@@ -161,10 +161,11 @@ def test_init_workflow_runs_one_review_per_pr_at_a_time(tmp_path):
 def test_init_writes_the_marginal_pair_skill_the_plugin_ships(tmp_path):
     main(["init", str(tmp_path)])
 
-    written = (tmp_path / ".claude" / "skills" / "marginal-pair" / "SKILL.md").read_text()
+    written = (tmp_path / ".claude" / "skills" / "marginal-pair" / "SKILL.md").read_bytes()
     shipped = Path(__file__).parents[2] / "marginal" / "skills" / "marginal-pair" / "SKILL.md"
-    assert written.startswith("---\nname: marginal-pair\n")
-    assert written == shipped.read_text()
+    assert written.startswith(b"---\nname: marginal-pair\n")
+    # Byte for byte, so its non-ASCII text survives a non-UTF-8 locale.
+    assert written == shipped.read_bytes()
 
 
 def test_init_defaults_to_current_directory(tmp_path, monkeypatch):
