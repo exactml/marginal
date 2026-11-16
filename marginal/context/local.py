@@ -24,11 +24,24 @@ class LocalCheckout:
         self.root = self._git("rev-parse", "--show-toplevel").strip()
 
     def _git(self, *args: str) -> str:
-        result = subprocess.run(
-            ["git", "--literal-pathspecs", "-C", self.root, "-c", "core.quotePath=false", *args],
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "--literal-pathspecs",
+                    "-C",
+                    self.root,
+                    "-c",
+                    "core.quotePath=false",
+                    *args,
+                ],
+                capture_output=True,
+                # A file in another encoding still reviews, with its odd bytes replaced.
+                encoding="utf-8",
+                errors="replace",
+            )
+        except FileNotFoundError:
+            raise LocalGitError("--local needs git on PATH") from None
         if result.returncode != 0:
             raise LocalGitError(f"git {args[0]} failed: {result.stderr.strip()}")
         return result.stdout

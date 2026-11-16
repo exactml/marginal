@@ -84,6 +84,24 @@ def test_local_type_change_is_listed_without_a_patch(repo):
     ]
 
 
+def test_local_file_in_another_encoding_still_gets_a_patch(repo):
+    (repo / "latin.py").write_bytes("N = 'caf\xe9'\n".encode("latin-1"))
+    _git(repo, "add", "latin.py")
+    checkout = LocalCheckout(str(repo))
+
+    (file,) = checkout.get_compare_files(checkout.merge_base("main"), checkout.head())
+
+    assert file["patch"] == "@@ -0,0 +1 @@\n+N = 'caf\ufffd'"
+
+
+def test_local_review_without_git_fails_cleanly(repo, monkeypatch, capsys):
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("PATH", str(repo / "no-bin"))
+
+    assert main(["review", "--local", "main"]) == 1
+    assert "--local needs git on PATH" in capsys.readouterr().err
+
+
 def test_local_get_file_reads_a_commit_not_the_working_tree(repo):
     (repo / ".marginal" / "config.yaml").write_text("version: 1\n")
     checkout = LocalCheckout(str(repo))
