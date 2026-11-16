@@ -108,6 +108,7 @@ marginal init
 ✓ Created .marginal/policies/
 ✓ Created .marginal/policies/README.md
 ✓ Created .github/workflows/marginal.yml
+✓ Created .claude/skills/marginal-pair/SKILL.md
 
 marginal is ready.
 
@@ -127,6 +128,9 @@ Next steps -- pick one provider:
 
 The workflow already passes both secrets, so nothing else needs editing.
 Open a pull request to get your first review.
+
+Before you push, `/marginal-pair` in Claude Code reviews your local changes
+with the same rules, on your Claude Code subscription.
 ```
 
 ```yaml

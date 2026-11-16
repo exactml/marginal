@@ -158,6 +158,15 @@ def test_init_workflow_runs_one_review_per_pr_at_a_time(tmp_path):
     }
 
 
+def test_init_writes_the_marginal_pair_skill_the_plugin_ships(tmp_path):
+    main(["init", str(tmp_path)])
+
+    written = (tmp_path / ".claude" / "skills" / "marginal-pair" / "SKILL.md").read_text()
+    shipped = Path(__file__).parents[2] / "marginal" / "skills" / "marginal-pair" / "SKILL.md"
+    assert written.startswith("---\nname: marginal-pair\n")
+    assert written == shipped.read_text()
+
+
 def test_init_defaults_to_current_directory(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
@@ -3861,3 +3870,14 @@ def test_is_test_path():
     assert is_test_path("pkg/test_utils.py")
     assert is_test_path("pkg/utils_test.py")
     assert not is_test_path("django/db/models/base.py")
+
+
+def test_the_claude_code_plugin_version_is_the_package_version():
+    """The plugin is only updated for users when its version changes, so it
+    moves with each release (cut-release bumps both)."""
+    root = Path(__file__).parents[2]
+    plugin = json.loads((root / ".claude-plugin" / "plugin.json").read_text())
+    package = re.search(r'^version = "(.+)"', (root / "pyproject.toml").read_text(), re.M)
+    assert plugin["version"] == package.group(1)
+    assert plugin["skills"] == "./marginal/skills/"
+    assert (root / "marginal" / "skills" / "marginal-pair" / "SKILL.md").is_file()
