@@ -320,6 +320,8 @@ pip install -U marginal-review           # the skill calls the marginal CLI (0.4
 /marginal:marginal-pair
 ```
 
+Before Claude Code 2.1.275, add the marketplace first: `/plugin marketplace add exactml/marginal`, then `/plugin install marginal@marginal`.
+
 Or commit it to one repo: `marginal init` writes `.claude/skills/marginal-pair/SKILL.md`, invoked as `/marginal-pair`. The plugin updates when marginal releases a new version (`claude plugin update marginal@marginal`); a committed copy stays as it is until you replace it.
 
 ## Run it anywhere
