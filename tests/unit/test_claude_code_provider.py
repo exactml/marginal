@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import sys
 
 import pytest
@@ -112,6 +113,38 @@ def test_another_error_answer_is_an_api_error(tmp_path):
 
     with pytest.raises(ProviderAPIError, match="usage limit"):
         asyncio.run(provider.generate("hi"))
+
+
+@pytest.mark.parametrize("answer", [None, ["a list"], "text"])
+def test_json_that_is_not_an_object_is_an_api_error(tmp_path, answer):
+    provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, answer))
+
+    with pytest.raises(ProviderAPIError, match="JSON object"):
+        asyncio.run(provider.generate("hi"))
+
+
+def test_a_cancelled_review_kills_the_cli(tmp_path):
+    script = tmp_path / "claude"
+    script.write_text(
+        f"#!{sys.executable}\nimport os, time\n"
+        f"open({str(tmp_path / 'pid')!r}, 'w').write(str(os.getpid()))\ntime.sleep(60)\n"
+    )
+    script.chmod(0o755)
+    provider = ClaudeCodeProvider("opus", executable=str(script))
+
+    async def cancel_mid_review():
+        task = asyncio.create_task(provider.generate("hi"))
+        while not (tmp_path / "pid").exists():
+            await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(cancel_mid_review())
+
+    pid = int((tmp_path / "pid").read_text())
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
 
 
 def test_a_missing_cli_is_a_missing_credential(tmp_path):
