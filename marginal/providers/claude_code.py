@@ -87,16 +87,21 @@ class ClaudeCodeProvider(ModelProvider):
                 process.communicate(prompt.encode()), TIMEOUT_SECONDS
             )
         except asyncio.TimeoutError:
-            process.kill()
-            await process.wait()
             raise ProviderAPIError(self._name, f"no answer within {TIMEOUT_SECONDS}s") from None
+        finally:
+            # Timed out or cancelled: don't leave it running on the user's quota.
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
         try:
             response = json.loads(stdout)
         except ValueError:
+            response = None
+        if not isinstance(response, dict):
             detail = stderr.decode(errors="replace").strip()
             raise ProviderAPIError(
-                self._name, detail or f"exited {process.returncode} without a JSON answer"
-            ) from None
+                self._name, detail or f"exited {process.returncode} without a JSON object"
+            )
         if response.get("is_error"):
             message = str(response.get("result") or response.get("subtype"))
             if "log in" in message.lower() or "login" in message.lower():
