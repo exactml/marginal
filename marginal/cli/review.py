@@ -17,6 +17,7 @@ from marginal.context import (
     load_base_policies,
     read_ci_conclusion,
 )
+from marginal.context.local import LocalCheckout
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubError
 from marginal.graph import ChangedDefinition
@@ -74,8 +75,15 @@ def run_review(
     output_format: OutputFormat = "text",
     provider: str | None = None,
     model: str | None = None,
+    local: str | None = None,
 ) -> int:
     """Fetch `pr_number` from `repo` and print a summary in `output_format`.
+
+    With `local` set to a git ref (e.g. `origin/master`), nothing is read from
+    GitHub: it reviews the working tree under `path` -- local commits plus
+    uncommitted changes to tracked files -- against where `HEAD` forked from
+    that ref, with config and policies as of that fork point, just as a PR
+    from here would be reviewed (`marginal.context.local.LocalCheckout`).
 
     `provider` and `model`, when given, replace `models.reviewer`'s for this
     run only, e.g. `provider="claude-code"` to review on the local Claude Code
@@ -213,8 +221,11 @@ def run_review(
     # Config and policies come from the PR's base commit, not its checkout:
     # otherwise the PR could rewrite the rules it's reviewed by. Read with
     # default permissions, since the config's own `permissions` aren't known yet.
-    base_client = GitHubClient(repo, PermissionsConfig())
+    checkout = LocalCheckout(path) if local is not None else None
+    base_client = checkout or GitHubClient(repo, PermissionsConfig())
     try:
+        if checkout is not None:
+            base, head = checkout.merge_base(local), checkout.head()
         pull_request = (
             base_client.get_pull_request(pr_number)
             if pr_number is not None
@@ -228,7 +239,7 @@ def run_review(
         print(f"marginal review: {exc}", file=sys.stderr)
         return 1
     reviewer_model = config.models.get("reviewer")
-    client = GitHubClient(repo, config.permissions)
+    client = checkout or GitHubClient(repo, config.permissions)
 
     try:
         files = (

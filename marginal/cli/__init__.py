@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from typing import get_args
@@ -35,11 +36,19 @@ def main(argv: list[str] | None = None) -> int:
     review_parser = subparsers.add_parser(
         "review", help="Fetch and summarize a pull request, or the diff between two commits"
     )
-    review_parser.add_argument("--repo", required=True, help="GitHub repository as owner/name")
+    review_parser.add_argument(
+        "--repo", help="GitHub repository as owner/name (not needed with --local)"
+    )
     review_target = review_parser.add_mutually_exclusive_group(required=True)
     review_target.add_argument("--pr", type=int, dest="pr_number", help="Pull request number")
     review_target.add_argument(
         "--base", help="Base commit SHA; with --head, review base...head instead of a PR"
+    )
+    review_target.add_argument(
+        "--local",
+        metavar="REF",
+        help="Review the local working tree against where HEAD forked from REF "
+        "(e.g. origin/master), using git only: nothing needs to be pushed",
     )
     review_parser.add_argument("--head", help="Head commit SHA, used with --base")
     review_parser.add_argument(
@@ -95,12 +104,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "init":
         return run_init(args.path, force=args.force)
     if args.command == "review":
-        if (args.base is None) != (args.head is None):
+        if args.local is None and args.repo is None:
+            review_parser.error("--repo is required, except with --local")
+        if args.local is None and (args.base is None) != (args.head is None):
             review_parser.error("--base and --head must be given together")
-        if args.base is not None and args.comment:
+        if args.local is not None and args.head is not None:
+            review_parser.error("--head is for --base; --local reviews the working tree")
+        if args.pr_number is None and args.comment:
             review_parser.error("--comment needs --pr: there's no pull request to post to")
         return run_review(
-            args.repo,
+            # Only names the review in its header and JSON.
+            args.repo or os.path.basename(os.getcwd()),
             args.pr_number,
             base=args.base,
             head=args.head,
@@ -108,6 +122,7 @@ def main(argv: list[str] | None = None) -> int:
             output_format=args.output_format,
             provider=args.provider,
             model=args.model,
+            local=args.local,
         )
 
     parser.error(f"unknown command: {args.command}")
