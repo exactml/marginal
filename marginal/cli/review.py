@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from collections import Counter
 from typing import Literal, get_args
@@ -65,7 +66,7 @@ OutputFormat = Literal["text", "json"]
 
 
 def run_review(
-    repo: str,
+    repo: str | None,
     pr_number: int | None,
     path: str = ".",
     *,
@@ -227,6 +228,8 @@ def run_review(
             checkout = LocalCheckout(path)
             # Config, callers and quotes are all found relative to the repo root.
             path = checkout.root
+            # Only names the review in its header and JSON.
+            repo = repo or os.path.basename(path)
             # `head` only labels the review: nothing reads a file at it, since
             # the diff, callers and quote checks all use the working tree.
             base, head = checkout.merge_base(local), checkout.head()

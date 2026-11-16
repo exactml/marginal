@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from typing import get_args
@@ -113,8 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.pr_number is None and args.comment:
             review_parser.error("--comment needs --pr: there's no pull request to post to")
         return run_review(
-            # Only names the review in its header and JSON.
-            args.repo or os.path.basename(os.getcwd()),
+            args.repo,
             args.pr_number,
             base=args.base,
             head=args.head,

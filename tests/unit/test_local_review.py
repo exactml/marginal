@@ -137,6 +137,21 @@ def test_review_local_from_a_subdirectory_reviews_from_the_repo_root(repo, monke
     # Found the config at the root, and the patch despite running from pkg/.
     prompt = get_provider.return_value.generate_structured.await_args.args[0]
     assert "+    return a / b" in prompt
+    assert json.loads(capsys.readouterr().out)["repo"] == repo.name
+
+
+def test_local_paths_with_glob_characters_are_matched_literally(repo):
+    (repo / "app").mkdir()
+    (repo / "app" / "[id].py").write_text("A = 1\n")
+    (repo / "app" / "i.py").write_text("B = 1\n")
+    _git(repo, "add", ".")
+    checkout = LocalCheckout(str(repo))
+
+    files = checkout.get_compare_files(checkout.merge_base("main"), checkout.head())
+
+    patches = {f["filename"]: f["patch"] for f in files}
+    assert patches["app/[id].py"] == "@@ -0,0 +1 @@\n+A = 1"
+    assert patches["app/i.py"] == "@@ -0,0 +1 @@\n+B = 1"
 
 
 def test_review_local_outside_a_repo_fails_cleanly(tmp_path, monkeypatch, capsys):

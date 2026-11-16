@@ -25,7 +25,7 @@ class LocalCheckout:
 
     def _git(self, *args: str) -> str:
         result = subprocess.run(
-            ["git", "-C", self.root, "-c", "core.quotePath=false", *args],
+            ["git", "--literal-pathspecs", "-C", self.root, "-c", "core.quotePath=false", *args],
             capture_output=True,
             text=True,
         )
