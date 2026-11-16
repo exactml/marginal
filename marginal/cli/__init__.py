@@ -46,6 +46,14 @@ def main(argv: list[str] | None = None) -> int:
         "--comment", action="store_true", help="Post the summary as a PR comment"
     )
     review_parser.add_argument(
+        "--provider",
+        help="Review with this provider instead of models.reviewer's, for this run only "
+        "(e.g. claude-code, to use your local Claude Code subscription)",
+    )
+    review_parser.add_argument(
+        "--model", help="Review with this model instead of models.reviewer's, for this run only"
+    )
+    review_parser.add_argument(
         "--format",
         choices=get_args(OutputFormat),
         default="text",
@@ -98,6 +106,8 @@ def main(argv: list[str] | None = None) -> int:
             head=args.head,
             comment=args.comment,
             output_format=args.output_format,
+            provider=args.provider,
+            model=args.model,
         )
 
     parser.error(f"unknown command: {args.command}")

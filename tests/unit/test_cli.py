@@ -13,6 +13,7 @@ from marginal.cli import main
 from marginal.cli.init import WORKFLOW_TEMPLATE
 from marginal.cli.review import run_review
 from marginal.config import MarginalConfig, load_config
+from marginal.config.schema import ModelSpec
 from marginal.context import build_graph_context
 from marginal.github.errors import (
     GitHubAPIError,
@@ -2543,6 +2544,72 @@ def test_review_of_two_commits_reviews_the_compare_diff_with_base_config(
         "prompt_over_budget": False,
         "usage": {"model": "anthropic:claude-3-5-sonnet", "input_tokens": 0, "output_tokens": 0},
     }
+
+
+def test_review_provider_flag_overrides_the_reviewer_for_this_run_only(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    mock_github_client.return_value.get_compare_files.return_value = [
+        {"filename": "marginal/retry.py", "status": "modified", "patch": _RETRY_PATCH}
+    ]
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=FindingsResponse(findings=[])
+    )
+
+    exit_code = main(
+        ["review", "--repo", "acme/widgets", "--base", "abc123", "--head", "def456"]
+        + ["--provider", "claude-code", "--format", "json"]
+    )
+
+    assert exit_code == 0
+    mock_provider.assert_called_once_with(
+        ModelSpec(provider="claude-code", model="claude-3-5-sonnet")
+    )
+    assert json.loads(capsys.readouterr().out)["usage"]["model"] == "claude-code:claude-3-5-sonnet"
+    assert "provider: anthropic" in (tmp_path / ".marginal" / "config.yaml").read_text()
+
+
+def test_review_provider_flag_without_a_configured_reviewer_needs_a_model(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = main(
+        ["review", "--repo", "acme/widgets", "--base", "abc123", "--head", "def456"]
+        + ["--provider", "claude-code"]
+    )
+
+    assert exit_code == 1
+    assert "--provider claude-code needs --model" in capsys.readouterr().err
+    mock_provider.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "flags, error",
+    [
+        (["--provider", "claude-code"], "--provider claude-code needs --model: "),
+        (["--model", "gpt-4o"], "--model needs --provider"),
+    ],
+)
+def test_review_override_refuses_a_model_from_another_provider(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider, flags, error
+):
+    monkeypatch.chdir(tmp_path)
+    if flags[0] == "--provider":
+        (tmp_path / ".marginal").mkdir()
+        (tmp_path / ".marginal" / "config.yaml").write_text(
+            "version: 1\nmodels:\n  reviewer:\n    provider: openai\n    model: gpt-4o\n"
+        )
+
+    exit_code = main(
+        ["review", "--repo", "acme/widgets", "--base", "abc123", "--head", "def456", *flags]
+    )
+
+    assert exit_code == 1
+    assert error in capsys.readouterr().err
+    mock_provider.assert_not_called()
 
 
 def test_review_of_two_commits_says_what_it_reviewed(
