@@ -15,6 +15,7 @@ _REGISTRY: dict[str, str] = {
     "anthropic": "marginal.providers.anthropic:AnthropicProvider",
     "openai": "marginal.providers.openai:OpenAIProvider",
     "ollama": "marginal.providers.ollama:OllamaProvider",
+    "claude-code": "marginal.providers.claude_code:ClaudeCodeProvider",
 }
 
 
