@@ -221,11 +221,16 @@ def run_review(
     # Config and policies come from the PR's base commit, not its checkout:
     # otherwise the PR could rewrite the rules it's reviewed by. Read with
     # default permissions, since the config's own `permissions` aren't known yet.
-    checkout = LocalCheckout(path) if local is not None else None
-    base_client = checkout or GitHubClient(repo, PermissionsConfig())
+    checkout = None
     try:
-        if checkout is not None:
+        if local is not None:
+            checkout = LocalCheckout(path)
+            # Config, callers and quotes are all found relative to the repo root.
+            path = checkout.root
+            # `head` only labels the review: nothing reads a file at it, since
+            # the diff, callers and quote checks all use the working tree.
             base, head = checkout.merge_base(local), checkout.head()
+        base_client = checkout or GitHubClient(repo, PermissionsConfig())
         pull_request = (
             base_client.get_pull_request(pr_number)
             if pr_number is not None

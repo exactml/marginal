@@ -122,6 +122,30 @@ def test_review_local_reviews_the_working_tree_without_github(repo, monkeypatch,
     assert result["changed_files"] == ["app.py"]
 
 
+def test_review_local_from_a_subdirectory_reviews_from_the_repo_root(repo, monkeypatch, capsys):
+    (repo / "pkg").mkdir()
+    monkeypatch.chdir(repo / "pkg")
+    (repo / "app.py").write_text("def ratio(a, b):\n    return a / b\n")
+    with patch("marginal.cli.review.get_provider") as get_provider:
+        get_provider.return_value.generate_structured = AsyncMock(
+            return_value=FindingsResponse(findings=[])
+        )
+
+        exit_code = main(["review", "--local", "main", "--format", "json"])
+
+    assert exit_code == 0
+    # Found the config at the root, and the patch despite running from pkg/.
+    prompt = get_provider.return_value.generate_structured.await_args.args[0]
+    assert "+    return a / b" in prompt
+
+
+def test_review_local_outside_a_repo_fails_cleanly(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["review", "--local", "main"]) == 1
+    assert "git rev-parse failed" in capsys.readouterr().err
+
+
 def test_review_local_rejects_comment_and_head(repo, monkeypatch, capsys):
     monkeypatch.chdir(repo)
 

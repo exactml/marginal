@@ -19,11 +19,13 @@ class LocalCheckout:
     `path`, so local work can be reviewed before it's pushed."""
 
     def __init__(self, path: str = ".") -> None:
-        self._path = path
+        self.root = path
+        # Every path git prints is relative to the repo root, so run from there.
+        self.root = self._git("rev-parse", "--show-toplevel").strip()
 
     def _git(self, *args: str) -> str:
         result = subprocess.run(
-            ["git", "-C", self._path, "-c", "core.quotePath=false", *args],
+            ["git", "-C", self.root, "-c", "core.quotePath=false", *args],
             capture_output=True,
             text=True,
         )
