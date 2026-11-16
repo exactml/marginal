@@ -307,7 +307,7 @@ marginal review --repo owner/name --pr 42 --provider claude-code
 The same core agent runs as:
 
 - **GitHub Actions** — the primary integration, zero infrastructure to operate
-- **CLI** — `marginal review` for local runs
+- **CLI** — `marginal review` for local runs; `marginal review --local origin/main` reviews unpushed work (local commits and uncommitted changes) with git alone, against the config and policies a PR from that branch would get
 - **Self-hosted runners** — for orgs that need everything on their own network
 
 No step requires code to leave your infrastructure, and no step requires a marginal-hosted service.
