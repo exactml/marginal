@@ -377,22 +377,29 @@ def _override_reviewer(
 ) -> MarginalConfig:
     """`config` with `models.reviewer`'s provider and/or model replaced.
 
-    Raises `ConfigError` if the config has no reviewer to start from and
-    either one is missing.
+    A model ID belongs to its provider, so the configured one carries over to
+    a new provider only from `anthropic` to `claude-code`, which runs the same
+    Claude models. Raises `ConfigError` when the model can't be filled in.
     """
     if provider is None and model is None:
         return config
     current = config.models.get("reviewer")
-    if current is None and (provider is None or model is None):
+    if current is None and provider is None:
+        raise ConfigError("--model needs --provider: .marginal/config.yaml sets no models.reviewer")
+    same_provider = current is not None and provider in (None, current.provider)
+    carries_model = same_provider or (
+        current is not None and (current.provider, provider) == ("anthropic", "claude-code")
+    )
+    if model is None and not carries_model:
+        configured = "no models.reviewer" if current is None else f"a {current.provider} model"
         raise ConfigError(
-            "--provider and --model are both needed: .marginal/config.yaml sets no "
-            "models.reviewer to fill in the other"
+            f"--provider {provider} needs --model: .marginal/config.yaml sets {configured}"
         )
     reviewer = ModelSpec(
         provider=provider or current.provider,
         model=model or current.model,
         # A base URL belongs to the configured provider's server, not a new one.
-        base_url=current.base_url if current and provider in (None, current.provider) else None,
+        base_url=current.base_url if same_provider else None,
     )
     return config.model_copy(update={"models": {**config.models, "reviewer": reviewer}})
 

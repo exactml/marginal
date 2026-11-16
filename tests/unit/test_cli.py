@@ -2582,7 +2582,33 @@ def test_review_provider_flag_without_a_configured_reviewer_needs_a_model(
     )
 
     assert exit_code == 1
-    assert "--provider and --model are both needed" in capsys.readouterr().err
+    assert "--provider claude-code needs --model" in capsys.readouterr().err
+    mock_provider.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "flags, error",
+    [
+        (["--provider", "claude-code"], "--provider claude-code needs --model: "),
+        (["--model", "gpt-4o"], "--model needs --provider"),
+    ],
+)
+def test_review_override_refuses_a_model_from_another_provider(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider, flags, error
+):
+    monkeypatch.chdir(tmp_path)
+    if flags[0] == "--provider":
+        (tmp_path / ".marginal").mkdir()
+        (tmp_path / ".marginal" / "config.yaml").write_text(
+            "version: 1\nmodels:\n  reviewer:\n    provider: openai\n    model: gpt-4o\n"
+        )
+
+    exit_code = main(
+        ["review", "--repo", "acme/widgets", "--base", "abc123", "--head", "def456", *flags]
+    )
+
+    assert exit_code == 1
+    assert error in capsys.readouterr().err
     mock_provider.assert_not_called()
 
 
