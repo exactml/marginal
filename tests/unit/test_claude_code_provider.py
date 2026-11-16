@@ -62,7 +62,8 @@ def _answer(structured=None, **fields):
 
 
 def test_structured_review_runs_isolated_claude_on_the_subscription(tmp_path, monkeypatch):
-    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK"):
+    billed = {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_FOUNDRY"}
+    for name in billed:
         monkeypatch.setenv(name, "would-bill-an-account")
     provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(_FINDINGS)))
     reset_usage()
@@ -72,9 +73,7 @@ def test_structured_review_runs_isolated_claude_on_the_subscription(tmp_path, mo
     assert result == FindingsResponse.model_validate(_FINDINGS)
     (call,) = _calls(tmp_path)
     assert call["stdin"] == "review this"
-    assert not {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK"} & set(
-        call["env"]
-    )
+    assert not billed & set(call["env"])
     argv = call["argv"]
     assert argv[:1] == ["-p"]
     for flag in ("--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence"):

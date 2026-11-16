@@ -24,16 +24,11 @@ _ISOLATION_FLAGS = (
     "--disable-slash-commands",
     "--no-session-persistence",
 )
-# Each of these makes `claude` bill an API key or cloud account instead of the
-# subscription; `--setting-sources ""` already keeps a settings `apiKeyHelper` out.
-_BILLED_ACCOUNT_ENV = frozenset(
-    {
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_AUTH_TOKEN",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-    }
-)
+# Each of these makes `claude` bill an API key or a cloud account (Bedrock,
+# Vertex, Foundry, ...: every `CLAUDE_CODE_USE_*`) instead of the subscription;
+# `--setting-sources ""` already keeps a settings `apiKeyHelper` out.
+_BILLED_ACCOUNT_ENV = frozenset({"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"})
+_BILLED_ACCOUNT_ENV_PREFIX = "CLAUDE_CODE_USE_"
 _SYSTEM_PROMPT = "You are a code reviewer. Answer from the prompt alone."
 
 
@@ -59,7 +54,11 @@ class ClaudeCodeProvider(ModelProvider):
         return input_tokens, usage.get("output_tokens")
 
     async def _run(self, prompt: str, *flags: str) -> dict:
-        env = {name: value for name, value in os.environ.items() if name not in _BILLED_ACCOUNT_ENV}
+        env = {
+            name: value
+            for name, value in os.environ.items()
+            if name not in _BILLED_ACCOUNT_ENV and not name.startswith(_BILLED_ACCOUNT_ENV_PREFIX)
+        }
         try:
             process = await asyncio.create_subprocess_exec(
                 self._executable,
