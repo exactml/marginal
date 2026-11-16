@@ -300,7 +300,7 @@ On a machine where you've signed in to [Claude Code](https://claude.com/claude-c
 marginal review --repo owner/name --pr 42 --provider claude-code
 ```
 
-`--provider` (and `--model`) replace `models.reviewer` for that run only, so the committed config keeps CI on its API key. Each review runs `claude -p` isolated: no tools, none of your Claude Code settings, memory, MCP servers or skills, and no saved session. Variables that would bill an API key or cloud account (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`) are not passed on, so the review counts against your plan's usage limits, not an API bill. It needs the `claude` CLI on `PATH`, signed in, so it isn't for CI runners.
+`--provider` (and `--model`) replace `models.reviewer` for that run only, so the committed config keeps CI on its API key. Each review runs `claude -p` isolated: no tools, none of your Claude Code settings, memory, MCP servers or skills, and no saved session. Variables that would bill an API key or cloud account (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and every `CLAUDE_CODE_USE_*` such as Bedrock or Vertex) are not passed on, so the review counts against your plan's usage limits, not an API bill. It needs the `claude` CLI on `PATH`, signed in, so it isn't for CI runners.
 
 ## Run it anywhere
 
