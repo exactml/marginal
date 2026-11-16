@@ -6,8 +6,8 @@ description: >-
   Claude Code subscription, treat each finding as an unverified claim, fix or
   dispute it with evidence, and repeat until marginal has nothing left (max 3
   rounds). Stops before `git push` and asks. Use when the user says "pair with
-  marginal", "/marginal-pair", "review before I push", "cook this PR with
-  marginal", or a branch is about to be pushed.
+  marginal", "/marginal-pair", "/marginal:marginal-pair", "review before I
+  push", "cook this PR with marginal", or a branch is about to be pushed.
 allowed-tools: Bash, Read, Edit, Write
 ---
 
@@ -27,13 +27,15 @@ git fetch -q origin
 git symbolic-ref -q refs/remotes/origin/HEAD >/dev/null || git remote set-head origin -a
 BASE=$(git symbolic-ref --short refs/remotes/origin/HEAD)   # e.g. origin/master
 marginal --version && claude --version
+marginal review --help | grep -q -- --local   # needs marginal-review 0.4.0 or later
 ```
 
-If `marginal` isn't found, activate the environment it's installed in first
-(for this repo, the dev venv). If on the default branch, stop and ask for a
-branch name. New files the change
-needs must be visible to git: `git add -N <file>` (marginal says how many
-untracked files it skipped).
+If `marginal` isn't found, activate the environment it's installed in, or ask
+the user to `pip install marginal-review`; if it has no `--local`, ask them to
+`pip install -U marginal-review`. If `claude` isn't found, this skill
+can't run the reviewer. If on the default branch, stop and ask for a branch
+name. New files the change needs must be visible to git: `git add -N <file>`
+(marginal says how many untracked files it skipped).
 
 ## Step 2 — Review
 
@@ -42,7 +44,8 @@ marginal review --local "$BASE" --provider claude-code --format json
 ```
 
 - Exit 3: `claude` is missing or signed out, so tell the user to run `claude` and sign in.
-- "both needed": the repo sets no `models.reviewer`, so add `--model opus`.
+- "needs --model": the repo's `models.reviewer` isn't a Claude model (or isn't
+  set), so add `--model opus`.
 - stdout is one JSON object. Use `findings` (each already passed marginal's
   quote and trigger checks) and ignore `dropped_findings`.
 
@@ -54,7 +57,10 @@ still be wrong. For each one:
 1. Read the code at `file:line` and the code its `trigger` names.
 2. Check that the trigger can actually happen: does the call or caller it
    describes exist (`grep` for it)? Does the input it names reach that line?
-3. Verdict:
+3. Check it against the repo's rules: the files under `policies` and
+   `anti_policies` in `.marginal/config.yaml`. A finding that contradicts an
+   anti-policy (a tradeoff the team accepted) is false; cite that file.
+4. Verdict:
    - **Real, Medium or above:** fix it with the smallest change, add or adjust a
      test, and commit it alone (one finding, one commit).
    - **Real, Low:** fix it only if it takes a few lines; otherwise mark it
