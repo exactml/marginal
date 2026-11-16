@@ -79,9 +79,18 @@ class LocalCheckout:
             # A type change (e.g. symlink to file) diffs as a delete plus an add,
             # not one patch, so like GitHub for a binary file it gets none.
             if status != "T":
-                # GitHub's patches have 3 lines of context, whatever the local git config says.
+                # Like GitHub's patches: 3 lines of context and the file's real
+                # text, whatever the local git config or .gitattributes say.
                 diff = self._git(
-                    "diff", "-M", "-U3", "--no-color", "--no-ext-diff", base, "--", *paths
+                    "diff",
+                    "-M",
+                    "-U3",
+                    "--no-color",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    base,
+                    "--",
+                    *paths,
                 )
                 hunk_start = diff.find("\n@@")
                 if hunk_start != -1:

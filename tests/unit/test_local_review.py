@@ -94,6 +94,18 @@ def test_local_file_in_another_encoding_still_gets_a_patch(repo):
     assert file["patch"] == "@@ -0,0 +1 @@\n+N = 'caf\ufffd'"
 
 
+def test_local_patch_shows_the_real_text_not_a_textconv(repo):
+    (repo / ".gitattributes").write_text("*.py diff=shout\n")
+    _git(repo, "config", "diff.shout.textconv", "tr a-z A-Z <")
+    (repo / "app.py").write_text("def ratio(a, b):\n    return a / b\n")
+    checkout = LocalCheckout(str(repo))
+
+    files = checkout.get_compare_files(checkout.merge_base("main"), checkout.head())
+
+    patch = {f["filename"]: f.get("patch") for f in files}["app.py"]
+    assert "+    return a / b" in patch
+
+
 def test_local_review_without_git_fails_cleanly(repo, monkeypatch, capsys):
     monkeypatch.chdir(repo)
     monkeypatch.setenv("PATH", str(repo / "no-bin"))
