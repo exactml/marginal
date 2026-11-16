@@ -23,6 +23,8 @@ with it in the prompt; answer it with code or with evidence.
 ```bash
 git rev-parse --abbrev-ref HEAD          # must not be the default branch
 git fetch -q origin
+# origin/HEAD is only set by `git clone`; ask the remote otherwise.
+git symbolic-ref -q refs/remotes/origin/HEAD >/dev/null || git remote set-head origin -a
 BASE=$(git symbolic-ref --short refs/remotes/origin/HEAD)   # e.g. origin/master
 marginal --version && claude --version
 ```
