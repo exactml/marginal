@@ -42,7 +42,7 @@ def _fake_claude(tmp_path, *answers):
         "n = len(calls.read_text().splitlines()) if calls.exists() else 0\n"
         "with calls.open('a') as log:\n"
         "    log.write(json.dumps({'argv': sys.argv[1:], 'stdin': sys.stdin.read(),\n"
-        "        'api_key': 'ANTHROPIC_API_KEY' in os.environ}) + '\\n')\n"
+        "        'env': sorted(os.environ)}) + '\\n')\n"
         "print(json.dumps(json.loads((here / 'answers.json').read_text())[n]))\n"
     )
     script.chmod(0o755)
@@ -61,7 +61,8 @@ def _answer(structured=None, **fields):
 
 
 def test_structured_review_runs_isolated_claude_on_the_subscription(tmp_path, monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-would-be-billed")
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK"):
+        monkeypatch.setenv(name, "would-bill-an-account")
     provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(_FINDINGS)))
     reset_usage()
 
@@ -70,7 +71,9 @@ def test_structured_review_runs_isolated_claude_on_the_subscription(tmp_path, mo
     assert result == FindingsResponse.model_validate(_FINDINGS)
     (call,) = _calls(tmp_path)
     assert call["stdin"] == "review this"
-    assert call["api_key"] is False
+    assert not {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK"} & set(
+        call["env"]
+    )
     argv = call["argv"]
     assert argv[:1] == ["-p"]
     for flag in ("--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence"):
