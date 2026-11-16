@@ -136,7 +136,8 @@ def _write_file(target: Path, content: str, force: bool) -> InitStatus:
     else:
         status = "created"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
+    # newline="": keep "\n" on Windows too, so a written file matches its source.
+    target.write_text(content, encoding="utf-8", newline="")
     return status
 
 
