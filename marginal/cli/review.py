@@ -72,8 +72,14 @@ def run_review(
     head: str | None = None,
     comment: bool = False,
     output_format: OutputFormat = "text",
+    provider: str | None = None,
+    model: str | None = None,
 ) -> int:
     """Fetch `pr_number` from `repo` and print a summary in `output_format`.
+
+    `provider` and `model`, when given, replace `models.reviewer`'s for this
+    run only, e.g. `provider="claude-code"` to review on the local Claude Code
+    subscription while the committed config keeps CI on its API key.
 
     With `pr_number=None`, reviews the diff between commits `base` and `head`
     instead (`GitHubClient.get_compare_files`), with config and policies as of
@@ -215,7 +221,9 @@ def run_review(
             # Just enough of a PR's shape for the shared code below.
             else {"base": {"sha": base, "repo": {"full_name": repo}}, "head": {"sha": head}}
         )
-        config, base_sha, policies, anti_policies = _load_rules(base_client, pull_request, path)
+        config, base_sha, policies, anti_policies = _load_rules(
+            base_client, pull_request, path, provider, model
+        )
     except (ConfigError, GitHubError) as exc:
         print(f"marginal review: {exc}", file=sys.stderr)
         return 1
@@ -346,16 +354,47 @@ def run_review(
 
 
 def _load_rules(
-    client: GitHubClient, pull_request: dict[str, object], path: str
+    client: GitHubClient,
+    pull_request: dict[str, object],
+    path: str,
+    provider: str | None = None,
+    model: str | None = None,
 ) -> tuple[MarginalConfig, str | None, list[tuple[str, str]], list[tuple[str, str]]]:
-    """The config, the base commit it came from, and its policies and
-    anti-policies, which are only read when a reviewer model will use them."""
+    """The config with `provider`/`model` overriding its reviewer, the base
+    commit it came from, and its policies and anti-policies, which are only
+    read when a reviewer model will use them."""
     config, base_sha = load_base_config(client, pull_request, path)
+    config = _override_reviewer(config, provider, model)
     if config.models.get("reviewer") is None:
         return config, base_sha, [], []
     policies = load_base_policies(client, base_sha, path, config.policies)
     anti_policies = load_base_policies(client, base_sha, path, config.anti_policies)
     return config, base_sha, policies, anti_policies
+
+
+def _override_reviewer(
+    config: MarginalConfig, provider: str | None, model: str | None
+) -> MarginalConfig:
+    """`config` with `models.reviewer`'s provider and/or model replaced.
+
+    Raises `ConfigError` if the config has no reviewer to start from and
+    either one is missing.
+    """
+    if provider is None and model is None:
+        return config
+    current = config.models.get("reviewer")
+    if current is None and (provider is None or model is None):
+        raise ConfigError(
+            "--provider and --model are both needed: .marginal/config.yaml sets no "
+            "models.reviewer to fill in the other"
+        )
+    reviewer = ModelSpec(
+        provider=provider or current.provider,
+        model=model or current.model,
+        # A base URL belongs to the configured provider's server, not a new one.
+        base_url=current.base_url if current and provider in (None, current.provider) else None,
+    )
+    return config.model_copy(update={"models": {**config.models, "reviewer": reviewer}})
 
 
 def _review_files(
