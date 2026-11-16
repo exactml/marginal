@@ -292,6 +292,16 @@ models:
 
 `ollama` talks to Ollama's OpenAI-compatible API, so any server exposing `/v1/chat/completions` with JSON-schema structured output (vLLM, for example) works the same way. Install it with `pip install 'marginal-review[ollama]'`. The machine running marginal must reach that URL, so in GitHub Actions that usually means a self-hosted runner on the same network.
 
+### Your Claude Code subscription (local runs)
+
+On a machine where you've signed in to [Claude Code](https://claude.com/claude-code), `marginal review` can use your subscription instead of an API key:
+
+```bash
+marginal review --repo owner/name --pr 42 --provider claude-code
+```
+
+`--provider` (and `--model`) replace `models.reviewer` for that run only, so the committed config keeps CI on its API key. Each review runs `claude -p` isolated: no tools, none of your Claude Code settings, memory, MCP servers or skills, and no saved session. `ANTHROPIC_API_KEY` is not passed on, so the review counts against your plan's usage limits, not an API bill. It needs the `claude` CLI on `PATH`, signed in, so it isn't for CI runners.
+
 ## Run it anywhere
 
 The same core agent runs as:
