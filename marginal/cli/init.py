@@ -14,8 +14,9 @@ CONFIG_FILE = Path(".marginal") / "config.yaml"
 POLICIES_DIR = Path(".marginal") / "policies"
 POLICIES_README = POLICIES_DIR / "README.md"
 WORKFLOW_FILE = Path(".github") / "workflows" / "marginal.yml"
-# The same skill the Claude Code plugin ships, for a team that commits it instead.
-PAIR_SKILL_FILE = Path(".claude") / "skills" / "marginal-pair" / "SKILL.md"
+# `--factory` copies every skill the Claude Code plugin ships here, for a team
+# that commits them instead of installing the plugin.
+SKILLS_DIR = Path(".claude") / "skills"
 
 InitStatus = Literal["created", "skipped", "overwritten"]
 
@@ -86,14 +87,14 @@ Next steps -- pick one provider:
 The workflow already passes both secrets, so nothing else needs editing.
 Open a pull request to get your first review.
 
-Before you push, `/marginal-pair` in Claude Code reviews your local changes
-with the same rules, on your Claude Code subscription.
+Optional: `marginal init --factory` adds marginal's Claude Code skills, such as
+`/marginal-pair` (review local changes before pushing). Each runs only when typed.
 """
 
 
-def run_init(path: str | Path = ".", force: bool = False) -> int:
-    """Scaffold marginal's config, policy guide, GitHub workflow, and the
-    `marginal-pair` Claude Code skill under `path`.
+def run_init(path: str | Path = ".", force: bool = False, factory: bool = False) -> int:
+    """Scaffold marginal's config, policy guide, and GitHub workflow under
+    `path`, and with `factory` every Claude Code skill marginal ships.
 
     Each artifact is skipped if it already exists, unless `force` is set. A
     forced write is reported as an overwrite so reruns are distinguishable
@@ -112,10 +113,10 @@ def run_init(path: str | Path = ".", force: bool = False) -> int:
         ".github/workflows/marginal.yml",
         _write_file(root / WORKFLOW_FILE, WORKFLOW_TEMPLATE, force),
     )
-    _report(
-        ".claude/skills/marginal-pair/SKILL.md",
-        _write_file(root / PAIR_SKILL_FILE, _pair_skill(), force),
-    )
+    if factory:
+        for name, text in _skills():
+            label = (SKILLS_DIR / name / "SKILL.md").as_posix()
+            _report(label, _write_file(root / SKILLS_DIR / name / "SKILL.md", text, force))
 
     print()
     print("marginal is ready.")
@@ -124,8 +125,14 @@ def run_init(path: str | Path = ".", force: bool = False) -> int:
     return 0
 
 
-def _pair_skill() -> str:
-    return (files("marginal") / "skills" / "marginal-pair" / "SKILL.md").read_text("utf-8")
+def _skills() -> list[tuple[str, str]]:
+    """`(name, SKILL.md text)` for every skill in the package, by name."""
+    shipped = files("marginal") / "skills"
+    return sorted(
+        (skill.name, (skill / "SKILL.md").read_text("utf-8"))
+        for skill in shipped.iterdir()
+        if (skill / "SKILL.md").is_file()
+    )
 
 
 def _write_file(target: Path, content: str, force: bool) -> InitStatus:

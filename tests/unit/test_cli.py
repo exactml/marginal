@@ -158,8 +158,29 @@ def test_init_workflow_runs_one_review_per_pr_at_a_time(tmp_path):
     }
 
 
-def test_init_writes_the_marginal_pair_skill_the_plugin_ships(tmp_path):
+def test_init_adds_no_claude_code_skill_unless_asked(tmp_path):
     main(["init", str(tmp_path)])
+
+    assert not (tmp_path / ".claude").exists()
+
+
+def test_init_factory_writes_every_skill_the_plugin_ships(tmp_path, capsys):
+    main(["init", "--factory", str(tmp_path)])
+
+    shipped_dir = Path(__file__).parents[2] / "marginal" / "skills"
+    shipped_names = sorted(p.name for p in shipped_dir.iterdir() if (p / "SKILL.md").is_file())
+    assert sorted(p.name for p in (tmp_path / ".claude" / "skills").iterdir()) == shipped_names
+    assert "✓ Created .claude/skills/marginal-pair/SKILL.md" in capsys.readouterr().out
+
+
+def test_every_shipped_skill_runs_only_when_typed():
+    for skill in (Path(__file__).parents[2] / "marginal" / "skills").glob("*/SKILL.md"):
+        frontmatter = yaml.safe_load(skill.read_text(encoding="utf-8").split("---")[1])
+        assert frontmatter["disable-model-invocation"] is True, skill
+
+
+def test_init_factory_writes_the_marginal_pair_skill_the_plugin_ships(tmp_path):
+    main(["init", "--factory", str(tmp_path)])
 
     written = (tmp_path / ".claude" / "skills" / "marginal-pair" / "SKILL.md").read_bytes()
     shipped = Path(__file__).parents[2] / "marginal" / "skills" / "marginal-pair" / "SKILL.md"
