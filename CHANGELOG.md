@@ -2,6 +2,85 @@
 
 <!-- towncrier release notes start -->
 
+## marginal v0.3.1, 2026-11-17
+
+### Breaking Changes
+
+### New Features
+
+- With `permissions.write.labels: true`, `marginal review --comment` labels the
+  PR `marginal:<severity>` (e.g. `marginal:critical`) for each severity among
+  the findings it reports, so a PR can be filtered by what marginal found. Off
+  by default; marginal never touches a label without the `marginal:` prefix
+
+  ([ISSUE-43](https://github.com/exactml/marginal/issues/43), [PR-204](https://github.com/exactml/marginal/pull/204) by [@babyhuey](https://github.com/babyhuey))
+
+- When a `workflow_run` event triggers `marginal review` (another workflow, such
+  as your tests, finished), the review prompt now includes that run's
+  conclusion in its own labelled "CI status" section, as context for the model
+  rather than a finding by itself. Reading the run needs `actions: read` on the
+  job's token; without a `workflow_run` event, or if the run can't be read, the
+  prompt is unchanged
+
+  ([ISSUE-51](https://github.com/exactml/marginal/issues/51), [PR-205](https://github.com/exactml/marginal/pull/205) by [@babyhuey](https://github.com/babyhuey))
+
+- marginal is now a Claude Code plugin: `/plugin install marginal --marketplace
+  exactml/marginal` adds `/marginal:marginal-pair` to every repo, and
+  `marginal init --factory` writes marginal's skills to `.claude/skills/` for a
+  team that commits them instead (plain `marginal init` adds none). A skill runs
+  only when typed, never on its own. Before the skill acts on a finding, it
+  also checks the finding against the repo's anti-policies. The plugin updates
+  with each marginal release
+
+  ([ISSUE-247](https://github.com/exactml/marginal/issues/247), [PR-251](https://github.com/exactml/marginal/pull/251), [PR-253](https://github.com/exactml/marginal/pull/253) by [@exactml](https://github.com/exactml))
+
+- `marginal review --provider claude-code` reviews with the local Claude Code
+  CLI on your own subscription, with no API key. The CLI runs isolated: no
+  tools, none of your Claude Code settings, memory, MCP servers or skills, and
+  no saved session. `--provider` and `--model` replace `models.reviewer` for one
+  run only, so the committed config keeps CI on its API key
+
+  ([ISSUE-247](https://github.com/exactml/marginal/issues/247), [PR-248](https://github.com/exactml/marginal/pull/248) by [@exactml](https://github.com/exactml))
+
+- `marginal review --local origin/main` reviews unpushed work (local commits
+  plus uncommitted changes to tracked files) with git alone, no GitHub needed,
+  against the config and policies a PR from that branch would get. Paired with
+  `--provider claude-code`, a coding session can loop with marginal until it
+  has nothing left to flag before anything is pushed; this repo's
+  `/marginal-pair` Claude Code skill runs that loop
+
+  ([ISSUE-247](https://github.com/exactml/marginal/issues/247), [PR-249](https://github.com/exactml/marginal/pull/249) by [@exactml](https://github.com/exactml))
+
+### Improvements
+
+- With `permissions.write.labels: true`, a review now also removes a
+  `marginal:<severity>` label the PR no longer earns: once a later push fixes
+  the last finding of that severity, the label goes, so filtering PRs by label
+  shows only the ones that still have the problem. Only the four
+  `marginal:<severity>` labels are ever removed, and a failed removal is a
+  warning.
+
+  ([ISSUE-206](https://github.com/exactml/marginal/issues/206), [PR-218](https://github.com/exactml/marginal/pull/218) by [@babyhuey](https://github.com/babyhuey))
+
+- An inline finding now covers the lines it quotes: its comment widens from
+  the finding's line to every verified quote in the same diff hunk within 10
+  lines, so it highlights the code it's about rather than a neighbouring line.
+  In `--format json`, such a finding also carries `start_line` and `end_line`
+
+  ([PR-207](https://github.com/exactml/marginal/pull/207) by [@exactml](https://github.com/exactml))
+
+- The reviewer is now told what each severity means, rated by how bad the
+  effect is and how likely it is: `critical` for a security hole someone can
+  use, data loss, or a wrong result for every user; `high` for a wrong result
+  or crash on a normal input; `medium` for an edge case or degraded behaviour;
+  `low` for a small effect. Benchmark answer keys are rated on the same scale
+
+  ([PR-209](https://github.com/exactml/marginal/pull/209) by [@exactml](https://github.com/exactml))
+
+### Fixes
+
+### Warnings
+
 ## marginal v0.3.0, 2026-10-28
 
 ### Breaking Changes
