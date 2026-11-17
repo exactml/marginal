@@ -108,7 +108,6 @@ marginal init
 ✓ Created .marginal/policies/
 ✓ Created .marginal/policies/README.md
 ✓ Created .github/workflows/marginal.yml
-✓ Created .claude/skills/marginal-pair/SKILL.md
 
 marginal is ready.
 
@@ -129,8 +128,8 @@ Next steps -- pick one provider:
 The workflow already passes both secrets, so nothing else needs editing.
 Open a pull request to get your first review.
 
-Before you push, `/marginal-pair` in Claude Code reviews your local changes
-with the same rules, on your Claude Code subscription.
+Optional: `marginal init --factory` adds marginal's Claude Code skills, such as
+`/marginal-pair` (review local changes before pushing). Each runs only when typed.
 ```
 
 ```yaml
@@ -199,9 +198,12 @@ _marginal is under active, in-the-open development. Jump into [Issues](https://g
 | Command | What it does |
 |---|---|
 | `marginal init` | Writes `.marginal/config.yaml`, a policies folder, and the GitHub Actions workflow. |
+| `marginal init --factory` | Also writes marginal's Claude Code skills to `.claude/skills/` (beta, see [Factory mode](#factory-mode-beta)). |
 | `marginal review --repo owner/name --pr 12` | Reviews a PR and prints the result. Posts nothing, so it's a safe local preview (drafts included). |
 | `marginal review ... --comment` | Same review, posted to the PR as inline comments plus a summary. This is what the workflow runs. Add `--format json` for machine-readable output. |
 | `marginal review --repo owner/name --base <sha> --head <sha>` | Reviews the diff between two commits instead of a PR, with the config as of `--base`. Prints only; `--comment` isn't allowed. |
+| `marginal review --local origin/main` | Reviews your unpushed work (local commits and uncommitted changes) with git alone, against the config a PR from this branch would get. Prints only. |
+| `marginal review ... --provider claude-code` | Runs the review on your Claude Code subscription instead of an API key, for this run only. |
 | `marginal compact --repo owner/name --pr 12 --comment` | Re-checks marginal's open findings against the latest code and resolves the ones that are fixed. `review --comment` already does this on every later push. |
 | `marginal doctor` | Checks config, credentials, and GitHub access without calling a model. |
 | `marginal help [command]`, `marginal --version` | Usage, and the installed version. |
@@ -306,23 +308,43 @@ marginal review --repo owner/name --pr 42 --provider claude-code
 
 `--provider` (and `--model`) replace `models.reviewer` for that run only, so the committed config keeps CI on its API key. Each review runs `claude -p` isolated: no tools, none of your Claude Code settings, memory, MCP servers or skills, and no saved session. Variables that would bill an API key or cloud account (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and every `CLAUDE_CODE_USE_*` such as Bedrock or Vertex) are not passed on, so the review counts against your plan's usage limits, not an API bill. It needs the `claude` CLI on `PATH`, signed in, so it isn't for CI runners.
 
-### Pair with your coding session (Claude Code plugin)
+## Factory mode (beta)
 
-The `marginal-pair` skill turns that into a loop inside Claude Code: it runs `marginal review --local` on your unpushed work, checks each finding against the code and your policies before acting on it (fix it, or dispute it with evidence), repeats until marginal has nothing left (at most 3 rounds), and asks before `git push`. The reviewer runs in its own isolated `claude -p` process, so it sees only what the PR's CI review will see.
+> **Beta.** Factory mode is new in 0.3.1. Its skills and their names may change between releases; the CI review above does not depend on it.
 
-Install it once for every repo, as a plugin:
+**The vision.** More and more code is written by coding agents. marginal aims to be the part of that "software factory" that stays the same whichever agent writes the code: the reviewer that checks every change against *your* team's rules, with evidence, at every stage. Today that stage is the pull request. Factory mode brings the same review to your coding session, before anything is pushed, and later skills will add more steps of the loop. marginal stays a reviewer: it never writes your code, and nothing in factory mode runs unless you ask for it.
+
+**What it adds today: `/marginal-pair`.** A Claude Code skill that pairs your coding session with marginal as a separate, isolated reviewer:
+
+1. It runs `marginal review --local` on your unpushed work (local commits and uncommitted changes), on your Claude Code subscription (`--provider claude-code`), with the same config, policies and anti-policies a PR would get.
+2. The reviewer runs in its own `claude -p` process with no tools and none of your session's context, so it sees only what the PR's CI review will see and can't simply agree with the code's author.
+3. Your session checks each finding against the code and your policies before acting on it: it fixes real ones (one commit each) and disputes false ones with evidence.
+4. It repeats until marginal has nothing left, at most 3 rounds, shows you a table of every finding and what happened to it, and **asks before `git push`**.
+
+```text
+you:     /marginal:marginal-pair
+claude:  round 1: 2 findings → fixed 1 (commit), disputed 1 (evidence)
+         round 2: clean
+         | round | finding | verdict |
+         Push?
+you:     yes
+```
+
+**Turn it on**, either once for yourself in every repo, as a Claude Code plugin:
 
 ```bash
-pip install -U marginal-review           # the skill calls the marginal CLI (0.4.0 or later)
+pip install -U marginal-review           # the skill calls the marginal CLI (0.3.1 or later)
 ```
 ```text
 /plugin install marginal --marketplace exactml/marginal
 /marginal:marginal-pair
 ```
 
-Before Claude Code 2.1.275, add the marketplace first: `/plugin marketplace add exactml/marginal`, then `/plugin install marginal@marginal`.
+(Before Claude Code 2.1.275, add the marketplace first: `/plugin marketplace add exactml/marginal`, then `/plugin install marginal@marginal`.)
 
-Or commit it to one repo: `marginal init` writes `.claude/skills/marginal-pair/SKILL.md`, invoked as `/marginal-pair`. The plugin updates when marginal releases a new version (`claude plugin update marginal@marginal`); a committed copy stays as it is until you replace it.
+or for the whole team, committed to one repo: `marginal init --factory` writes every skill marginal ships to `.claude/skills/` (today `marginal-pair`, typed as `/marginal-pair`). Plain `marginal init` adds none. The plugin updates when marginal releases a new version (`claude plugin update marginal@marginal`); a committed copy stays as it is until you replace it.
+
+**Nothing runs on its own.** Claude Code can normally start a skill by itself when your request matches the skill's description. Every factory-mode skill sets `disable-model-invocation: true` in its `SKILL.md`, which turns that off: the skill runs only when someone types its command. Saying "ok, push it" just pushes; it doesn't start three review rounds that cost time and subscription usage. There are no background reviews, hooks or daemons, and the skill never pushes or opens a PR without an explicit yes.
 
 ## Run it anywhere
 
