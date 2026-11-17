@@ -108,6 +108,7 @@ marginal init
 ✓ Created .marginal/policies/
 ✓ Created .marginal/policies/README.md
 ✓ Created .github/workflows/marginal.yml
+✓ Created .claude/skills/marginal-pair/SKILL.md
 
 marginal is ready.
 
@@ -127,6 +128,9 @@ Next steps -- pick one provider:
 
 The workflow already passes both secrets, so nothing else needs editing.
 Open a pull request to get your first review.
+
+Before you push, `/marginal-pair` in Claude Code reviews your local changes
+with the same rules, on your Claude Code subscription.
 ```
 
 ```yaml
@@ -301,6 +305,24 @@ marginal review --repo owner/name --pr 42 --provider claude-code
 ```
 
 `--provider` (and `--model`) replace `models.reviewer` for that run only, so the committed config keeps CI on its API key. Each review runs `claude -p` isolated: no tools, none of your Claude Code settings, memory, MCP servers or skills, and no saved session. Variables that would bill an API key or cloud account (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and every `CLAUDE_CODE_USE_*` such as Bedrock or Vertex) are not passed on, so the review counts against your plan's usage limits, not an API bill. It needs the `claude` CLI on `PATH`, signed in, so it isn't for CI runners.
+
+### Pair with your coding session (Claude Code plugin)
+
+The `marginal-pair` skill turns that into a loop inside Claude Code: it runs `marginal review --local` on your unpushed work, checks each finding against the code and your policies before acting on it (fix it, or dispute it with evidence), repeats until marginal has nothing left (at most 3 rounds), and asks before `git push`. The reviewer runs in its own isolated `claude -p` process, so it sees only what the PR's CI review will see.
+
+Install it once for every repo, as a plugin:
+
+```bash
+pip install -U marginal-review           # the skill calls the marginal CLI (0.4.0 or later)
+```
+```text
+/plugin install marginal --marketplace exactml/marginal
+/marginal:marginal-pair
+```
+
+Before Claude Code 2.1.275, add the marketplace first: `/plugin marketplace add exactml/marginal`, then `/plugin install marginal@marginal`.
+
+Or commit it to one repo: `marginal init` writes `.claude/skills/marginal-pair/SKILL.md`, invoked as `/marginal-pair`. The plugin updates when marginal releases a new version (`claude plugin update marginal@marginal`); a committed copy stays as it is until you replace it.
 
 ## Run it anywhere
 

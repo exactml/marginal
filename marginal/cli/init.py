@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from importlib.resources import files
 from pathlib import Path
 from typing import Literal
 
@@ -13,6 +14,8 @@ CONFIG_FILE = Path(".marginal") / "config.yaml"
 POLICIES_DIR = Path(".marginal") / "policies"
 POLICIES_README = POLICIES_DIR / "README.md"
 WORKFLOW_FILE = Path(".github") / "workflows" / "marginal.yml"
+# The same skill the Claude Code plugin ships, for a team that commits it instead.
+PAIR_SKILL_FILE = Path(".claude") / "skills" / "marginal-pair" / "SKILL.md"
 
 InitStatus = Literal["created", "skipped", "overwritten"]
 
@@ -82,11 +85,15 @@ Next steps -- pick one provider:
 
 The workflow already passes both secrets, so nothing else needs editing.
 Open a pull request to get your first review.
+
+Before you push, `/marginal-pair` in Claude Code reviews your local changes
+with the same rules, on your Claude Code subscription.
 """
 
 
 def run_init(path: str | Path = ".", force: bool = False) -> int:
-    """Scaffold marginal's config, policy guide, and GitHub workflow under `path`.
+    """Scaffold marginal's config, policy guide, GitHub workflow, and the
+    `marginal-pair` Claude Code skill under `path`.
 
     Each artifact is skipped if it already exists, unless `force` is set. A
     forced write is reported as an overwrite so reruns are distinguishable
@@ -105,12 +112,20 @@ def run_init(path: str | Path = ".", force: bool = False) -> int:
         ".github/workflows/marginal.yml",
         _write_file(root / WORKFLOW_FILE, WORKFLOW_TEMPLATE, force),
     )
+    _report(
+        ".claude/skills/marginal-pair/SKILL.md",
+        _write_file(root / PAIR_SKILL_FILE, _pair_skill(), force),
+    )
 
     print()
     print("marginal is ready.")
     print()
     print(NEXT_STEPS, end="")
     return 0
+
+
+def _pair_skill() -> str:
+    return (files("marginal") / "skills" / "marginal-pair" / "SKILL.md").read_text("utf-8")
 
 
 def _write_file(target: Path, content: str, force: bool) -> InitStatus:
@@ -121,7 +136,8 @@ def _write_file(target: Path, content: str, force: bool) -> InitStatus:
     else:
         status = "created"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content)
+    # newline="": keep "\n" on Windows too, so a written file matches its source.
+    target.write_text(content, encoding="utf-8", newline="")
     return status
 
 
