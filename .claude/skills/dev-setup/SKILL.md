@@ -53,7 +53,7 @@ Either way, confirm it's valid before moving on:
 ## Step 3 — Install the package with dev extras
 
 ```bash
-.venv/bin/pip install -e ".[dev]"
+.venv/bin/pip install -e ".[dev,oic]"
 ```
 
 Verify it actually landed in *this* venv, at the version in `pyproject.toml`,
