@@ -43,6 +43,7 @@ dev = ["ruff>=0.6", "pytest>=8", "pytest-asyncio>=0.24", "towncrier>=24.7", "ant
 include = ["marginal*"]
 
 [tool.setuptools.package-data]
+"marginal" = ["skills/*/SKILL.md"]
 "marginal.review" = ["prompts/*.md"]
 "marginal.oic.store" = ["migrations/*.py", "migrations/*.mako", "migrations/versions/*.py"]
 

@@ -1,0 +1,15 @@
+{
+  "name": "marginal",
+  "description": "Claude Code plugin for marginal, the open-source PR reviewer.",
+  "owner": {
+    "name": "exactml",
+    "url": "https://github.com/exactml"
+  },
+  "plugins": [
+    {
+      "name": "marginal",
+      "source": "./",
+      "description": "Pair your coding session with marginal: review unpushed work locally, on your Claude Code subscription, until it's clean."
+    }
+  ]
+}

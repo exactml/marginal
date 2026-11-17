@@ -1,0 +1,14 @@
+{
+  "name": "marginal",
+  "version": "0.3.0",
+  "description": "Pair your coding session with marginal: review unpushed work locally, on your Claude Code subscription, until it's clean.",
+  "author": {
+    "name": "exactml",
+    "url": "https://github.com/exactml"
+  },
+  "homepage": "https://github.com/exactml/marginal",
+  "repository": "https://github.com/exactml/marginal",
+  "license": "MIT",
+  "keywords": ["code-review", "review", "pull-request", "pair"],
+  "skills": "./marginal/skills/"
+}

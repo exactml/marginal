@@ -56,9 +56,16 @@ headers, empty ones included) directly under the
 `CHANGELOG.md`. Read the new section back before moving on: it should sit
 above the previous release with one blank line between them.
 
-## Step 3 — Bump `pyproject.toml`
+## Step 3 — Bump `pyproject.toml` and the Claude Code plugin
 
-Update `[project].version` to the new version (no `v` prefix, e.g. `0.1.4`).
+Update `[project].version` to the new version (no `v` prefix, e.g. `0.1.4`),
+and set `"version"` in `.claude-plugin/plugin.json` to the same value: the
+plugin only reaches users' `claude plugin update` when that version changes,
+and a unit test fails if the two differ. Then check the manifests:
+
+```bash
+claude plugin validate . --strict
+```
 
 ## Step 4 — Commit, branch, and open the release PR
 
@@ -67,11 +74,11 @@ Follow the naming pattern used by every prior release
 
 ```bash
 git checkout -b release/v<new>
-git add CHANGELOG.md changelog.d pyproject.toml
+git add CHANGELOG.md changelog.d pyproject.toml .claude-plugin/plugin.json
 git commit -m "docs: Cut v<new> release notes
 
 Builds CHANGELOG.md's v<new> section from the changelog.d fragments and
-bumps pyproject.toml to <new>."
+bumps pyproject.toml and the Claude Code plugin to <new>."
 git push -u origin release/v<new>
 gh pr create --title "docs: Cut v<new> release notes" --body "..."
 ```
