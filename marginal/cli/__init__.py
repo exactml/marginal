@@ -31,6 +31,12 @@ def main(argv: list[str] | None = None) -> int:
     init_parser.add_argument(
         "--force", action="store_true", help="Overwrite existing scaffolded files"
     )
+    init_parser.add_argument(
+        "--factory",
+        action="store_true",
+        help="Also add marginal's Claude Code skills (e.g. /marginal-pair); "
+        "each runs only when typed",
+    )
 
     review_parser = subparsers.add_parser(
         "review", help="Fetch and summarize a pull request, or the diff between two commits"
@@ -101,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "doctor":
         return run_doctor(args.repo)
     if args.command == "init":
-        return run_init(args.path, force=args.force)
+        return run_init(args.path, force=args.force, factory=args.factory)
     if args.command == "review":
         if args.local is None and args.repo is None:
             review_parser.error("--repo is required, except with --local")

@@ -5,9 +5,10 @@ description: >-
   before anything is pushed: run `marginal review --local` on the user's
   Claude Code subscription, treat each finding as an unverified claim, fix or
   dispute it with evidence, and repeat until marginal has nothing left (max 3
-  rounds). Stops before `git push` and asks. Use when the user says "pair with
-  marginal", "/marginal-pair", "/marginal:marginal-pair", "review before I
-  push", "cook this PR with marginal", or a branch is about to be pushed.
+  rounds). Stops before `git push` and asks. Runs only when the user types
+  /marginal-pair or /marginal:marginal-pair.
+# Each round costs minutes and subscription usage, so it never starts on its own.
+disable-model-invocation: true
 allowed-tools: Bash, Read, Edit, Write
 ---
 
@@ -27,7 +28,7 @@ git fetch -q origin
 git symbolic-ref -q refs/remotes/origin/HEAD >/dev/null || git remote set-head origin -a
 BASE=$(git symbolic-ref --short refs/remotes/origin/HEAD)   # e.g. origin/master
 marginal --version && claude --version
-marginal review --help | grep -q -- --local   # needs marginal-review 0.4.0 or later
+marginal review --help | grep -q -- --local   # needs marginal-review 0.3.1 or later
 ```
 
 If `marginal` isn't found, activate the environment it's installed in, or ask
