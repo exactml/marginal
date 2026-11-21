@@ -174,7 +174,8 @@ Relations that a pull request can evidence are proposed from it:
 
 ```
 PR opened    → claims extracted as proposals (status proposed),
-               evidence = PR URL + head SHA
+or pushed      evidence = PR URL + head SHA; every push re-extracts, a
+               claim no longer found is withdrawn, a new one is added
 PR merged    → proposals the reviewers did not drop become active,
                valid_from = merged_at, recorded_at = now
 PR closed    → only when closed without merging (GitHub sends a merge as a
@@ -188,10 +189,14 @@ proposed claims to the reviewers as a comment, and a reply can drop one:
 
 ```
 This PR would record:
-  1. checkout  dependsOn  ledger-client   (requirements.txt:4)
-  2. billing   ownedBy    payments-team   (CODEOWNERS:12)
-Reply "/marginal drop 2" to exclude a claim. Merging accepts the rest.
+  c3f2  checkout  dependsOn  ledger-client   (requirements.txt:4)
+  9a71  billing   ownedBy    payments-team   (CODEOWNERS:12)
+Reply "/marginal drop 9a71" to exclude a claim. Merging accepts the rest.
 ```
+
+Each claim's id is a short hash of its subject, relation and object, so it
+stays the same across pushes. A drop names that id, not a position in the
+list, and keeps applying to the claim after later pushes.
 
 Only someone with write access to the repository can drop a claim, the pull
 request's author included when they have that access. marginal checks the
