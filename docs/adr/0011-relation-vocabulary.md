@@ -37,6 +37,12 @@ and optional rules:
   a contradiction, not an addition.
 - **⊑ p** (sub-relation of p): every fact of this relation is also a fact of p.
 
+Entity types form a hierarchy. `component` is the parent of `module`, `class`,
+`repository`, `library`, `release`, `service`, `task` and `dataset`, so a
+relation declared on `component` accepts any of them. This is what lets a
+sub-relation such as `installs` (repository → release) also be a `dependsOn`
+(component → component) fact without failing type checks.
+
 Names follow the Backstage catalog's well-known relations where one exists
 (`ownedBy`, `dependsOn`, `partOf`, `memberOf`), so the vocabulary is familiar
 and maps onto existing catalogs.
@@ -65,8 +71,11 @@ affected if this changes*, *why is this like this*, and *who should review this*
 
 Example: from `checkout dependsOn billing` and
 `billing installs ledger-client@2.1`, the rules give
-`checkout dependsOn ledger-client@2.1`. A change to `ledger-client` can then
-be reported as affecting `checkout`, with both claims as the evidence chain.
+`checkout dependsOn ledger-client@2.1`, a component → component fact because a
+release is a component. A change released as `ledger-client@2.1` is reported
+as affecting `checkout`, with both claims as the evidence chain. To reach the
+library itself, follow `releaseOf` from the release:
+`checkout → ledger-client@2.1 → ledger-client`.
 
 ### 3. Full catalog
 
