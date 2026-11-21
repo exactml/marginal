@@ -106,13 +106,13 @@ def render_proposal(
         return "\n".join(lines)
     lines += [intro, "", "| id | subject | relation | object | source |", "|---|---|---|---|---|"]
     for claim in claims:
-        row = f"`{claim.id}` | `{claim.subject}` | {claim.relation.value} | `{claim.object}`"
-        source = f"`{claim.source}`" if claim.source else ""
+        cells = [_code(claim.id), _code(claim.subject), claim.relation.value, _code(claim.object)]
         if claim.id in dropped:
             # Backticked login: a bare @name would notify that person on every update.
-            lines.append(f"| ~~{row}~~ | dropped by `{dropped[claim.id]}` |")
+            cells = [f"~~{cell}~~" for cell in cells] + [f"dropped by {_code(dropped[claim.id])}"]
         else:
-            lines.append(f"| {row} | {source} |")
+            cells.append(_code(claim.source) if claim.source else "")
+        lines.append(f"| {' | '.join(cells)} |")
     if state == "open":
         lines += [
             "",
@@ -120,6 +120,11 @@ def render_proposal(
             "Merging accepts the rest.",
         ]
     return "\n".join(lines)
+
+
+def _code(value: str) -> str:
+    """`value` as a code span that can't end early or split a table cell."""
+    return "`" + value.replace("`", "'").replace("|", "\\|") + "`"
 
 
 def _patch_lines(patch: str) -> Iterator[tuple[int, str, bool]]:

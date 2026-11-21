@@ -162,3 +162,13 @@ def test_pyproject_tables_above_the_hunk_are_read_from_the_full_text():
 
     assert _triples(without[1:]) == []
     assert _triples(with_text[1:]) == [("widgets", Relation.DEPENDS_ON, "sqlalchemy")]
+
+
+def test_render_keeps_table_cells_intact():
+    odd = ProposedClaim("a|b", Relation.OWNED_BY, "x`y")
+    dropped = ProposedClaim("c", Relation.OWNED_BY, "d")
+
+    text = render_proposal([odd, dropped], {dropped.id: "alice"}, "open")
+
+    assert "`a\\|b`" in text and "`x'y`" in text
+    assert f"| ~~`{dropped.id}`~~ | ~~`c`~~ | ~~ownedBy~~ | ~~`d`~~ | dropped by `alice` |" in text
