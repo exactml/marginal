@@ -66,8 +66,12 @@ affected if this changes*, *why is this like this*, and *who should review this*
 | `releaseOf` (`hasRelease`) | release → library | F | release PR, tag |
 | `schedules` (`scheduledBy`) | workflow → task | | workflow definition |
 | `ownedBy` (`ownerOf`) | component → team | | CODEOWNERS |
-| `changes` (`changedBy`) | pull request → component | | diff |
 | `decisionAbout` | decision → component | | ADR, review thread, maintainer reply |
+
+Which files a pull request changed is not a relation. Git already records it,
+and storing it would add one claim per directory per pull request, burying the
+claims that say something about the organization. Staleness reads a merged
+pull request's changed files as an event when it happens instead.
 
 `ownedBy` is not functional: a CODEOWNERS line often names several teams, and
 each becomes its own claim. A change of owner shows up as a CODEOWNERS change,
