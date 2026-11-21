@@ -137,7 +137,7 @@ evidence exists. "PR" means a pull request alone is enough evidence.
 | `reverts` (`revertedBy`) | pull request → pull request | F | PR |
 | `introducedIn` (`introduced`) | defect → commit or pull request | | bisect, incident |
 | `blocks` (`blockedBy`) | issue → issue | | issue tracker |
-| `releasedIn` (`releaseContains`) | pull request → release | F | PR, tags |
+| `releasedIn` (`releaseContains`) | pull request → release | | PR, tags; several values when backported |
 
 **Decisions and rules**
 
