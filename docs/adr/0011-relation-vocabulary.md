@@ -193,9 +193,11 @@ This PR would record:
 Reply "/marginal drop 2" to exclude a claim. Merging accepts the rest.
 ```
 
-Only someone with write access to the repository (GitHub's `OWNER`, `MEMBER`
-or `COLLABORATOR` association) can drop a claim, the pull request's author
-included when they have that access. A drop from anyone else is ignored. A
+Only someone with write access to the repository can drop a claim, the pull
+request's author included when they have that access. marginal checks the
+replier's permission on the repository (`write`, `maintain` or `admin`)
+through GitHub's collaborator permission API. A comment's `author_association`
+is not enough, because `MEMBER` and `COLLABORATOR` can have read-only access. A drop from anyone else is ignored. A
 dropped claim is kept as rejected, with who dropped it and their reply as the
 reason, so dropping never deletes knowledge silently.
 
