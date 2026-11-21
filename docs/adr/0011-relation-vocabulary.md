@@ -38,7 +38,7 @@ and optional rules:
 - **⊑ p** (sub-relation of p): every fact of this relation is also a fact of p.
 
 Entity types form a hierarchy. `component` is the parent of `module`, `class`,
-`repository`, `library`, `release`, `service`, `task` and `dataset`, so a
+`repository`, `system`, `library`, `release`, `service`, `task` and `dataset`, so a
 relation declared on `component` accepts any of them. This is what lets a
 sub-relation such as `installs` (repository → release) also be a `dependsOn`
 (component → component) fact without failing type checks.
@@ -59,7 +59,7 @@ affected if this changes*, *why is this like this*, and *who should review this*
 
 | Relation (inverse) | From → To | Rules | Evidence in a PR |
 |---|---|---|---|
-| `partOf` (`hasPart`) | module → repository, repository → system | T | file tree |
+| `partOf` (`hasPart`) | component → component (e.g. module → repository → system) | T | file tree |
 | `inherits` (`inheritedBy`) | class → class | T, ⊑ `dependsOn` | source |
 | `dependsOn` (`dependencyOf`) | component → component | T | manifests, imports |
 | `installs` (`installedBy`) | repository → release | ⊑ `dependsOn` | requirements and lock files |
