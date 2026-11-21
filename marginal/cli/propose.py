@@ -39,15 +39,17 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
         client = GitHubClient(repo, config.permissions)
         files = client.get_pull_request_files(pr_number)
         comments = client.list_issue_comments(pr_number)
-        # A pyproject line's table can sit above its hunk, so read the whole file.
-        contents = {}
+        # A pyproject line's table can sit above its hunk, so read the whole
+        # file on both sides of the diff.
+        head, base = {}, {}
         for file in files:
             name = str(file["filename"])
             if PurePosixPath(name).name == "pyproject.toml":
-                text = client.get_file(name, str(pull_request["head"]["sha"]))
-                if text is not None:
-                    contents[name] = text
-        claims = extract_claims(repo.split("/")[-1], files, contents)
+                for side, contents in (("head", head), ("base", base)):
+                    text = client.get_file(name, str(pull_request[side]["sha"]))
+                    if text is not None:
+                        contents[name] = text
+        claims = extract_claims(repo.split("/")[-1], files, head, base)
         body = render_proposal(claims, _allowed_drops(client, comments), _state(pull_request))
         print(body)
         if comment:

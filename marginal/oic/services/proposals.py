@@ -20,6 +20,7 @@ PROPOSAL_HEADING = "### 📚 marginal knowledge proposal"
 PullRequestState = Literal["open", "merged", "closed"]
 
 _HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)")
+_ANY_HUNK_HEADER = re.compile(r"^@@ -(\S+) \+(\S+) @@(.*)$")
 _DROP = re.compile(r"^\s*/marginal drop\s+([0-9a-f][0-9a-f ,]*)\s*$", re.MULTILINE)
 _REQUIREMENT = re.compile(r"([A-Za-z][A-Za-z0-9._-]*)(?:\[[^\]]*\])?\s*(.*)")
 _QUOTED = re.compile(r'"([^"]+)"')
@@ -47,25 +48,52 @@ class ProposedClaim:
 def extract_claims(
     repo: str,
     files: Iterable[dict[str, object]],
-    contents: dict[str, str] | None = None,
+    head_contents: dict[str, str] | None = None,
+    base_contents: dict[str, str] | None = None,
 ) -> list[ProposedClaim]:
-    """The claims `files` (GitHub's PR files, with patches) evidence, in diff order,
-    each once. Which files a PR touched is not a claim: git already has it.
+    """The new claims `files` (GitHub's PR files, with patches) evidence, in
+    diff order, each once. Which files a PR touched is not a claim: git
+    already has it.
 
-    `contents` maps a path to its full text at the PR's head, for files whose
-    patch alone can't say what a line means (`pyproject.toml`)."""
+    `head_contents` and `base_contents` map a path to its full text at the
+    PR's head and base, for files whose patch alone can't say what a line
+    means (`pyproject.toml`)."""
     claims: list[ProposedClaim] = []
     for file in files:
         path = str(file["filename"])
         patch = str(file.get("patch") or "")
-        name = PurePosixPath(path).name
-        if name == "CODEOWNERS":
-            claims.extend(_owners(path, patch))
-        elif _REQUIREMENTS_FILE.fullmatch(name):
-            claims.extend(_requirements_txt(repo, path, patch))
-        elif name == "pyproject.toml":
-            claims.extend(_pyproject(repo, path, patch, (contents or {}).get(path)))
+        new = _claims(repo, path, patch, (head_contents or {}).get(path))
+        # An edited line shows as removed + added; what it already said isn't new.
+        old = _claims(repo, path, _reverse(patch), (base_contents or {}).get(path))
+        known = {claim.id for claim in old}
+        claims.extend(claim for claim in new if claim.id not in known)
     return list({claim.id: claim for claim in claims}.values())
+
+
+def _claims(repo: str, path: str, patch: str, text: str | None) -> list[ProposedClaim]:
+    """Claims from the lines `patch` adds to `path`."""
+    name = PurePosixPath(path).name
+    if name == "CODEOWNERS":
+        return list(_owners(path, patch))
+    if _REQUIREMENTS_FILE.fullmatch(name):
+        return list(_requirements_txt(repo, path, patch))
+    if name == "pyproject.toml":
+        return list(_pyproject(repo, path, patch, text))
+    return []
+
+
+def _reverse(patch: str) -> str:
+    """`patch` undone: its removed lines become added ones, with old-file numbers."""
+    rows = []
+    for row in patch.splitlines():
+        header = _ANY_HUNK_HEADER.match(row)
+        if header:
+            rows.append(f"@@ -{header.group(2)} +{header.group(1)} @@{header.group(3)}")
+        elif row[:1] in ("+", "-"):
+            rows.append({"+": "-", "-": "+"}[row[:1]] + row[1:])
+        else:
+            rows.append(row)
+    return "\n".join(rows)
 
 
 def requested_drops(comments: Iterable[dict[str, object]]) -> list[tuple[str, set[str]]]:
@@ -181,7 +209,7 @@ def _pyproject(
             array, line = opened.group(1), opened.group(2)
         if number in added and array and _is_dependency_array(table, array):
             for spec in _QUOTED.findall(line):
-                yield from _dependency(repo, spec, f"{path}:{number}")
+                yield from _dependency(project, spec, f"{path}:{number}")
         if line.rstrip(", ").endswith("]"):  # not `]` alone: extras like `pkg[x]` have one
             array = None
 

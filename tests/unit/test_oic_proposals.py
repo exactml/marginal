@@ -167,3 +167,24 @@ def test_render_keeps_table_cells_intact():
 
     assert "`a\\|b`" in text and "`x'y`" in text
     assert f"| ~~`{dropped.id}`~~ | ~~`c`~~ | ~~ownedBy~~ | ~~`d`~~ | dropped by `alice` |" in text
+
+
+def test_an_edited_line_proposes_only_what_it_adds():
+    # Found on a real PR: a one-line array rewritten to add one dependency.
+    patch = (
+        "@@ -1,3 +1,3 @@\n"
+        " [project]\n"
+        ' name = "shop"\n'
+        '-dependencies = ["pydantic>=2"]\n'
+        '+dependencies = ["pydantic>=2", "requests==2.32.3"]\n'
+    )
+    owners = "@@ -1,1 +1,1 @@\n-/shop/ @alice\n+/shop/ @alice @bob\n"
+
+    claims = extract_claims(
+        "widgets", [_file("pyproject.toml", patch), _file("CODEOWNERS", owners)]
+    )
+
+    assert _triples(claims) == [
+        ("shop", Relation.INSTALLS, "requests@2.32.3"),
+        ("/shop/", Relation.OWNED_BY, "@bob"),
+    ]
