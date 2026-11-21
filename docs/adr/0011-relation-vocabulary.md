@@ -161,11 +161,13 @@ evidence exists. "PR" means a pull request alone is enough evidence.
 
 ### 4. Organizations extend the vocabulary; they do not change the core
 
-An organization adds its own relations as sub-relations of core ones, so the
-core rules still apply. Example: a team that runs one pipeline per customer
-adds `servesCustomer` (pipeline → customer, F) and `enablesTask`
-(pipeline → task, ⊑ `dependsOn`). Impact questions then reach customers with
-no change to marginal. Extensions live in the organization's own configuration,
+An organization adds its own entity types and relations. A relation that
+refines a core one is declared its sub-relation, so the core rules still apply
+to it; a relation with no core counterpart states its own domain, range and
+rules. Example: a team that runs one pipeline per customer adds `enablesTask`
+(pipeline → task, ⊑ `dependsOn`) and a new relation `servesCustomer`
+(pipeline → customer, F). Impact questions then reach customers through
+`dependsOn` and `servesCustomer` with no change to marginal. Extensions live in the organization's own configuration,
 not in this repository.
 
 ### 5. Each merged pull request returns a proposal
