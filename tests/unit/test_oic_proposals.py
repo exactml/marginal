@@ -137,3 +137,28 @@ def test_render_shows_dropped_claims_and_the_state():
     assert "accepted" in merged and "/marginal drop" not in merged
     assert "not recorded" in closed
     assert "No relations found" in render_proposal([], {}, "open")
+
+
+def test_pyproject_tables_above_the_hunk_are_read_from_the_full_text():
+    # Hunk starts below `[project.optional-dependencies]`, as in most dependency PRs.
+    patch = (
+        "@@ -2,1 +2,3 @@\n"
+        ' ollama = ["openai>=1.40"]\n'
+        '+oic = ["sqlalchemy>=2"]\n'
+        '+testpaths = ["tests"]\n'
+    )
+    text = (
+        "[project.optional-dependencies]\n"
+        'ollama = ["openai>=1.40"]\n'
+        'oic = ["sqlalchemy>=2"]\n'
+        "[tool.pytest.ini_options]\n"
+        'testpaths = ["tests"]\n'
+    )
+
+    without = extract_claims("widgets", 7, [_file("pyproject.toml", patch)])
+    with_text = extract_claims(
+        "widgets", 7, [_file("pyproject.toml", patch)], {"pyproject.toml": text}
+    )
+
+    assert _triples(without[1:]) == []
+    assert _triples(with_text[1:]) == [("widgets", Relation.DEPENDS_ON, "sqlalchemy")]

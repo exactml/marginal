@@ -45,10 +45,14 @@ class ProposedClaim:
 
 
 def extract_claims(
-    repo: str, pr_number: int, files: Iterable[dict[str, object]]
+    repo: str,
+    pr_number: int,
+    files: Iterable[dict[str, object]],
+    contents: dict[str, str] | None = None,
 ) -> list[ProposedClaim]:
     """The claims `files` (GitHub's PR files, with patches) evidence, in diff order,
-    each once."""
+    each once. `contents` maps a path to its full text at the PR's head, for
+    files whose patch alone can't say what a line means (`pyproject.toml`)."""
     claims: list[ProposedClaim] = []
     for file in files:
         path = str(file["filename"])
@@ -68,7 +72,7 @@ def extract_claims(
         elif _REQUIREMENTS_FILE.fullmatch(name):
             claims.extend(_requirements_txt(repo, path, patch))
         elif name == "pyproject.toml":
-            claims.extend(_pyproject(repo, path, patch))
+            claims.extend(_pyproject(repo, path, patch, (contents or {}).get(path)))
     return list({claim.id: claim for claim in claims}.values())
 
 
@@ -145,13 +149,22 @@ def _requirements_txt(repo: str, path: str, patch: str) -> Iterator[ProposedClai
             yield from _dependency(repo, spec, f"{path}:{number}")
 
 
-def _pyproject(repo: str, path: str, patch: str) -> Iterator[ProposedClaim]:
-    # shortcut: reads only what the patch shows. The project name must be in the
-    # version bump's hunk (it usually sits right above), otherwise the repo name
-    # stands in; an array opened above its hunk isn't seen as dependencies.
+def _pyproject(
+    repo: str, path: str, patch: str, text: str | None = None
+) -> Iterator[ProposedClaim]:
+    """Release and dependency claims from the patch's added lines. With the
+    file's full `text`, each line's table and array come from the whole file;
+    without it, only from what the patch shows, so a table header above a hunk
+    is missed and the repo name stands in for the project's."""
+    added = {number for number, _, is_added in _patch_lines(patch) if is_added}
+    rows = (
+        enumerate(text.splitlines(), 1)
+        if text is not None
+        else ((number, line) for number, line, _ in _patch_lines(patch))
+    )
     project, table, array = repo, "", None
-    for number, text, added in _patch_lines(patch):
-        line = text.split("#", 1)[0].strip()
+    for number, raw in rows:
+        line = raw.split("#", 1)[0].strip()
         header = _TOML_TABLE.match(line)
         if header:
             table, array = header.group(1).strip(), None
@@ -160,7 +173,7 @@ def _pyproject(repo: str, path: str, patch: str) -> Iterator[ProposedClaim]:
         if field and table in ("", "project"):  # "": the table header isn't in the hunk
             if field.group(1) == "name":
                 project = field.group(2)
-            elif added:
+            elif number in added:
                 version = field.group(2)
                 yield ProposedClaim(
                     f"{project}@{version}", Relation.RELEASE_OF, project, f"{path}:{number}"
@@ -169,7 +182,7 @@ def _pyproject(repo: str, path: str, patch: str) -> Iterator[ProposedClaim]:
         opened = _TOML_ARRAY.match(line)
         if opened:
             array, line = opened.group(1), opened.group(2)
-        if added and array and _is_dependency_array(table, array):
+        if number in added and array and _is_dependency_array(table, array):
             for spec in _QUOTED.findall(line):
                 yield from _dependency(repo, spec, f"{path}:{number}")
         if line.rstrip(", ").endswith("]"):  # not `]` alone: extras like `pkg[x]` have one

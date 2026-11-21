@@ -21,7 +21,11 @@ def client(tmp_path, monkeypatch):
     with patch("marginal.cli.propose.GitHubClient") as cls:
         github = cls.return_value
         github.get_file.side_effect = working_tree_file
-        github.get_pull_request.return_value = {"base": {"sha": "abc"}, "state": "open"}
+        github.get_pull_request.return_value = {
+            "base": {"sha": "abc"},
+            "head": {"sha": "def"},
+            "state": "open",
+        }
         github.get_pull_request_files.return_value = FILES
         github.list_issue_comments.return_value = []
         github.get_permission.return_value = "write"
@@ -48,7 +52,11 @@ def test_first_run_posts_one_comment_and_later_runs_edit_it(client):
     _propose("--comment")
     body = client.create_issue_comment.call_args.args[1]
     client.list_issue_comments.return_value = [_comment(9, body, "github-actions[bot]")]
-    client.get_pull_request.return_value = {"base": {"sha": "abc"}, "merged": True}
+    client.get_pull_request.return_value = {
+        "base": {"sha": "abc"},
+        "head": {"sha": "def"},
+        "merged": True,
+    }
 
     _propose("--comment")
 
@@ -86,7 +94,11 @@ def test_a_writer_can_drop_a_claim_and_a_reader_cannot(client, capsys):
 
 
 def test_a_pr_closed_without_merging_is_not_recorded(client, capsys):
-    client.get_pull_request.return_value = {"base": {"sha": "abc"}, "state": "closed"}
+    client.get_pull_request.return_value = {
+        "base": {"sha": "abc"},
+        "head": {"sha": "def"},
+        "state": "closed",
+    }
 
     _propose()
 
@@ -98,3 +110,21 @@ def test_github_error_exits_1(client, capsys):
 
     assert _propose() == 1
     assert "marginal propose:" in capsys.readouterr().err
+
+
+def test_pyproject_is_read_whole_at_the_head_commit(client, capsys):
+    client.get_pull_request_files.return_value = [
+        {
+            "filename": "pyproject.toml",
+            "patch": '@@ -2,1 +2,2 @@\n x = ["a"]\n+y = ["sqlalchemy>=2"]\n',
+        }
+    ]
+    client.get_file.side_effect = lambda path, ref: (
+        '[project.optional-dependencies]\nx = ["a"]\ny = ["sqlalchemy>=2"]\n'
+        if (path, ref) == ("pyproject.toml", "def")
+        else working_tree_file(path, ref)
+    )
+
+    _propose()
+
+    assert "| dependsOn | `sqlalchemy`" in capsys.readouterr().out
