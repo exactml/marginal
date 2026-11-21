@@ -79,7 +79,16 @@ def _allowed_drops(client: GitHubClient, comments: list[dict[str, object]]) -> d
 def _post(
     client: GitHubClient, pr_number: int, comments: list[dict[str, object]], body: str
 ) -> None:
-    existing = next((c for c in comments if PROPOSAL_MARKER in str(c.get("body") or "")), None)
+    # Only a bot's comment: anyone can paste the hidden marker into their own.
+    existing = next(
+        (
+            c
+            for c in comments
+            if PROPOSAL_MARKER in str(c.get("body") or "")
+            and (c.get("user") or {}).get("type") == "Bot"
+        ),
+        None,
+    )
     if existing is None:
         client.create_issue_comment(pr_number, body)
     elif existing.get("body") != body:

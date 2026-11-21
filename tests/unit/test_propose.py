@@ -37,7 +37,8 @@ def _propose(*args):
 
 
 def _comment(id, body, login="alice"):
-    return {"id": id, "body": body, "user": {"login": login}}
+    kind = "Bot" if login.endswith("[bot]") else "User"
+    return {"id": id, "body": body, "user": {"login": login, "type": kind}}
 
 
 def test_prints_the_proposal_without_posting(client, capsys):
@@ -128,3 +129,14 @@ def test_pyproject_is_read_whole_at_the_head_commit(client, capsys):
     _propose()
 
     assert "| dependsOn | `sqlalchemy`" in capsys.readouterr().out
+
+
+def test_a_person_pasting_the_marker_does_not_take_over_the_proposal(client, capsys):
+    _propose()
+    body = capsys.readouterr().out.rstrip("\n")
+    client.list_issue_comments.return_value = [_comment(3, body, "mallory")]
+
+    _propose("--comment")
+
+    client.update_issue_comment.assert_not_called()
+    client.create_issue_comment.assert_called_once()
