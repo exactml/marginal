@@ -31,6 +31,8 @@ jobs:
   # Knowledge proposal (ADR 0011): deterministic, no model call. Runs from this
   # checkout until marginal-action exposes it.
   propose:
+    # A fork PR's GITHUB_TOKEN is read-only, so it couldn't post the comment.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
