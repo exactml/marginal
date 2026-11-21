@@ -524,3 +524,56 @@ def test_server_error_raises_github_api_error_with_status_and_message(monkeypatc
         client.get_pull_request(1)
     assert exc_info.value.status_code == 500
     assert "Internal Server Error" in str(exc_info.value)
+
+
+def test_issue_comments_are_created_and_updated(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = _response(201, {"id": 5})
+    client = _client(session=session)
+
+    client.create_issue_comment(7, "hello")
+    created = session.request.call_args
+    client.update_issue_comment(5, "edited")
+    updated = session.request.call_args
+
+    assert created.args == ("POST", "https://api.github.com/repos/acme/widgets/issues/7/comments")
+    assert created.kwargs["json"] == {"body": "hello"}
+    assert updated.args == (
+        "PATCH",
+        "https://api.github.com/repos/acme/widgets/issues/comments/5",
+    )
+    assert updated.kwargs["json"] == {"body": "edited"}
+
+
+def test_issue_comment_writes_denied_without_write_comments(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    client = _client(PermissionsConfig(write=PermissionsWrite(comments=False)), session)
+
+    with pytest.raises(PermissionDeniedError):
+        client.create_issue_comment(7, "hello")
+    with pytest.raises(PermissionDeniedError):
+        client.update_issue_comment(5, "edited")
+    session.request.assert_not_called()
+
+
+def test_get_permission_reads_the_collaborator_permission(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = _response(200, {"permission": "write"})
+    client = _client(session=session)
+
+    assert client.get_permission("alice") == "write"
+    assert session.request.call_args.args == (
+        "GET",
+        "https://api.github.com/repos/acme/widgets/collaborators/alice/permission",
+    )
+
+
+def test_get_permission_of_an_unknown_user_is_none(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = _response(404, {"message": "Not Found"})
+
+    assert _client(session=session).get_permission("ghost") == "none"
