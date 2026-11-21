@@ -65,9 +65,13 @@ affected if this changes*, *why is this like this*, and *who should review this*
 | `installs` (`installedBy`) | repository → release | ⊑ `dependsOn` | requirements and lock files |
 | `releaseOf` (`hasRelease`) | release → library | F | release PR, tag |
 | `schedules` (`scheduledBy`) | workflow → task | | workflow definition |
-| `ownedBy` (`ownerOf`) | component → team | F | CODEOWNERS |
+| `ownedBy` (`ownerOf`) | component → team | | CODEOWNERS |
 | `changes` (`changedBy`) | pull request → component | | diff |
 | `decisionAbout` | decision → component | | ADR, review thread, maintainer reply |
+
+`ownedBy` is not functional: a CODEOWNERS line often names several teams, and
+each becomes its own claim. A change of owner shows up as a CODEOWNERS change,
+which closes the old claim with `valid_until`.
 
 Example: from `checkout dependsOn billing` and
 `billing installs ledger-client@2.1`, the rules give
