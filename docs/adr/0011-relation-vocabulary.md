@@ -191,6 +191,12 @@ This PR would record:
 Reply "/marginal drop 2" to exclude a claim. Merging accepts the rest.
 ```
 
+Only someone with write access to the repository (GitHub's `OWNER`, `MEMBER`
+or `COLLABORATOR` association) can drop a claim, the pull request's author
+included when they have that access. A drop from anyone else is ignored. A
+dropped claim is kept as rejected, with who dropped it and their reply as the
+reason, so dropping never deletes knowledge silently.
+
 Merge time is not always when something becomes true. A library fix merged on
 one date reaches a consumer only when that consumer's pull request bumps the
 version. `valid_from` follows the pull request that carries the evidence, so
