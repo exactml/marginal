@@ -177,7 +177,9 @@ PR opened    → claims extracted as proposals (status proposed),
                evidence = PR URL + head SHA
 PR merged    → proposals the reviewers did not drop become active,
                valid_from = merged_at, recorded_at = now
-PR closed    → proposals rejected; kept, because "we tried this" is knowledge
+PR closed    → only when closed without merging (GitHub sends a merge as a
+               closed event with merged = true): proposals rejected; kept,
+               because "we tried this" is knowledge
 later PR     → revises or supersedes; append-only history keeps the trail
 ```
 
