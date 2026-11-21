@@ -86,13 +86,17 @@ def _post(
     body: str,
     claims: list[ProposedClaim],
 ) -> None:
-    # Only a bot's comment: anyone can paste the hidden marker into their own.
+    # Anyone can paste the hidden marker, so only a bot's comment counts, or a
+    # writer's: marginal run with a personal token posts as that person.
     existing = next(
         (
             c
             for c in comments
             if PROPOSAL_MARKER in str(c.get("body") or "")
-            and (c.get("user") or {}).get("type") == "Bot"
+            and (
+                (c.get("user") or {}).get("type") == "Bot"
+                or client.get_permission(str((c.get("user") or {}).get("login", ""))) in _CAN_DROP
+            )
         ),
         None,
     )

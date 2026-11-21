@@ -135,6 +135,7 @@ def test_a_person_pasting_the_marker_does_not_take_over_the_proposal(client, cap
     _propose()
     body = capsys.readouterr().out.rstrip("\n")
     client.list_issue_comments.return_value = [_comment(3, body, "mallory")]
+    client.get_permission.return_value = "read"
 
     _propose("--comment")
 
@@ -164,3 +165,15 @@ def test_a_proposal_that_loses_its_last_claim_is_updated_not_left_stale(client, 
     _propose("--comment")
 
     assert "No relations found" in client.update_issue_comment.call_args.args[1]
+
+
+def test_a_proposal_posted_with_a_writers_personal_token_is_edited_not_duplicated(client, capsys):
+    # Found on a real run: a personal token posts as the person, not a bot.
+    _propose()
+    body = capsys.readouterr().out.rstrip("\n")
+    client.list_issue_comments.return_value = [_comment(3, body + " old", "maintainer")]
+
+    _propose("--comment")
+
+    client.create_issue_comment.assert_not_called()
+    assert client.update_issue_comment.call_args.args[0] == 3
