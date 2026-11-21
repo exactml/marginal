@@ -46,26 +46,18 @@ class ProposedClaim:
 
 def extract_claims(
     repo: str,
-    pr_number: int,
     files: Iterable[dict[str, object]],
     contents: dict[str, str] | None = None,
 ) -> list[ProposedClaim]:
     """The claims `files` (GitHub's PR files, with patches) evidence, in diff order,
-    each once. `contents` maps a path to its full text at the PR's head, for
-    files whose patch alone can't say what a line means (`pyproject.toml`)."""
+    each once. Which files a PR touched is not a claim: git already has it.
+
+    `contents` maps a path to its full text at the PR's head, for files whose
+    patch alone can't say what a line means (`pyproject.toml`)."""
     claims: list[ProposedClaim] = []
     for file in files:
         path = str(file["filename"])
         patch = str(file.get("patch") or "")
-        directory = str(PurePosixPath(path).parent)
-        claims.append(
-            ProposedClaim(
-                f"PR #{pr_number}",
-                Relation.CHANGES,
-                repo if directory == "." else directory,
-                path,
-            )
-        )
         name = PurePosixPath(path).name
         if name == "CODEOWNERS":
             claims.extend(_owners(path, patch))

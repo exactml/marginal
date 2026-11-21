@@ -16,15 +16,10 @@ def _triples(claims):
     return [(c.subject, c.relation, c.object) for c in claims]
 
 
-def test_each_changed_directory_gets_one_changes_claim():
-    claims = extract_claims(
-        "widgets", 7, [_file("app/a.py"), _file("app/b.py"), _file("README.md")]
-    )
+def test_a_plain_code_change_proposes_nothing():
+    patch = "@@ -1,1 +1,2 @@\n import os\n+print(os.getcwd())\n"
 
-    assert _triples(claims) == [
-        ("PR #7", Relation.CHANGES, "app"),
-        ("PR #7", Relation.CHANGES, "widgets"),
-    ]
+    assert extract_claims("widgets", [_file("app/a.py", patch), _file("README.md")]) == []
 
 
 def test_added_codeowners_lines_give_one_owner_claim_per_owner():
@@ -35,7 +30,7 @@ def test_added_codeowners_lines_give_one_owner_claim_per_owner():
         "+/docs/ @alice # docs\n"
     )
 
-    claims = extract_claims("widgets", 7, [_file(".github/CODEOWNERS", patch)])
+    claims = extract_claims("widgets", [_file(".github/CODEOWNERS", patch)])
 
     owners = [c for c in claims if c.relation is Relation.OWNED_BY]
     assert _triples(owners) == [
@@ -55,9 +50,9 @@ def test_requirements_pins_are_installs_and_ranges_are_depends_on():
         "+-r base.txt\n"
     )
 
-    claims = extract_claims("widgets", 7, [_file("requirements-dev.txt", patch)])
+    claims = extract_claims("widgets", [_file("requirements-dev.txt", patch)])
 
-    assert _triples(claims[1:]) == [
+    assert _triples(claims) == [
         ("widgets", Relation.INSTALLS, "requests@2.31.0"),
         ("widgets", Relation.DEPENDS_ON, "pandas"),
     ]
@@ -72,9 +67,9 @@ def test_pyproject_version_bump_is_a_release_of_the_named_project():
         '+version = "1.1.0"\n'
     )
 
-    claims = extract_claims("widgets", 7, [_file("pyproject.toml", patch)])
+    claims = extract_claims("widgets", [_file("pyproject.toml", patch)])
 
-    assert _triples(claims[1:]) == [("widgets-lib@1.1.0", Relation.RELEASE_OF, "widgets-lib")]
+    assert _triples(claims) == [("widgets-lib@1.1.0", Relation.RELEASE_OF, "widgets-lib")]
 
 
 def test_pyproject_reads_only_dependency_arrays():
@@ -91,9 +86,9 @@ def test_pyproject_reads_only_dependency_arrays():
         '+  "requests>=2",\n'
     )
 
-    claims = extract_claims("widgets", 7, [_file("pyproject.toml", patch)])
+    claims = extract_claims("widgets", [_file("pyproject.toml", patch)])
 
-    assert _triples(claims[1:]) == [
+    assert _triples(claims) == [
         ("widgets", Relation.DEPENDS_ON, "sqlalchemy"),
         ("widgets", Relation.INSTALLS, "alembic@1.13"),
         ("widgets", Relation.DEPENDS_ON, "requests"),
@@ -155,13 +150,13 @@ def test_pyproject_tables_above_the_hunk_are_read_from_the_full_text():
         'testpaths = ["tests"]\n'
     )
 
-    without = extract_claims("widgets", 7, [_file("pyproject.toml", patch)])
+    without = extract_claims("widgets", [_file("pyproject.toml", patch)])
     with_text = extract_claims(
-        "widgets", 7, [_file("pyproject.toml", patch)], {"pyproject.toml": text}
+        "widgets", [_file("pyproject.toml", patch)], {"pyproject.toml": text}
     )
 
-    assert _triples(without[1:]) == []
-    assert _triples(with_text[1:]) == [("widgets", Relation.DEPENDS_ON, "sqlalchemy")]
+    assert _triples(without) == []
+    assert _triples(with_text) == [("widgets", Relation.DEPENDS_ON, "sqlalchemy")]
 
 
 def test_render_keeps_table_cells_intact():

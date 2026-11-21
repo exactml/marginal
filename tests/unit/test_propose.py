@@ -140,3 +140,27 @@ def test_a_person_pasting_the_marker_does_not_take_over_the_proposal(client, cap
 
     client.update_issue_comment.assert_not_called()
     client.create_issue_comment.assert_called_once()
+
+
+def test_a_pr_with_no_relations_gets_no_comment(client, capsys):
+    client.get_pull_request_files.return_value = [
+        {"filename": "app.py", "patch": "@@ -1 +1 @@\n+x"}
+    ]
+
+    assert _propose("--comment") == 0
+
+    assert "No relations found" in capsys.readouterr().out
+    client.create_issue_comment.assert_not_called()
+
+
+def test_a_proposal_that_loses_its_last_claim_is_updated_not_left_stale(client, capsys):
+    _propose()
+    body = capsys.readouterr().out.rstrip("\n")
+    client.list_issue_comments.return_value = [_comment(9, body, "github-actions[bot]")]
+    client.get_pull_request_files.return_value = [
+        {"filename": "app.py", "patch": "@@ -1 +1 @@\n+x"}
+    ]
+
+    _propose("--comment")
+
+    assert "No relations found" in client.update_issue_comment.call_args.args[1]

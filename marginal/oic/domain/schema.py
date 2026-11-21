@@ -134,7 +134,6 @@ class Relation(str, Enum):
     RELEASE_OF = "releaseOf"
     SCHEDULES = "schedules"
     OWNED_BY = "ownedBy"
-    CHANGES = "changes"
     DECISION_ABOUT = "decisionAbout"
 
 

@@ -12,6 +12,7 @@ from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubError
 from marginal.oic.services.proposals import (
     PROPOSAL_MARKER,
+    ProposedClaim,
     PullRequestState,
     extract_claims,
     render_proposal,
@@ -46,11 +47,11 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
                 text = client.get_file(name, str(pull_request["head"]["sha"]))
                 if text is not None:
                     contents[name] = text
-        claims = extract_claims(repo.split("/")[-1], pr_number, files, contents)
+        claims = extract_claims(repo.split("/")[-1], files, contents)
         body = render_proposal(claims, _allowed_drops(client, comments), _state(pull_request))
         print(body)
         if comment:
-            _post(client, pr_number, comments, body)
+            _post(client, pr_number, comments, body, claims)
     except (ConfigError, GitHubError) as exc:
         print(f"marginal propose: {exc}", file=sys.stderr)
         return 1
@@ -77,7 +78,11 @@ def _allowed_drops(client: GitHubClient, comments: list[dict[str, object]]) -> d
 
 
 def _post(
-    client: GitHubClient, pr_number: int, comments: list[dict[str, object]], body: str
+    client: GitHubClient,
+    pr_number: int,
+    comments: list[dict[str, object]],
+    body: str,
+    claims: list[ProposedClaim],
 ) -> None:
     # Only a bot's comment: anyone can paste the hidden marker into their own.
     existing = next(
@@ -90,6 +95,7 @@ def _post(
         None,
     )
     if existing is None:
-        client.create_issue_comment(pr_number, body)
+        if claims:  # nothing to propose and nothing posted before: stay quiet
+            client.create_issue_comment(pr_number, body)
     elif existing.get("body") != body:
         client.update_issue_comment(int(existing["id"]), body)
