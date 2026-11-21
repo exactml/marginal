@@ -52,7 +52,7 @@ def test_import_boundary(directory, forbidden):
     assert not violations
 
 
-@pytest.mark.parametrize("directory", ["review", "graph", "oic/domain"])
+@pytest.mark.parametrize("directory", ["review", "graph", "oic/domain", "oic/services"])
 def test_rule_directories_exist(directory):
     # A renamed or mistyped directory would otherwise make its rule check nothing.
     assert (ROOT / directory).is_dir()

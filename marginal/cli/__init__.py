@@ -11,6 +11,7 @@ from marginal.cli.compact import run_compact
 from marginal.cli.doctor import run_doctor
 from marginal.cli.help import run_help
 from marginal.cli.init import run_init
+from marginal.cli.propose import run_propose
 from marginal.cli.review import OutputFormat, run_review
 
 
@@ -86,6 +87,17 @@ def main(argv: list[str] | None = None) -> int:
         "--comment", action="store_true", help="Reply in each resolved finding's thread"
     )
 
+    propose_parser = subparsers.add_parser(
+        "propose", help="Show the knowledge a pull request proposes, as one PR comment"
+    )
+    propose_parser.add_argument("--repo", required=True, help="GitHub repository as owner/name")
+    propose_parser.add_argument(
+        "--pr", type=int, required=True, dest="pr_number", help="Pull request number"
+    )
+    propose_parser.add_argument(
+        "--comment", action="store_true", help="Post or update the proposal comment on the PR"
+    )
+
     doctor_parser = subparsers.add_parser(
         "doctor", help="Check config, credentials, and GitHub access before a review"
     )
@@ -104,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_help(parser, subparsers, args.topic)
     if args.command == "compact":
         return run_compact(args.repo, args.pr_number, comment=args.comment)
+    if args.command == "propose":
+        return run_propose(args.repo, args.pr_number, comment=args.comment)
     if args.command == "doctor":
         return run_doctor(args.repo)
     if args.command == "init":

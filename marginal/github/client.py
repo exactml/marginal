@@ -129,6 +129,18 @@ class GitHubClient:
         self._require_read("pull_requests")
         return self._get_all_pages(f"/repos/{self._repo}/issues/{number}/comments")
 
+    def get_permission(self, login: str) -> str:
+        """`login`'s permission on the repository: `admin`, `write`, `read` or
+        `none` (GitHub reports `maintain` as `write` and `triage` as `read`)."""
+        self._require_read("repository")
+        try:
+            data = self._request(
+                "GET", f"/repos/{self._repo}/collaborators/{quote(login, safe='')}/permission"
+            )
+        except GitHubNotFoundError:
+            return "none"
+        return str(data.get("permission", "none"))
+
     def list_review_threads(self, number: int) -> list[dict[str, object]]:
         """Return every review thread on the PR as `{"id", "is_resolved",
         "comment_id"}`, where `comment_id` is the REST id of the thread's first
@@ -188,6 +200,26 @@ class GitHubClient:
             "POST",
             f"/repos/{self._repo}/pulls/{number}/comments/{comment_id}/replies",
             json={"body": body},
+        )
+
+    def create_issue_comment(self, number: int, body: str) -> dict[str, object]:
+        """Post `body` as a top-level comment on PR `number`.
+
+        Requires `permissions.write.comments`.
+        """
+        self._require_write("comments")
+        return self._request(
+            "POST", f"/repos/{self._repo}/issues/{number}/comments", json={"body": body}
+        )
+
+    def update_issue_comment(self, comment_id: int, body: str) -> dict[str, object]:
+        """Replace the body of top-level comment `comment_id`.
+
+        Requires `permissions.write.comments`.
+        """
+        self._require_write("comments")
+        return self._request(
+            "PATCH", f"/repos/{self._repo}/issues/comments/{comment_id}", json={"body": body}
         )
 
     def add_labels(self, number: int, labels: list[str]) -> list[dict[str, object]]:

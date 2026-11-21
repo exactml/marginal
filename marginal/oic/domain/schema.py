@@ -34,6 +34,7 @@ __all__ = [
     "ProposalReviewStatus",
     "ProposalType",
     "ProposalValidationStatus",
+    "Relation",
     "Scope",
     "ScopeType",
     "SenderType",
@@ -121,6 +122,19 @@ class ClaimLinkType(str, Enum):
     APPLIES_TO = "applies_to"
     CAUSED_BY = "caused_by"
     RELATED_TO = "related_to"
+
+
+class Relation(str, Enum):
+    """The core entity-to-entity relations (ADR 0011): every one can be read from a pull request."""
+
+    PART_OF = "partOf"
+    INHERITS = "inherits"
+    DEPENDS_ON = "dependsOn"
+    INSTALLS = "installs"
+    RELEASE_OF = "releaseOf"
+    SCHEDULES = "schedules"
+    OWNED_BY = "ownedBy"
+    DECISION_ABOUT = "decisionAbout"
 
 
 class InvestigationStatus(str, Enum):
