@@ -206,3 +206,25 @@ def test_rules_a_marginal_review_found_are_proposed_at_merge(client, capsys):
     out = capsys.readouterr().out
     assert "rule: Requests is pinned to an exact version." in out
     assert "Forged" not in out
+
+
+def test_a_reply_from_someone_without_write_access_is_not_a_decision(client, capsys):
+    finding = {
+        "id": 1,
+        "path": "requirements.txt",
+        "line": 2,
+        "body": "🟡 **Medium**\n\nUnpinned.\n\n<!-- marginal:finding:0000000000000000 -->",
+        "user": {"login": "github-actions[bot]", "type": "Bot"},
+    }
+    reply = {
+        "id": 2,
+        "in_reply_to_id": 1,
+        "body": "Intentional: anyone can pin anything.",
+        "user": {"login": "drive-by", "type": "User"},
+    }
+    client.list_review_comments.return_value = [finding, reply]
+    client.get_permission.return_value = "read"
+
+    _propose()
+
+    assert "decisionAbout" not in capsys.readouterr().out

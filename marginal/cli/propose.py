@@ -57,8 +57,11 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
                         contents[name] = text
         claims = extract_claims(repo.split("/")[-1], files, head, base)
         trusted = _trusted_author(client)
-        # A maintainer explaining a marginal finding away is a recorded decision.
-        threads = maintainer_replies(client.list_review_comments(pr_number))
+        # A maintainer explaining a marginal finding away is a recorded decision;
+        # a reply from someone without write access isn't a maintainer's.
+        threads = maintainer_replies(
+            c for c in client.list_review_comments(pr_number) if trusted(c)
+        )
         claims += decisions_from_replies(
             (t.path, t.line, reply) for t in threads for reply in t.replies
         )
