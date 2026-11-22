@@ -149,7 +149,7 @@ def test_pyproject_is_read_whole_at_the_head_commit(client, capsys):
 
     _propose()
 
-    assert "| dependsOn | `sqlalchemy`" in capsys.readouterr().out
+    assert "| dependsOn | `sqlalchemy>=2`" in capsys.readouterr().out
 
 
 def test_a_maintainer_explaining_a_finding_away_is_proposed_as_a_decision(client, capsys):

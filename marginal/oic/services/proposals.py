@@ -44,6 +44,8 @@ class ProposedClaim:
     relation: Relation
     object: str
     source: str = ""
+    # Why, when the evidence says so (a dependency line's comment); not part of the id.
+    reason: str = ""
 
     @property
     def id(self) -> str:
@@ -118,9 +120,15 @@ def render_proposal(claims: list[ProposedClaim], state: PullRequestState) -> str
         if state == "merged"
         else "When merged, this PR will propose:"
     )
-    lines += [intro, "", "| id | subject | relation | object | source |", "|---|---|---|---|---|"]
+    lines += [
+        intro,
+        "",
+        "| id | subject | relation | object | why | source |",
+        "|---|---|---|---|---|---|",
+    ]
     for claim in claims:
         cells = [_code(claim.id), _code(claim.subject), claim.relation.value, _code(claim.object)]
+        cells.append(claim.reason.replace("|", "\\|"))
         cells.append(_code(claim.source) if claim.source else "")
         lines.append(f"| {' | '.join(cells)} |")
     lines += [
@@ -199,9 +207,10 @@ def _owners(path: str, patch: str) -> Iterator[ProposedClaim]:
 
 def _requirements_txt(repo: str, path: str, patch: str) -> Iterator[ProposedClaim]:
     for number, text, added in _patch_lines(patch):
-        spec = text.split("#", 1)[0].strip()
+        spec, _, comment = text.partition("#")
+        spec = spec.strip()
         if added and spec and not spec.startswith("-"):
-            yield from _dependency(repo, spec, f"{path}:{number}")
+            yield from _dependency(repo, spec, f"{path}:{number}", comment.strip())
 
 
 def _pyproject(
@@ -219,7 +228,8 @@ def _pyproject(
     )
     project, table, array = repo, "", None
     for number, raw in rows:
-        line = raw.split("#", 1)[0].strip()
+        line, _, comment = raw.partition("#")
+        line = line.strip()
         header = _TOML_TABLE.match(line)
         if header:
             table, array = header.group(1).strip(), None
@@ -239,7 +249,7 @@ def _pyproject(
             array, line = opened.group(1), opened.group(2)
         if number in added and array and _is_dependency_array(table, array):
             for spec in _QUOTED.findall(line):
-                yield from _dependency(project, spec, f"{path}:{number}")
+                yield from _dependency(project, spec, f"{path}:{number}", comment.strip())
         if line.rstrip(", ").endswith("]"):  # not `]` alone: extras like `pkg[x]` have one
             array = None
 
@@ -250,12 +260,14 @@ def _is_dependency_array(table: str, array: str) -> bool:
     return array == "dependencies" and table in ("", "project")
 
 
-def _dependency(repo: str, spec: str, source: str) -> Iterator[ProposedClaim]:
+def _dependency(repo: str, spec: str, source: str, reason: str = "") -> Iterator[ProposedClaim]:
+    """`installs name@version` for an exact pin, else `dependsOn` with the range
+    in the object, so a raised floor (`>=3.0.0` to `>=3.0.4`) is a new claim."""
     match = _REQUIREMENT.fullmatch(spec.split(";", 1)[0].strip())
     if not match:
         return
-    name, constraint = match.group(1).lower(), match.group(2).strip()
-    if constraint.startswith("==") and "*" not in constraint:
-        yield ProposedClaim(repo, Relation.INSTALLS, f"{name}@{constraint[2:].strip()}", source)
+    name, constraint = match.group(1).lower(), "".join(match.group(2).split())
+    if constraint.startswith("==") and "*" not in constraint and "," not in constraint:
+        yield ProposedClaim(repo, Relation.INSTALLS, f"{name}@{constraint[2:]}", source, reason)
     else:
-        yield ProposedClaim(repo, Relation.DEPENDS_ON, name, source)
+        yield ProposedClaim(repo, Relation.DEPENDS_ON, f"{name}{constraint}", source, reason)

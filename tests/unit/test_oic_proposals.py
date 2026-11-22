@@ -55,7 +55,7 @@ def test_requirements_pins_are_installs_and_ranges_are_depends_on():
 
     assert _triples(claims) == [
         ("widgets", Relation.INSTALLS, "requests@2.31.0"),
-        ("widgets", Relation.DEPENDS_ON, "pandas"),
+        ("widgets", Relation.DEPENDS_ON, "pandas>=2"),
     ]
 
 
@@ -90,9 +90,9 @@ def test_pyproject_reads_only_dependency_arrays():
     claims = extract_claims("widgets", [_file("pyproject.toml", patch)])
 
     assert _triples(claims) == [
-        ("widgets", Relation.DEPENDS_ON, "sqlalchemy"),
+        ("widgets", Relation.DEPENDS_ON, "sqlalchemy>=2"),
         ("widgets", Relation.INSTALLS, "alembic@1.13"),
-        ("widgets", Relation.DEPENDS_ON, "requests"),
+        ("widgets", Relation.DEPENDS_ON, "requests>=2"),
     ]
 
 
@@ -139,7 +139,7 @@ def test_pyproject_tables_above_the_hunk_are_read_from_the_full_text():
     )
 
     assert _triples(without) == []
-    assert _triples(with_text) == [("widgets", Relation.DEPENDS_ON, "sqlalchemy")]
+    assert _triples(with_text) == [("widgets", Relation.DEPENDS_ON, "sqlalchemy>=2")]
 
 
 def test_render_keeps_table_cells_intact():
@@ -215,3 +215,21 @@ def test_review_knowledge_is_kept_only_while_its_quote_is_in_the_merged_diff():
     assert _triples(claims) == [
         ("rule: Orders of 100 or more ship free.", Relation.CONSTRAINS, "shop/pricing.py")
     ]
+
+
+def test_a_raised_floor_is_a_new_claim_with_its_comment_as_the_reason():
+    # Found on a real PR: only the floor moved, and the comment says why.
+    patch = (
+        "@@ -1,5 +1,5 @@\n"
+        " [project]\n"
+        ' name = "lib"\n'
+        " dependencies = [\n"
+        '-    "core>=3.0.0,<4.0.0", # >=3.0.0: new runner\n'
+        '+    "core>=3.0.4,<4.0.0", # >=3.0.4: io control works again\n'
+        " ]\n"
+    )
+
+    claims = extract_claims("widgets", [_file("pyproject.toml", patch)])
+
+    assert _triples(claims) == [("lib", Relation.DEPENDS_ON, "core>=3.0.4,<4.0.0")]
+    assert claims[0].reason == ">=3.0.4: io control works again"
