@@ -128,7 +128,8 @@ def render_proposal(claims: list[ProposedClaim], state: PullRequestState) -> str
     ]
     for claim in claims:
         cells = [_code(claim.id), _code(claim.subject), claim.relation.value, _code(claim.object)]
-        cells.append(claim.reason.replace("|", "\\|"))
+        # A code span, like the other cells: `@team` in a comment mustn't ping anyone.
+        cells.append(_code(claim.reason) if claim.reason else "")
         cells.append(_code(claim.source) if claim.source else "")
         lines.append(f"| {' | '.join(cells)} |")
     lines += [

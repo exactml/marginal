@@ -264,3 +264,11 @@ def test_url_and_vcs_dependencies_name_their_package_or_nothing():
         ("lib", Relation.DEPENDS_ON, "pkg"),
     ]
     assert claims[1].reason == "vendored fork"
+
+
+def test_a_reason_cannot_ping_or_render_markdown():
+    claim = ProposedClaim(
+        "lib", Relation.DEPENDS_ON, "pkg>=1", "pyproject.toml:4", "needed by @acme/payments <b>"
+    )
+
+    assert "`needed by @acme/payments <b>`" in render_proposal([claim], "merged")
