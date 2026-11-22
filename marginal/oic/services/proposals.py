@@ -286,7 +286,9 @@ def _dependency(repo: str, spec: str, source: str, reason: str = "") -> Iterator
     if "://" in spec:
         # `name @ url` names its package; a bare URL or VCS line names none.
         named = _REQUIREMENT.fullmatch(spec.split("@", 1)[0].strip()) if "@" in spec else None
-        if named:  # the name without extras, as for any other dependency
+        # Only a bare name before `@` names a package: in `git+ssh://git@host/...`
+        # that `@` is the URL's user, and `named` keeps text after the name.
+        if named and not named.group(2):  # the name without extras, as elsewhere
             yield ProposedClaim(repo, Relation.DEPENDS_ON, named.group(1).lower(), source, reason)
         return
     match = _REQUIREMENT.fullmatch(spec)

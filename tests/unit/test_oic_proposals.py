@@ -242,9 +242,10 @@ def test_a_raised_floor_is_a_new_claim_with_its_comment_as_the_reason():
 
 def test_url_and_vcs_dependencies_name_their_package_or_nothing():
     requirements = (
-        "@@ -0,0 +1,3 @@\n"
+        "@@ -0,0 +1,4 @@\n"
         "+git+https://github.com/acme/lib.git#egg=lib\n"
         "+https://example.com/pkg-1.0.whl\n"
+        "+git+ssh://git@github.com/acme/lib.git\n"
         "+tool @ https://example.com/tool-2.0.whl\n"
     )
     pyproject = (
@@ -267,11 +268,10 @@ def test_url_and_vcs_dependencies_name_their_package_or_nothing():
 
 
 def test_a_reason_cannot_ping_or_render_markdown():
-    claim = ProposedClaim(
-        "lib", Relation.DEPENDS_ON, "pkg>=1", "pyproject.toml:4", "needed by @acme/payments <b>"
-    )
+    reason = "needed by @acme/payments <b> | `x`"
+    claim = ProposedClaim("lib", Relation.DEPENDS_ON, "pkg>=1", "pyproject.toml:4", reason)
 
-    assert "`needed by @acme/payments <b>`" in render_proposal([claim], "merged")
+    assert "`needed by @acme/payments <b> \\| 'x'`" in render_proposal([claim], "merged")
 
 
 def test_single_quoted_toml_dependencies_are_read_whole():
