@@ -272,3 +272,22 @@ def test_a_reason_cannot_ping_or_render_markdown():
     )
 
     assert "`needed by @acme/payments <b>`" in render_proposal([claim], "merged")
+
+
+def test_single_quoted_toml_dependencies_are_read_whole():
+    patch = (
+        "@@ -1,3 +1,5 @@\n"
+        " [project]\n"
+        ' name = "lib"\n'
+        " dependencies = [\n"
+        "+    'pkg @ git+https://host/repo.git#subdirectory=pkg', # vendored fork\n"
+        "+    'core>=2', # it's pinned low on purpose\n"
+    )
+
+    claims = extract_claims("widgets", [_file("pyproject.toml", patch)])
+
+    assert _triples(claims) == [
+        ("lib", Relation.DEPENDS_ON, "pkg"),
+        ("lib", Relation.DEPENDS_ON, "core>=2"),
+    ]
+    assert [c.reason for c in claims] == ["vendored fork", "it's pinned low on purpose"]
