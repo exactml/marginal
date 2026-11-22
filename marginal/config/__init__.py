@@ -10,6 +10,7 @@ from marginal.config.schema import (
     PermissionsConfig,
     PermissionsRead,
     PermissionsWrite,
+    ProposalsConfig,
     ReviewConfig,
     ReviewTone,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "PermissionsConfig",
     "PermissionsRead",
     "PermissionsWrite",
+    "ProposalsConfig",
     "ReviewConfig",
     "ReviewTone",
     "load_config",

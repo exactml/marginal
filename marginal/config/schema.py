@@ -101,6 +101,17 @@ class OwnershipConfig(BaseModel):
     notify_responsible: bool = False
 
 
+class ProposalsConfig(BaseModel):
+    """Knowledge proposals (ADR 0011): a merged PR's rules, decisions and
+    dependencies, posted as one comment for the team to review."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Off by default: when on, every review also asks the model for business
+    # rules and decisions, which costs output tokens.
+    enabled: bool = False
+
+
 class ModelSpec(BaseModel):
     """A single model role assignment, parsed structurally only."""
 
@@ -148,6 +159,7 @@ class MarginalConfig(BaseModel):
     review: ReviewConfig = Field(default_factory=ReviewConfig)
     context: ContextConfig = Field(default_factory=ContextConfig)
     ownership: OwnershipConfig = Field(default_factory=OwnershipConfig)
+    proposals: ProposalsConfig = Field(default_factory=ProposalsConfig)
     models: dict[str, ModelSpec] = Field(default_factory=dict)
     policies: list[str] = Field(default_factory=list)
     anti_policies: list[str] = Field(default_factory=list)
