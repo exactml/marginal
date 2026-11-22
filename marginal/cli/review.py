@@ -365,6 +365,7 @@ def run_review(
             prompt_over_budget=over_budget is not None,
             dropped=dropped,
             patches=patches,
+            knowledge=knowledge,
         )
         # Summed over every model call above: findings, its retry, the re-check.
         model = f"{reviewer_model.provider}:{reviewer_model.model}" if reviewer_model else None

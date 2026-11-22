@@ -2063,6 +2063,7 @@ def test_review_format_json_prints_parseable_json_with_pr_metadata(
         "head_sha": "def456",
         "changed_files": ["marginal/retry.py", "tests/test_retry.py"],
         "findings": [],
+        "knowledge": [],
         "dropped_findings": [],
         "redacted_files": [],
         "comment_posted": False,
@@ -2572,6 +2573,7 @@ def test_review_of_two_commits_reviews_the_compare_diff_with_base_config(
                 },
             }
         ],
+        "knowledge": [],
         "dropped_findings": [],
         "redacted_files": [],
         "comment_posted": False,
