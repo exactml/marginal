@@ -238,3 +238,29 @@ def test_a_raised_floor_is_a_new_claim_with_its_comment_as_the_reason():
 
     assert _triples(claims) == [("lib", Relation.DEPENDS_ON, "core>=3.0.4,<4.0.0")]
     assert claims[0].reason == ">=3.0.4: io control works again"
+
+
+def test_url_and_vcs_dependencies_name_their_package_or_nothing():
+    requirements = (
+        "@@ -0,0 +1,3 @@\n"
+        "+git+https://github.com/acme/lib.git#egg=lib\n"
+        "+https://example.com/pkg-1.0.whl\n"
+        "+tool @ https://example.com/tool-2.0.whl\n"
+    )
+    pyproject = (
+        "@@ -1,3 +1,4 @@\n"
+        " [project]\n"
+        ' name = "lib"\n'
+        " dependencies = [\n"
+        '+    "pkg @ git+https://host/repo.git#subdirectory=pkg", # vendored fork\n'
+    )
+
+    claims = extract_claims(
+        "widgets", [_file("requirements.txt", requirements), _file("pyproject.toml", pyproject)]
+    )
+
+    assert _triples(claims) == [
+        ("widgets", Relation.DEPENDS_ON, "tool"),
+        ("lib", Relation.DEPENDS_ON, "pkg"),
+    ]
+    assert claims[1].reason == "vendored fork"

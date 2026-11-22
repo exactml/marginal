@@ -213,7 +213,7 @@ def _owners(path: str, patch: str) -> Iterator[ProposedClaim]:
 
 def _requirements_txt(repo: str, path: str, patch: str) -> Iterator[ProposedClaim]:
     for number, text, added in _patch_lines(patch):
-        spec, _, comment = text.partition("#")
+        spec, comment = _split_comment(text)
         spec = spec.strip()
         if added and spec and not spec.startswith("-"):
             yield from _dependency(repo, spec, f"{path}:{number}", comment.strip())
@@ -234,7 +234,7 @@ def _pyproject(
     )
     project, table, array = repo, "", None
     for number, raw in rows:
-        line, _, comment = raw.partition("#")
+        line, comment = _split_comment(raw)
         line = line.strip()
         header = _TOML_TABLE.match(line)
         if header:
@@ -266,10 +266,28 @@ def _is_dependency_array(table: str, array: str) -> bool:
     return array == "dependencies" and table in ("", "project")
 
 
+def _split_comment(line: str) -> tuple[str, str]:
+    """`line` and its trailing `#` comment; a `#` inside quotes isn't one."""
+    quoted = False
+    for i, char in enumerate(line):
+        if char == '"':
+            quoted = not quoted
+        elif char == "#" and not quoted:
+            return line[:i], line[i + 1 :].strip()
+    return line, ""
+
+
 def _dependency(repo: str, spec: str, source: str, reason: str = "") -> Iterator[ProposedClaim]:
     """`installs name@version` for an exact pin, else `dependsOn` with the range
     in the object, so a raised floor (`>=3.0.0` to `>=3.0.4`) is a new claim."""
-    match = _REQUIREMENT.fullmatch(spec.split(";", 1)[0].strip())
+    spec = spec.split(";", 1)[0].strip()
+    if "://" in spec:
+        # `name @ url` names its package; a bare URL or VCS line names none.
+        name = spec.split("@", 1)[0].strip()
+        if "@" in spec and _REQUIREMENT.fullmatch(name):
+            yield ProposedClaim(repo, Relation.DEPENDS_ON, name.lower(), source, reason)
+        return
+    match = _REQUIREMENT.fullmatch(spec)
     if not match:
         return
     name, constraint = match.group(1).lower(), "".join(match.group(2).split())
