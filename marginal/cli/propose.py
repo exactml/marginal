@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import PurePosixPath
 
 from marginal.config.errors import ConfigError
@@ -55,14 +56,19 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
                     if text is not None:
                         contents[name] = text
         claims = extract_claims(repo.split("/")[-1], files, head, base)
+        trusted = _trusted_author(client)
         # A maintainer explaining a marginal finding away is a recorded decision.
         threads = maintainer_replies(client.list_review_comments(pr_number))
         claims += decisions_from_replies(
             (t.path, t.line, reply) for t in threads for reply in t.replies
         )
         # Rules and decisions marginal's reviews found in the same model call.
-        reviews = [r.get("body") or "" for r in client.list_reviews(pr_number)]
-        knowledge = posted_knowledge(body for body in reviews if REVIEW_HEADING in body)
+        reviews = [
+            r.get("body") or ""
+            for r in client.list_reviews(pr_number)
+            if REVIEW_HEADING in (r.get("body") or "") and trusted(r)
+        ]
+        knowledge = posted_knowledge(reviews)
         claims += knowledge_claims(
             ((k.kind, k.statement, k.about, k.evidence.file, k.evidence.quote) for k in knowledge),
             files,
@@ -71,11 +77,30 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
         body = render_proposal(claims, state)
         print(body)
         if comment and state == "merged":
-            _post(client, pr_number, comments, body, claims)
+            _post(client, pr_number, comments, body, claims, trusted)
     except (ConfigError, GitHubError) as exc:
         print(f"marginal propose: {exc}", file=sys.stderr)
         return 1
     return 0
+
+
+def _trusted_author(client: GitHubClient) -> Callable[[dict[str, object]], bool]:
+    """Whether a comment or review's author speaks for the repository: a bot
+    (marginal posting with the workflow's token) or someone with write access
+    (marginal run with a personal token posts as that person). Each login's
+    permission is looked up once."""
+    permissions: dict[str, str] = {}
+
+    def trusted(item: dict[str, object]) -> bool:
+        user = item.get("user") or {}
+        if user.get("type") == "Bot":
+            return True
+        login = str(user.get("login", ""))
+        if login not in permissions:
+            permissions[login] = client.get_permission(login)
+        return permissions[login] in _WRITERS
+
+    return trusted
 
 
 def _state(pull_request: dict[str, object]) -> PullRequestState:
@@ -90,19 +115,11 @@ def _post(
     comments: list[dict[str, object]],
     body: str,
     claims: list[ProposedClaim],
+    trusted: Callable[[dict[str, object]], bool],
 ) -> None:
-    # Anyone can paste the hidden marker, so only a bot's comment counts, or a
-    # writer's: marginal run with a personal token posts as that person.
+    # Anyone can paste the hidden marker, so only a trusted author's comment counts.
     existing = next(
-        (
-            c
-            for c in comments
-            if PROPOSAL_MARKER in str(c.get("body") or "")
-            and (
-                (c.get("user") or {}).get("type") == "Bot"
-                or client.get_permission(str((c.get("user") or {}).get("login", ""))) in _WRITERS
-            )
-        ),
+        (c for c in comments if PROPOSAL_MARKER in str(c.get("body") or "") and trusted(c)),
         None,
     )
     if existing is None:
