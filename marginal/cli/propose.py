@@ -108,12 +108,13 @@ def _trusted_author(client: GitHubClient) -> Callable[[dict[str, object]], bool]
     permissions: dict[str, str] = {}
 
     def trusted(item: dict[str, object]) -> bool:
-        login = str((item.get("user") or {}).get("login", ""))
+        user = item.get("user") or {}
+        login = str(user.get("login", ""))
         # shortcut: only the GITHUB_TOKEN bot; a GitHub App token posts as its own
         # bot login, which would need a setting under `proposals:`.
         if login == _WORKFLOW_BOT:
             return True
-        if not login:
+        if not login or user.get("type") == "Bot":  # other bots aren't collaborators
             return False
         if login not in permissions:
             permissions[login] = client.get_permission(login)
