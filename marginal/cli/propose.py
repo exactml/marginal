@@ -71,7 +71,10 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
             for r in client.list_reviews(pr_number)
             if REVIEW_HEADING in (r.get("body") or "") and trusted(r)
         ]
-        knowledge = posted_knowledge(reviews)
+        # Only the newest: each review sees the whole PR, and the model words the
+        # same rule differently each time, so older ones would add near-duplicates.
+        with_knowledge = [body for body in reviews if posted_knowledge([body])]
+        knowledge = posted_knowledge(with_knowledge[-1:])
         claims += knowledge_claims(
             ((k.kind, k.statement, k.about, k.evidence.file, k.evidence.quote) for k in knowledge),
             files,

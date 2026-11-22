@@ -228,3 +228,27 @@ def test_a_reply_from_someone_without_write_access_is_not_a_decision(client, cap
     _propose()
 
     assert "decisionAbout" not in capsys.readouterr().out
+
+
+def test_only_the_newest_reviews_knowledge_is_proposed(client, capsys):
+    def review(statement):
+        rule = Knowledge(
+            kind="rule",
+            statement=statement,
+            about="requirements.txt",
+            evidence=Evidence(file="requirements.txt", line=2, quote="requests==2.31.0"),
+        )
+        body = "### 🤖 marginal review\n" + knowledge_marker([rule])
+        return {"body": body, "user": {"login": "github-actions[bot]", "type": "Bot"}}
+
+    client.list_reviews.return_value = [
+        review("Requests must be pinned."),
+        {"body": "### 🤖 marginal review\nnothing new", "user": {"type": "Bot"}},
+        review("Requests is pinned to an exact version."),
+    ]
+
+    _propose()
+
+    out = capsys.readouterr().out
+    assert "Requests is pinned to an exact version." in out
+    assert "Requests must be pinned." not in out
