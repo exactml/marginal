@@ -125,7 +125,7 @@ class ClaimLinkType(str, Enum):
 
 
 class Relation(str, Enum):
-    """The core entity-to-entity relations (ADR 0011): every one can be read from a pull request."""
+    """The core relations (ADR 0011): every one can be read from a pull request."""
 
     PART_OF = "partOf"
     INHERITS = "inherits"
@@ -135,6 +135,7 @@ class Relation(str, Enum):
     SCHEDULES = "schedules"
     OWNED_BY = "ownedBy"
     DECISION_ABOUT = "decisionAbout"
+    CONSTRAINS = "constrains"
 
 
 class InvestigationStatus(str, Enum):
