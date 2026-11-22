@@ -4,7 +4,6 @@ from marginal.oic.services.proposals import (
     ProposedClaim,
     extract_claims,
     render_proposal,
-    requested_drops,
 )
 
 
@@ -103,35 +102,17 @@ def test_claim_id_is_stable_and_depends_only_on_the_triple():
     assert a.id != ProposedClaim("x", Relation.INSTALLS, "y").id
 
 
-def test_drop_commands_are_parsed_and_the_proposal_itself_is_ignored():
-    comments = [
-        {"user": {"login": "alice"}, "body": "/marginal drop abc123, def456"},
-        {"user": {"login": "bob"}, "body": "looks fine\n/marginal drop 0a0a0a"},
-        {"user": {"login": "carol"}, "body": "please /marginal drop abc123"},
-        {"user": {"login": "bot"}, "body": f"{PROPOSAL_MARKER}\n/marginal drop abc123"},
-    ]
+def test_render_says_what_state_the_pr_is_in():
+    claim = ProposedClaim("widgets", Relation.DEPENDS_ON, "requests", "pyproject.toml:4")
 
-    assert requested_drops(comments) == [
-        ("alice", {"abc123", "def456"}),
-        ("bob", {"0a0a0a"}),
-    ]
+    merged = render_proposal([claim], "merged")
 
-
-def test_render_shows_dropped_claims_and_the_state():
-    keep = ProposedClaim("widgets", Relation.DEPENDS_ON, "requests", "pyproject.toml:4")
-    drop = ProposedClaim("/billing/", Relation.OWNED_BY, "@acme/payments")
-
-    opened = render_proposal([keep, drop], {drop.id: "alice"}, "open")
-    merged = render_proposal([keep, drop], {drop.id: "alice"}, "merged")
-    closed = render_proposal([keep], {}, "closed")
-
-    assert opened.startswith(PROPOSAL_MARKER)
-    assert "This PR would record" in opened and "/marginal drop <id>" in opened
-    assert f"~~`{drop.id}`" in opened and "dropped by `alice`" in opened
-    assert "@alice" not in opened
-    assert "accepted" in merged and "/marginal drop" not in merged
-    assert "not recorded" in closed
-    assert "No relations found" in render_proposal([], {}, "open")
+    assert merged.startswith(PROPOSAL_MARKER)
+    assert "Proposed for the knowledge graph" in merged and claim.id in merged
+    assert "candidates" in merged
+    assert "will propose" in render_proposal([claim], "open")
+    assert "nothing is proposed" in render_proposal([claim], "closed")
+    assert "No knowledge found" in render_proposal([], "merged")
 
 
 def test_pyproject_tables_above_the_hunk_are_read_from_the_full_text():
@@ -161,12 +142,10 @@ def test_pyproject_tables_above_the_hunk_are_read_from_the_full_text():
 
 def test_render_keeps_table_cells_intact():
     odd = ProposedClaim("a|b", Relation.OWNED_BY, "x`y")
-    dropped = ProposedClaim("c", Relation.OWNED_BY, "d")
 
-    text = render_proposal([odd, dropped], {dropped.id: "alice"}, "open")
+    text = render_proposal([odd], "merged")
 
     assert "`a\\|b`" in text and "`x'y`" in text
-    assert f"| ~~`{dropped.id}`~~ | ~~`c`~~ | ~~ownedBy~~ | ~~`d`~~ | dropped by `alice` |" in text
 
 
 def test_an_edited_line_proposes_only_what_it_adds():

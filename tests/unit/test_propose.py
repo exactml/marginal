@@ -11,6 +11,7 @@ from marginal.oic.services.proposals import ProposedClaim
 PATCH = "@@ -1,1 +1,2 @@\n flask\n+requests==2.31.0\n"
 FILES = [{"filename": "requirements.txt", "patch": PATCH}]
 INSTALLS = ProposedClaim("widgets", Relation.INSTALLS, "requests@2.31.0")
+MERGED = {"base": {"sha": "abc"}, "head": {"sha": "def"}, "state": "closed", "merged": True}
 
 
 @pytest.fixture
@@ -21,13 +22,11 @@ def client(tmp_path, monkeypatch):
     with patch("marginal.cli.propose.GitHubClient") as cls:
         github = cls.return_value
         github.get_file.side_effect = working_tree_file
-        github.get_pull_request.return_value = {
-            "base": {"sha": "abc"},
-            "head": {"sha": "def"},
-            "state": "open",
-        }
+        github.get_pull_request.return_value = MERGED
         github.get_pull_request_files.return_value = FILES
         github.list_issue_comments.return_value = []
+        github.list_review_comments.return_value = []
+        github.list_reviews.return_value = []
         github.get_permission.return_value = "write"
         yield github
 
@@ -41,35 +40,49 @@ def _comment(id, body, login="alice"):
     return {"id": id, "body": body, "user": {"login": login, "type": kind}}
 
 
-def test_prints_the_proposal_without_posting(client, capsys):
-    assert _propose() == 0
+def _proposal_body(capsys):
+    _propose()
+    return capsys.readouterr().out.rstrip("\n")
 
-    out = capsys.readouterr().out
-    assert "This PR would record" in out and INSTALLS.id in out
+
+def test_a_merged_pr_posts_one_proposal(client, capsys):
+    assert _propose("--comment") == 0
+
+    body = client.create_issue_comment.call_args.args[1]
+    assert "Merged. Proposed for the knowledge graph" in body and INSTALLS.id in body
+    assert "candidates" in body
+
+
+def test_an_open_pr_prints_a_preview_and_posts_nothing(client, capsys):
+    client.get_pull_request.return_value = {**MERGED, "state": "open", "merged": False}
+
+    assert _propose("--comment") == 0
+
+    assert "When merged, this PR will propose" in capsys.readouterr().out
     client.create_issue_comment.assert_not_called()
 
 
-def test_first_run_posts_one_comment_and_later_runs_edit_it(client):
-    _propose("--comment")
-    body = client.create_issue_comment.call_args.args[1]
-    client.list_issue_comments.return_value = [_comment(9, body, "github-actions[bot]")]
-    client.get_pull_request.return_value = {
-        "base": {"sha": "abc"},
-        "head": {"sha": "def"},
-        "merged": True,
-    }
+def test_a_pr_closed_without_merging_proposes_nothing(client, capsys):
+    client.get_pull_request.return_value = {**MERGED, "merged": False}
 
     _propose("--comment")
 
-    client.create_issue_comment.assert_called_once()
-    client.update_issue_comment.assert_called_once()
+    assert "nothing is proposed" in capsys.readouterr().out
+    client.create_issue_comment.assert_not_called()
+
+
+def test_a_rerun_edits_the_proposal_instead_of_posting_a_second(client, capsys):
+    body = _proposal_body(capsys)
+    client.list_issue_comments.return_value = [_comment(9, body + " old", "github-actions[bot]")]
+
+    _propose("--comment")
+
+    client.create_issue_comment.assert_not_called()
     assert client.update_issue_comment.call_args.args[0] == 9
-    assert "accepted" in client.update_issue_comment.call_args.args[1]
 
 
 def test_an_unchanged_proposal_is_not_rewritten(client, capsys):
-    _propose()
-    body = capsys.readouterr().out.rstrip("\n")
+    body = _proposal_body(capsys)
     client.list_issue_comments.return_value = [_comment(9, body, "github-actions[bot]")]
 
     _propose("--comment")
@@ -78,32 +91,37 @@ def test_an_unchanged_proposal_is_not_rewritten(client, capsys):
     client.update_issue_comment.assert_not_called()
 
 
-def test_a_writer_can_drop_a_claim_and_a_reader_cannot(client, capsys):
-    client.list_issue_comments.return_value = [
-        _comment(1, f"/marginal drop {INSTALLS.id}", "reader"),
+def test_a_merged_pr_with_no_knowledge_gets_no_comment(client, capsys):
+    client.get_pull_request_files.return_value = [
+        {"filename": "app.py", "patch": "@@ -1 +1 @@\n+x"}
     ]
-    client.get_permission.side_effect = lambda login: {"reader": "read"}.get(login, "write")
 
-    _propose()
-    assert "dropped by" not in capsys.readouterr().out
+    assert _propose("--comment") == 0
 
-    client.list_issue_comments.return_value.append(
-        _comment(2, f"/marginal drop {INSTALLS.id}", "maintainer")
-    )
-    _propose()
-    assert "dropped by `maintainer`" in capsys.readouterr().out
+    assert "No knowledge found" in capsys.readouterr().out
+    client.create_issue_comment.assert_not_called()
 
 
-def test_a_pr_closed_without_merging_is_not_recorded(client, capsys):
-    client.get_pull_request.return_value = {
-        "base": {"sha": "abc"},
-        "head": {"sha": "def"},
-        "state": "closed",
-    }
+def test_a_person_pasting_the_marker_does_not_take_over_the_proposal(client, capsys):
+    body = _proposal_body(capsys)
+    client.list_issue_comments.return_value = [_comment(3, body + " x", "mallory")]
+    client.get_permission.return_value = "read"
 
-    _propose()
+    _propose("--comment")
 
-    assert "not recorded" in capsys.readouterr().out
+    client.update_issue_comment.assert_not_called()
+    client.create_issue_comment.assert_called_once()
+
+
+def test_a_proposal_posted_with_a_writers_personal_token_is_edited_not_duplicated(client, capsys):
+    # Found on a real run: a personal token posts as the person, not a bot.
+    body = _proposal_body(capsys)
+    client.list_issue_comments.return_value = [_comment(3, body + " old", "maintainer")]
+
+    _propose("--comment")
+
+    client.create_issue_comment.assert_not_called()
+    assert client.update_issue_comment.call_args.args[0] == 3
 
 
 def test_github_error_exits_1(client, capsys):
@@ -129,51 +147,3 @@ def test_pyproject_is_read_whole_at_the_head_commit(client, capsys):
     _propose()
 
     assert "| dependsOn | `sqlalchemy`" in capsys.readouterr().out
-
-
-def test_a_person_pasting_the_marker_does_not_take_over_the_proposal(client, capsys):
-    _propose()
-    body = capsys.readouterr().out.rstrip("\n")
-    client.list_issue_comments.return_value = [_comment(3, body, "mallory")]
-    client.get_permission.return_value = "read"
-
-    _propose("--comment")
-
-    client.update_issue_comment.assert_not_called()
-    client.create_issue_comment.assert_called_once()
-
-
-def test_a_pr_with_no_relations_gets_no_comment(client, capsys):
-    client.get_pull_request_files.return_value = [
-        {"filename": "app.py", "patch": "@@ -1 +1 @@\n+x"}
-    ]
-
-    assert _propose("--comment") == 0
-
-    assert "No relations found" in capsys.readouterr().out
-    client.create_issue_comment.assert_not_called()
-
-
-def test_a_proposal_that_loses_its_last_claim_is_updated_not_left_stale(client, capsys):
-    _propose()
-    body = capsys.readouterr().out.rstrip("\n")
-    client.list_issue_comments.return_value = [_comment(9, body, "github-actions[bot]")]
-    client.get_pull_request_files.return_value = [
-        {"filename": "app.py", "patch": "@@ -1 +1 @@\n+x"}
-    ]
-
-    _propose("--comment")
-
-    assert "No relations found" in client.update_issue_comment.call_args.args[1]
-
-
-def test_a_proposal_posted_with_a_writers_personal_token_is_edited_not_duplicated(client, capsys):
-    # Found on a real run: a personal token posts as the person, not a bot.
-    _propose()
-    body = capsys.readouterr().out.rstrip("\n")
-    client.list_issue_comments.return_value = [_comment(3, body + " old", "maintainer")]
-
-    _propose("--comment")
-
-    client.create_issue_comment.assert_not_called()
-    assert client.update_issue_comment.call_args.args[0] == 3

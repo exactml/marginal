@@ -16,21 +16,21 @@ from marginal.oic.services.proposals import (
     PullRequestState,
     extract_claims,
     render_proposal,
-    requested_drops,
 )
 
-# Permissions that may drop a claim; GitHub reports `maintain` as `write`.
-_CAN_DROP = {"admin", "write"}
+# Permissions that count as a writer; GitHub reports `maintain` as `write`.
+_WRITERS = {"admin", "write"}
 
 
 def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = False) -> int:
-    """Print the claims `pr_number`'s diff proposes, and with `comment` post
-    them as one PR comment that later runs edit in place.
+    """Print the candidate claims `pr_number` proposes, and with `comment`
+    post them as one comment once the PR is merged.
 
-    The PR's state picks the wording: open (would record), merged (accepted)
-    or closed without merging (not recorded). A `/marginal drop <id>` counts
-    only from an account with write access to the repository. No model call.
-    Errors print one stderr line and exit 1.
+    Only a merged PR proposes anything; an open one prints a preview and a
+    closed one says nothing is proposed, and neither is posted. A rerun edits
+    the comment instead of posting a second. Which claims become knowledge is
+    decided later, outside the PR. No model call. Errors print one stderr
+    line and exit 1.
     """
     base_client = GitHubClient(repo, PermissionsConfig())
     try:
@@ -50,9 +50,10 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
                     if text is not None:
                         contents[name] = text
         claims = extract_claims(repo.split("/")[-1], files, head, base)
-        body = render_proposal(claims, _allowed_drops(client, comments), _state(pull_request))
+        state = _state(pull_request)
+        body = render_proposal(claims, state)
         print(body)
-        if comment:
+        if comment and state == "merged":
             _post(client, pr_number, comments, body, claims)
     except (ConfigError, GitHubError) as exc:
         print(f"marginal propose: {exc}", file=sys.stderr)
@@ -64,19 +65,6 @@ def _state(pull_request: dict[str, object]) -> PullRequestState:
     if pull_request.get("merged") or pull_request.get("merged_at"):
         return "merged"
     return "closed" if pull_request.get("state") == "closed" else "open"
-
-
-def _allowed_drops(client: GitHubClient, comments: list[dict[str, object]]) -> dict[str, str]:
-    """Claim id → who dropped it, counting only accounts that can write to the repo."""
-    permissions: dict[str, str] = {}
-    dropped: dict[str, str] = {}
-    for login, ids in requested_drops(comments):
-        if login not in permissions:
-            permissions[login] = client.get_permission(login)
-        if permissions[login] in _CAN_DROP:
-            for claim_id in ids:
-                dropped.setdefault(claim_id, login)
-    return dropped
 
 
 def _post(
@@ -95,7 +83,7 @@ def _post(
             if PROPOSAL_MARKER in str(c.get("body") or "")
             and (
                 (c.get("user") or {}).get("type") == "Bot"
-                or client.get_permission(str((c.get("user") or {}).get("login", ""))) in _CAN_DROP
+                or client.get_permission(str((c.get("user") or {}).get("login", ""))) in _WRITERS
             )
         ),
         None,

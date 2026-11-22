@@ -1,6 +1,7 @@
 """Knowledge proposals read from a pull request's diff (ADR 0011), with no model call.
 
-A pull request proposes claims; merging accepts the ones no writer dropped.
+A merged pull request proposes candidate claims. None of them is knowledge yet:
+the team decides which go into the graph in a separate review step.
 """
 
 from __future__ import annotations
@@ -21,7 +22,6 @@ PullRequestState = Literal["open", "merged", "closed"]
 
 _HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)")
 _ANY_HUNK_HEADER = re.compile(r"^@@ -(\S+) \+(\S+) @@(.*)$")
-_DROP = re.compile(r"^\s*/marginal drop\s+([0-9a-f][0-9a-f ,]*)\s*$", re.MULTILINE)
 _REQUIREMENT = re.compile(r"([A-Za-z][A-Za-z0-9._-]*)(?:\[[^\]]*\])?\s*(.*)")
 _QUOTED = re.compile(r'"([^"]+)"')
 _TOML_STRING = re.compile(r'^(name|version)\s*=\s*"([^"]+)"$')
@@ -39,8 +39,8 @@ class ProposedClaim:
 
     @property
     def id(self) -> str:
-        """Same subject, relation and object give the same id on every push,
-        so a drop keeps applying to the claim."""
+        """Same subject, relation and object give the same id, so the review
+        step can refer to a claim and spot one proposed again."""
         key = f"{self.subject}|{self.relation.value}|{self.object}"
         return hashlib.sha256(key.encode()).hexdigest()[:6]
 
@@ -96,49 +96,30 @@ def _reverse(patch: str) -> str:
     return "\n".join(rows)
 
 
-def requested_drops(comments: Iterable[dict[str, object]]) -> list[tuple[str, set[str]]]:
-    """`(login, claim ids)` for each `/marginal drop <id> ...` comment, oldest
-    first. Who may drop is the caller's check."""
-    drops = []
-    for comment in comments:
-        body = str(comment.get("body") or "")
-        if PROPOSAL_MARKER in body:
-            continue
-        ids = {i for match in _DROP.findall(body) for i in re.split(r"[ ,]+", match) if i}
-        login = str((comment.get("user") or {}).get("login", ""))
-        if ids and login:
-            drops.append((login, ids))
-    return drops
-
-
-def render_proposal(
-    claims: list[ProposedClaim], dropped: dict[str, str], state: PullRequestState
-) -> str:
-    """The proposal comment for a PR in `state`; `dropped` maps claim id to who dropped it."""
-    intro = {
-        "open": "This PR would record:",
-        "merged": "Merged. These claims are accepted:",
-        "closed": "Closed without merging. These claims were not recorded:",
-    }[state]
+def render_proposal(claims: list[ProposedClaim], state: PullRequestState) -> str:
+    """The proposal comment for a PR in `state`."""
     lines = [PROPOSAL_MARKER, PROPOSAL_HEADING, ""]
-    if not claims:
-        lines.append("No relations found in this PR.")
+    if state == "closed":
+        lines.append("Closed without merging, so nothing is proposed.")
         return "\n".join(lines)
+    if not claims:
+        lines.append("No knowledge found in this PR.")
+        return "\n".join(lines)
+    intro = (
+        "Merged. Proposed for the knowledge graph:"
+        if state == "merged"
+        else "When merged, this PR will propose:"
+    )
     lines += [intro, "", "| id | subject | relation | object | source |", "|---|---|---|---|---|"]
     for claim in claims:
         cells = [_code(claim.id), _code(claim.subject), claim.relation.value, _code(claim.object)]
-        if claim.id in dropped:
-            # Backticked login: a bare @name would notify that person on every update.
-            cells = [f"~~{cell}~~" for cell in cells] + [f"dropped by {_code(dropped[claim.id])}"]
-        else:
-            cells.append(_code(claim.source) if claim.source else "")
+        cells.append(_code(claim.source) if claim.source else "")
         lines.append(f"| {' | '.join(cells)} |")
-    if state == "open":
-        lines += [
-            "",
-            "Reply `/marginal drop <id>` to exclude a claim (needs write access). "
-            "Merging accepts the rest.",
-        ]
+    lines += [
+        "",
+        "These are candidates, not knowledge yet: the team reviews them before "
+        "any goes into the graph.",
+    ]
     return "\n".join(lines)
 
 
