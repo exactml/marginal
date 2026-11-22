@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
@@ -14,6 +15,8 @@ __all__ = [
     "Evidence",
     "Finding",
     "FindingsResponse",
+    "Knowledge",
+    "MAX_KNOWLEDGE_PER_REVIEW",
     "Recheck",
     "RecheckResponse",
     "Severity",
@@ -118,12 +121,34 @@ _LEAKED_STRUCTURE = re.compile(
 MAX_FINDINGS_PER_REVIEW = 20
 
 
-class FindingsResponse(BaseModel):
-    """Structured-output wrapper: the bounded list of findings for one review."""
+# Business knowledge a review may report alongside its findings: few, so the
+# model reports what the diff states plainly rather than everything it can infer.
+MAX_KNOWLEDGE_PER_REVIEW = 5
 
-    model_config = ConfigDict(extra="forbid")
+
+class Knowledge(BaseModel):
+    """A business rule or decision the diff states, as the model reads it.
+
+    A candidate for the knowledge proposal a merged PR posts, never a finding;
+    it is kept only if its evidence quote is found in the diff."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_every_field_required)
+
+    kind: Literal["rule", "decision"]
+    statement: str
+    # The file the rule or decision is about.
+    about: str
+    evidence: Evidence
+
+
+class FindingsResponse(BaseModel):
+    """Structured-output wrapper: the bounded list of findings for one review,
+    plus any business knowledge the diff states."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_every_field_required)
 
     findings: list[Finding] = Field(max_length=MAX_FINDINGS_PER_REVIEW)
+    knowledge: list[Knowledge] = Field(default_factory=list, max_length=MAX_KNOWLEDGE_PER_REVIEW)
 
 
 class Recheck(BaseModel):

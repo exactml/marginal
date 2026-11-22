@@ -4,7 +4,8 @@ on:
   pull_request:
     # ready_for_review: a draft is skipped (review.skip_drafts), so review it
     # once it's marked ready rather than waiting for the next push.
-    types: [opened, synchronize, reopened, ready_for_review]
+    # closed: a merged PR posts its knowledge proposal.
+    types: [opened, synchronize, reopened, ready_for_review, closed]
 
 # One review per PR at a time: two runs started by quick successive pushes
 # would each miss the other's review and post the same header twice.
@@ -14,6 +15,7 @@ concurrency:
 
 jobs:
   review:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -25,3 +27,30 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  # Knowledge proposal (ADR 0011): deterministic, no model call. Runs from this
+  # checkout until marginal-action exposes it.
+  propose:
+    # Only a merged PR proposes knowledge. A fork PR's GITHUB_TOKEN is
+    # read-only, so it couldn't post the comment.
+    if: >-
+      github.event.action == 'closed' && github.event.pull_request.merged &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The head commit outlives the PR; refs/pull/N/merge can be gone once it closes.
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install .
+      - run: marginal propose --repo "$REPO" --pr "$PR" --comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}

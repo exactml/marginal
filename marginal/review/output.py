@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from marginal.review.evidence import Decision
 from marginal.review.render import comment_span
-from marginal.review.schema import Finding
+from marginal.review.schema import Finding, Knowledge
 
 
 def build_json_result(
@@ -19,6 +19,7 @@ def build_json_result(
     prompt_over_budget: bool,
     dropped: list[Decision],
     patches: dict[str, str | None],
+    knowledge: list[Knowledge] | None = None,
 ) -> dict[str, object]:
     """Build the `--format json` payload for one review run.
 
@@ -36,7 +37,8 @@ def build_json_result(
     two commits (`pr_number=None`) leaves `title` and `state` `None`. Every
     finding, posted or not, carries the `checks` marginal ran on it;
     `dropped_findings` are the ones the posting rule or `review.max_comments`
-    kept off the PR, each with its `reason`.
+    kept off the PR, each with its `reason`. `knowledge` is the business
+    rules and decisions whose quote was found in the diff.
     """
     is_pr = pr_number is not None
     return {
@@ -48,6 +50,7 @@ def build_json_result(
         "head_sha": str(pull_request["head"]["sha"]),
         "changed_files": filenames,
         "findings": [_finding_json(finding, patches) for finding in findings],
+        "knowledge": [k.model_dump(mode="json") for k in knowledge or []],
         "dropped_findings": [
             _finding_json(d.finding, patches) | {"reason": d.reason} for d in dropped
         ],

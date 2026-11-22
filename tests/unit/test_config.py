@@ -9,6 +9,7 @@ from marginal.config import (
     ReviewTone,
     load_config,
 )
+from marginal.config.loader import parse_config
 
 FULL_CONFIG = """
 version: 1
@@ -230,3 +231,8 @@ def test_invalid_max_prompt_tokens_is_rejected(tmp_path, max_prompt_tokens):
 
     with pytest.raises(ConfigValidationError, match="review.max_prompt_tokens"):
         load_config(tmp_path)
+
+
+def test_proposals_are_off_unless_enabled():
+    assert MarginalConfig().proposals.enabled is False
+    assert parse_config("version: 1\nproposals:\n  enabled: true\n", "x").proposals.enabled is True

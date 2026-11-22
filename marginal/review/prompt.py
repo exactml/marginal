@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 from marginal.graph import CallSite, ChangedDefinition
 from marginal.review.redact import redact_secrets
 from marginal.review.replies import ReplyThread
-from marginal.review.schema import MAX_FINDINGS_PER_REVIEW
+from marginal.review.schema import MAX_FINDINGS_PER_REVIEW, MAX_KNOWLEDGE_PER_REVIEW
 
 # Total out-of-diff caller snippets folded into the prompt across every
 # changed definition -- bounds the prompt against a definition with a huge
@@ -46,6 +46,9 @@ def load_prompt(name: str) -> str:
 
 FINDING_PROMPT_INSTRUCTIONS = load_prompt("finding").format(max_findings=MAX_FINDINGS_PER_REVIEW)
 
+# Added only with `proposals.enabled`: asking for business knowledge costs output tokens.
+KNOWLEDGE_INSTRUCTIONS = load_prompt("knowledge").format(max_knowledge=MAX_KNOWLEDGE_PER_REVIEW)
+
 RECHECK_INSTRUCTIONS = load_prompt("recheck")
 
 
@@ -67,10 +70,15 @@ def build_finding_prompt(
     replies: list[ReplyThread] | None = None,
     anti_policies: list[tuple[str, str]] | None = None,
     ci_conclusion: str | None = None,
+    knowledge: bool = False,
 ) -> str:
-    """The reviewer prompt. `files` must already be `redact_patches` output."""
+    """The reviewer prompt. `files` must already be `redact_patches` output.
+    With `knowledge`, it also asks for the business rules and decisions the
+    diff states."""
     diff = "\n\n".join(f"--- {file['filename']} ---\n{file['patch']}" for file in files)
     sections = [FINDING_PROMPT_INSTRUCTIONS]
+    if knowledge:
+        sections.append(KNOWLEDGE_INSTRUCTIONS)
     if policies:
         policy_text = "\n\n".join(f"--- {path} ---\n{content}" for path, content in policies)
         sections.append(

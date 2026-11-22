@@ -25,9 +25,11 @@ from marginal.graph import CallSite, ChangedDefinition, Definition
 from marginal.providers.errors import MissingCredentialsError, ProviderResponseError
 from marginal.review import Checks, Evidence, Finding, Severity
 from marginal.review.dedup import finding_fingerprint, fingerprint_marker
+from marginal.review.knowledge import posted_knowledge
 from marginal.review.output import build_json_result
 from marginal.review.prompt import (
     FINDING_PROMPT_INSTRUCTIONS,
+    KNOWLEDGE_INSTRUCTIONS,
     MAX_GRAPH_CONTEXT_CALLERS,
     MAX_REPLY_THREADS,
     build_finding_prompt,
@@ -51,7 +53,7 @@ from marginal.review.render import (
     why_lines,
 )
 from marginal.review.replies import ReplyThread
-from marginal.review.schema import MAX_FINDINGS_PER_REVIEW, FindingsResponse
+from marginal.review.schema import MAX_FINDINGS_PER_REVIEW, FindingsResponse, Knowledge
 
 
 def test_init_creates_all_artifacts(tmp_path, capsys):
@@ -2062,6 +2064,7 @@ def test_review_format_json_prints_parseable_json_with_pr_metadata(
         "head_sha": "def456",
         "changed_files": ["marginal/retry.py", "tests/test_retry.py"],
         "findings": [],
+        "knowledge": [],
         "dropped_findings": [],
         "redacted_files": [],
         "comment_posted": False,
@@ -2571,6 +2574,7 @@ def test_review_of_two_commits_reviews_the_compare_diff_with_base_config(
                 },
             }
         ],
+        "knowledge": [],
         "dropped_findings": [],
         "redacted_files": [],
         "comment_posted": False,
@@ -3905,3 +3909,73 @@ def test_the_claude_code_plugin_version_is_the_package_version():
     assert plugin["version"] == package.group(1)
     assert plugin["skills"] == "./marginal/skills/"
     assert (root / "marginal" / "skills" / "marginal-pair" / "SKILL.md").is_file()
+
+
+def test_review_hands_on_only_knowledge_whose_quote_is_in_the_diff(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    with open(tmp_path / ".marginal" / "config.yaml", "a") as config:
+        config.write("proposals:\n  enabled: true\n")
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {
+            "filename": "shop/pricing.py",
+            "patch": "@@ -1,1 +1,2 @@\n x = 1\n+FREE_SHIPPING_MIN = 100",
+        }
+    ]
+    quoted = Knowledge(
+        kind="rule",
+        statement="Orders of 100 or more ship free.",
+        about="shop/pricing.py",
+        evidence=Evidence(file="shop/pricing.py", line=2, quote="FREE_SHIPPING_MIN = 100"),
+    )
+    invented = quoted.model_copy(
+        update={
+            "statement": "Refunds take 3 days.",
+            "evidence": Evidence(file="shop/pricing.py", line=2, quote="REFUND_DAYS = 3"),
+        }
+    )
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=FindingsResponse(findings=[], knowledge=[quoted, invented])
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"]) == 0
+
+    body = client.create_review.call_args.args[1]
+    assert posted_knowledge([body]) == [quoted]
+    assert (
+        KNOWLEDGE_INSTRUCTIONS in mock_provider.return_value.generate_structured.call_args.args[0]
+    )
+
+
+def test_review_with_proposals_off_asks_for_and_posts_no_knowledge(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {
+            "filename": "shop/pricing.py",
+            "patch": "@@ -1,1 +1,2 @@\n x = 1\n+FREE_SHIPPING_MIN = 100",
+        }
+    ]
+    rule = Knowledge(
+        kind="rule",
+        statement="Orders of 100 or more ship free.",
+        about="shop/pricing.py",
+        evidence=Evidence(file="shop/pricing.py", line=2, quote="FREE_SHIPPING_MIN = 100"),
+    )
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(
+        return_value=FindingsResponse(findings=[], knowledge=[rule])
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"]) == 0
+
+    assert KNOWLEDGE_INSTRUCTIONS not in provider.generate_structured.call_args.args[0]
+    assert posted_knowledge([client.create_review.call_args.args[1]]) == []

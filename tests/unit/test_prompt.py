@@ -12,7 +12,7 @@ PROMPTS = sorted(
 
 
 def test_every_prompt_the_code_loads_is_shipped():
-    assert PROMPTS == ["finding", "recheck"]
+    assert PROMPTS == ["finding", "knowledge", "recheck"]
 
 
 @pytest.mark.parametrize("name", PROMPTS)
