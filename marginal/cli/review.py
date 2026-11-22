@@ -34,6 +34,7 @@ from marginal.review.dedup import (
     posted_fingerprints,
 )
 from marginal.review.evidence import OVER_MAX_COMMENTS, CodeView, Decision, decide
+from marginal.review.knowledge import knowledge_marker
 from marginal.review.output import build_json_result
 from marginal.review.prompt import (
     PromptOverBudget,
@@ -60,7 +61,7 @@ from marginal.review.render import (
     verdict_line,
 )
 from marginal.review.replies import ReplyThread, maintainer_replies
-from marginal.review.schema import FindingsResponse
+from marginal.review.schema import FindingsResponse, Knowledge
 
 OutputFormat = Literal["text", "json"]
 
@@ -281,7 +282,7 @@ def run_review(
         coverage_lines += coverage_warning_lines(pull_request, files, ignore_paths)
 
     try:
-        findings, dropped, redacted_files, over_budget = _review_files(
+        findings, dropped, redacted_files, over_budget, knowledge = _review_files(
             client,
             config,
             pull_request,
@@ -333,6 +334,7 @@ def run_review(
                 patches,
                 reviewed=reviewed,
                 over_budget=over_budget is not None,
+                knowledge=knowledge,
             )
         except GitHubError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
@@ -432,22 +434,23 @@ def _review_files(
     path: str,
     policies: list[tuple[str, str]],
     anti_policies: list[tuple[str, str]],
-) -> tuple[list[Finding], list[Decision], list[str], PromptOverBudget | None]:
+) -> tuple[list[Finding], list[Decision], list[str], PromptOverBudget | None, list[Knowledge]]:
     """Have the reviewer model review `files`, then check what it found.
 
     Returns the findings to post, the dropped ones with their reason, the
-    files whose diff had a likely secret redacted, and the over-budget error
-    if the prompt was too big to send. Nothing happens without a reviewer
+    files whose diff had a likely secret redacted, the over-budget error if
+    the prompt was too big to send, and the business knowledge whose quote
+    was found in the diff. Nothing happens without a reviewer
     model or when every changed file is ignored. Raises `ProviderError`.
     """
     reviewer_model = config.models.get("reviewer")
     if reviewer_model is None or not files:
-        return [], [], [], None
+        return [], [], [], None, []
     redacted = redact_patches(files)
     redacted_files = redacted_filenames(files, redacted)
     graph_context = build_graph_context(path, files, enabled=config.context.code_graph)
     try:
-        findings = asyncio.run(
+        response = asyncio.run(
             _generate_findings(
                 reviewer_model,
                 redacted,
@@ -468,16 +471,20 @@ def _review_files(
             ".marginal/config.yaml or split the PR to review it",
             file=sys.stderr,
         )
-        return [], [], redacted_files, exc
-    if not findings:
-        return [], [], redacted_files, None
+        return [], [], redacted_files, exc, []
 
     # Checked against what the model was shown: the (redacted) diff and the
     # caller context, plus the rest of each file from the checkout.
     context = build_graph_context_section(graph_context, path) or ""
-    decisions = decide(
-        findings, CodeView(path, redacted, context), max_comments=config.review.max_comments
-    )
+    view = CodeView(path, redacted, context)
+    knowledge = [
+        k
+        for k in response.knowledge
+        if view.has_quote(k.evidence.file, k.evidence.line, k.evidence.quote)
+    ]
+    if not response.findings:
+        return [], [], redacted_files, None, knowledge
+    decisions = decide(response.findings, view, max_comments=config.review.max_comments)
     dropped = [d for d in decisions if not d.posted]
     if dropped:
         reasons = Counter(d.reason for d in dropped)
@@ -486,7 +493,7 @@ def _review_files(
             + ", ".join(f"{count} {reason}" for reason, count in reasons.most_common()),
             file=sys.stderr,
         )
-    return [d.finding for d in decisions if d.posted], dropped, redacted_files, None
+    return [d.finding for d in decisions if d.posted], dropped, redacted_files, None, knowledge
 
 
 def _post_review(
@@ -501,6 +508,7 @@ def _post_review(
     *,
     reviewed: bool,
     over_budget: bool,
+    knowledge: list[Knowledge] | None = None,
 ) -> tuple[bool, bool]:
     """Post the review, leaving out findings already posted on this PR.
 
@@ -539,6 +547,8 @@ def _post_review(
             if not anchorable(f, patches)
             for line in [*finding_lines(f), fingerprint_marker(fingerprint_of(f, patches))]
         ]
+        # Hidden: the knowledge proposal a merged PR posts reads it back.
+        + ([knowledge_marker(knowledge)] if knowledge else [])
     )
     client.create_review(
         pr_number,
@@ -644,8 +654,9 @@ async def _generate_findings(
     max_prompt_tokens: int,
     anti_policies: list[tuple[str, str]] | None = None,
     ci_conclusion: str | None = None,
-) -> list[Finding]:
-    """Generate a bounded list of unvalidated `Finding`s from `model_spec` over
+) -> FindingsResponse:
+    """Generate a bounded list of unvalidated `Finding`s, and any business
+    `Knowledge` the diff states, from `model_spec` over
     `files`' diffs, `policies`, `graph_context`, maintainer `replies`,
     `anti_policies`, and the triggering CI run's `ci_conclusion`.
 
@@ -668,4 +679,4 @@ async def _generate_findings(
         raise ProviderResponseError(
             f"expected a FindingsResponse from generate_structured, got {type(result).__name__}"
         )
-    return result.findings
+    return result

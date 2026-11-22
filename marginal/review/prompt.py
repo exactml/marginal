@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 from marginal.graph import CallSite, ChangedDefinition
 from marginal.review.redact import redact_secrets
 from marginal.review.replies import ReplyThread
-from marginal.review.schema import MAX_FINDINGS_PER_REVIEW
+from marginal.review.schema import MAX_FINDINGS_PER_REVIEW, MAX_KNOWLEDGE_PER_REVIEW
 
 # Total out-of-diff caller snippets folded into the prompt across every
 # changed definition -- bounds the prompt against a definition with a huge
@@ -44,7 +44,9 @@ def load_prompt(name: str) -> str:
     return text.removesuffix("\n")
 
 
-FINDING_PROMPT_INSTRUCTIONS = load_prompt("finding").format(max_findings=MAX_FINDINGS_PER_REVIEW)
+FINDING_PROMPT_INSTRUCTIONS = load_prompt("finding").format(
+    max_findings=MAX_FINDINGS_PER_REVIEW, max_knowledge=MAX_KNOWLEDGE_PER_REVIEW
+)
 
 RECHECK_INSTRUCTIONS = load_prompt("recheck")
 
