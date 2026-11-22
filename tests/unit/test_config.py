@@ -8,8 +8,8 @@ from marginal.config import (
     MarginalConfig,
     ReviewTone,
     load_config,
-    parse_config,
 )
+from marginal.config.loader import parse_config
 
 FULL_CONFIG = """
 version: 1
