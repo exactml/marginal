@@ -66,7 +66,14 @@ affected if this changes*, *why is this like this*, and *who should review this*
 | `releaseOf` (`hasRelease`) | release → library | F | release PR, tag |
 | `schedules` (`scheduledBy`) | workflow → task | | workflow definition |
 | `ownedBy` (`ownerOf`) | component → team | | CODEOWNERS |
-| `decisionAbout` | decision → component | | ADR, review thread, maintainer reply |
+| `decisionAbout` | decision → component | | maintainer reply to a finding, review |
+| `constrains` (`constrainedBy`) | rule → component | | test name, review |
+
+The first seven are the **structural layer**: what the code is made of. The
+last two are the **business layer**: what the organization requires and why,
+which is what nobody can read off the code later. `rule` and `decision` are
+entity types of their own, named by their statement, for example
+`rule: discount never exceeds 50 percent`.
 
 Which files a pull request changed is not a relation. Git already records it,
 and storing it would add one claim per directory per pull request, burying the
@@ -148,7 +155,6 @@ evidence exists. "PR" means a pull request alone is enough evidence.
 | Relation (inverse) | From → To | Rules | Evidence |
 |---|---|---|---|
 | `decidedBy` (`decided`) | decision → person or team | | PR, ADR |
-| `constrains` (`constrainedBy`) | rule → component | | PR (policies) |
 | `exceptionTo` (`hasException`) | decision → rule | | maintainer reply |
 | `deprecates` (`deprecatedBy`) | component → component | | PR |
 | `replaces` (`replacedBy`) | component → component | F | PR |
@@ -174,53 +180,45 @@ rules. Example: a team that runs one pipeline per customer adds `enablesTask`
 `dependsOn` and `servesCustomer` with no change to marginal. Extensions live in the organization's own configuration,
 not in this repository.
 
-### 5. Each merged pull request returns a proposal
+### 5. Each merged pull request posts one proposal; the team decides later
 
-Relations that a pull request can evidence are proposed from it:
-
-```
-PR opened    → claims extracted as proposals (status proposed),
-or pushed      evidence = PR URL + head SHA; every push re-extracts, a
-               claim no longer found is withdrawn, a new one is added
-PR merged    → proposals the reviewers did not drop become active,
-               valid_from = merged_at, recorded_at = now
-PR closed    → only when closed without merging (GitHub sends a merge as a
-               closed event with merged = true): proposals rejected; kept,
-               because "we tried this" is knowledge
-later PR     → revises or supersedes; append-only history keeps the trail
-```
-
-A merge approves code, not the claims read from it. So marginal shows the
-proposed claims to the reviewers as a comment, and a reply can drop one:
+When a pull request merges, marginal posts **one** comment on it listing the
+candidate claims the pull request evidences. An open or closed-unmerged pull
+request gets nothing, and a pull request with no candidates gets no comment.
+A rerun edits the comment instead of posting a second.
 
 ```
-This PR would record:
-  c3f2  checkout  dependsOn  ledger-client   (requirements.txt:4)
-  9a71  billing   ownedBy    payments-team   (CODEOWNERS:12)
-Reply "/marginal drop 9a71" to exclude a claim. Merging accepts the rest.
+Merged. Proposed for the knowledge graph:
+| id     | subject                                  | relation   | object   | source                    |
+| e1815c | shop                                     | installs   | requests@2.32.3 | pyproject.toml:6   |
+| 7c1a90 | rule: discount never exceeds 50 percent  | constrains | pricing  | tests/test_pricing.py:14  |
+| 2be4f1 | decision: zero-stock items stay listed   | decisionAbout | shop/stock.py | shop/stock.py:12 |
+These are candidates, not knowledge yet: the team reviews them before any goes into the graph.
 ```
 
-Each claim's id is a short hash of its subject, relation and object, so it
-stays the same across pushes. A drop names that id, not a position in the
-list, and keeps applying to the claim after later pushes.
+A merge approves code, not the claims read from it. So a candidate is only
+**proposed**. Which candidates become knowledge, and so enter the store and the
+graph, is decided in a separate review step outside the pull request, where the
+team accepts, edits or rejects each one. Until then nothing is queried as
+knowledge.
 
-Only someone with write access to the repository can drop a claim, the pull
-request's author included when they have that access. marginal checks the
-replier's permission on the repository (`write`, `maintain` or `admin`)
-through GitHub's collaborator permission API. A comment's `author_association`
-is not enough, because `MEMBER` and `COLLABORATOR` can have read-only access. A drop from anyone else is ignored. A
-dropped claim is kept as rejected, with who dropped it and their reply as the
-reason, so dropping never deletes knowledge silently.
+Each claim's id is a short hash of its subject, relation and object, so the
+review step can refer to a candidate and spot one proposed again by a later
+pull request.
+
+**Where candidates come from, with no extra model call:**
+
+| Source | Layer | How it is checked |
+|---|---|---|
+| Manifests, CODEOWNERS, version bumps | structural | read from the diff; what the removed side already said is not new |
+| Added tests whose name states a rule (`never`, `must`, `at most`, …) | business | the test name is the evidence |
+| A maintainer's reply that explains a marginal finding away ("intentional, because …") | business | the reply is the evidence |
+| Rules and decisions the review model reports, at most five per review, in the call the review already makes | business | its quote must be found in the diff when the review runs, and still be in the merged diff |
 
 Merge time is not always when something becomes true. A library fix merged on
 one date reaches a consumer only when that consumer's pull request bumps the
 version. `valid_from` follows the pull request that carries the evidence, so
 the library merge and each consumer's install are separate claims.
-
-Extraction is deterministic first (diff, code graph, manifests, CODEOWNERS,
-pull request metadata). Relations that need reading prose, such as
-`decisionAbout`, are proposed only when they can ride on the model call a
-review already makes. A pull request never triggers an extra model call.
 
 ## Options considered
 
@@ -236,8 +234,8 @@ review already makes. A pull request never triggers an extra model call.
 - The core relations become an enum next to `ClaimLinkType`, and proposal
   validation rejects a predicate outside it or one that connects the wrong
   entity types.
-- The next change makes marginal post the proposal comment on pull requests
-  and activate the accepted claims on merge.
+- The team review step, and storing what it accepts, are separate changes. A
+  proposal comment is the hand-off to that step, not a write to the store.
 - Knowledge that no pull request carries (directory data, incidents, on-call)
   waits for its own sources or for agent investigations.
 - The core list changes only by updating this ADR. Before it is accepted, the
