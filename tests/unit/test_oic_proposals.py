@@ -206,7 +206,8 @@ def test_replies_that_explain_a_choice_become_decisions():
     replies = [
         ("shop/stock.py", 12, "Intentional: zero-stock items stay listed. They ship on restock."),
         ("shop/stock.py", 30, "Good catch, fixed in abc123."),
-        ("shop/pricing.py", None, "We round down because finance reconciles to the cent."),
+        ("shop/stock.py", 40, "Fixed, because the old check was wrong. Not expected."),
+        ("shop/pricing.py", None, "We chose to round down: finance reconciles to the cent."),
     ]
 
     claims = decisions_from_replies(replies)
@@ -218,7 +219,7 @@ def test_replies_that_explain_a_choice_become_decisions():
             "shop/stock.py",
         ),
         (
-            "decision: We round down because finance reconciles to the cent.",
+            "decision: We chose to round down: finance reconciles to the cent.",
             Relation.DECISION_ABOUT,
             "shop/pricing.py",
         ),

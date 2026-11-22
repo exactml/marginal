@@ -37,9 +37,10 @@ _TEST_NAME = re.compile(
 # A test name with one of these words states a rule ("discount never exceeds
 # 50 percent"); most test names only describe a case and would be noise.
 # shortcut: English keywords only; extend the list when a team names tests otherwise.
-# A reply to a finding with one of these explains a choice, not a fix.
+# A reply to a finding with one of these explains a choice, not a fix. Not
+# "because" or "expected": fix replies use them too ("fixed, because ...").
 _DECISION_WORDS = re.compile(
-    r"\b(intentional(ly)?|by design|on purpose|deliberate(ly)?|expected|because|so that|"
+    r"\b(intentional(ly)?|by design|on purpose|deliberate(ly)?|as intended|not a bug|"
     r"we want|we chose|we decided)\b",
     re.IGNORECASE,
 )
