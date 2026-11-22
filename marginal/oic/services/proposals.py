@@ -28,15 +28,6 @@ _TOML_STRING = re.compile(r'^(name|version)\s*=\s*"([^"]+)"$')
 _TOML_TABLE = re.compile(r"^\[\[?([^\]]+)\]\]?$")
 _TOML_ARRAY = re.compile(r"^([\w.-]+)\s*=\s*\[(.*)$")
 _REQUIREMENTS_FILE = re.compile(r"requirements[\w.-]*\.txt")
-_TEST_FILE = re.compile(r"(test_\w+\.py|\w+_test\.(py|go)|[\w.-]+\.(test|spec)\.[jt]sx?)")
-_TEST_NAME = re.compile(
-    r"^\s*(?:async\s+)?def\s+test_(\w+)"  # Python
-    r"|^\s*func\s+Test(\w+)\("  # Go
-    r"""|^\s*(?:it|test)\(\s*['"`]([^'"`]+)['"`]"""  # JavaScript, TypeScript
-)
-# A test name with one of these words states a rule ("discount never exceeds
-# 50 percent"); most test names only describe a case and would be noise.
-# shortcut: English keywords only; extend the list when a team names tests otherwise.
 # A reply to a finding with one of these explains a choice, not a fix. Not
 # "because" or "expected": fix replies use them too ("fixed, because ...").
 _DECISION_WORDS = re.compile(
@@ -45,10 +36,6 @@ _DECISION_WORDS = re.compile(
     re.IGNORECASE,
 )
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s")
-_RULE_WORDS = re.compile(
-    r"\b(never|always|must|only|cannot|at least|at most|no more than|requires?|"
-    r"rejects?|refuses?|forbids?|exceeds?|limit|maximum|minimum)\b"
-)
 
 
 @dataclass(frozen=True)
@@ -100,8 +87,6 @@ def _claims(repo: str, path: str, patch: str, text: str | None) -> list[Proposed
         return list(_requirements_txt(repo, path, patch))
     if name == "pyproject.toml":
         return list(_pyproject(repo, path, patch, text))
-    if _TEST_FILE.fullmatch(name):
-        return list(_test_rules(path, patch))
     return []
 
 
@@ -263,28 +248,6 @@ def _is_dependency_array(table: str, array: str) -> bool:
     if table in ("project.optional-dependencies", "dependency-groups"):
         return True
     return array == "dependencies" and table in ("", "project")
-
-
-def _test_rules(path: str, patch: str) -> Iterator[ProposedClaim]:
-    """A rule for each added test whose name states one, constraining the
-    module the test file is named after."""
-    stem = PurePosixPath(path).name.split(".")[0]
-    module = re.sub(r"^test_|_test$", "", stem)
-    for number, text, added in _patch_lines(patch):
-        match = _TEST_NAME.match(text)
-        if not (added and match):
-            continue
-        python, go, javascript = match.groups()
-        words = (
-            javascript
-            or (python or "").replace("_", " ")
-            or re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", go or "").replace("_", " ")
-        )
-        statement = " ".join(words.lower().split())
-        if _RULE_WORDS.search(statement):
-            yield ProposedClaim(
-                f"rule: {statement}", Relation.CONSTRAINS, module, f"{path}:{number}"
-            )
 
 
 def _dependency(repo: str, spec: str, source: str) -> Iterator[ProposedClaim]:

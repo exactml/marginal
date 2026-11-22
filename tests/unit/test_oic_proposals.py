@@ -171,37 +171,6 @@ def test_an_edited_line_proposes_only_what_it_adds():
     ]
 
 
-def test_added_tests_whose_names_state_a_rule_become_rules():
-    python = (
-        "@@ -1,1 +1,4 @@\n"
-        " import pytest\n"
-        "+def test_discount_never_exceeds_50_percent():\n"
-        "+def test_returns_total():\n"
-        "+async def test_order_requires_a_customer():\n"
-    )
-    javascript = (
-        "@@ -0,0 +1,2 @@\n+it('rejects an empty cart', () => {\n+test(\"adds two items\", f)\n"
-    )
-    go = "@@ -0,0 +1,1 @@\n+func TestRefundAtMostOncePerOrder(t *testing.T) {\n"
-
-    claims = extract_claims(
-        "widgets",
-        [
-            _file("tests/test_pricing.py", python),
-            _file("web/cart.test.ts", javascript),
-            _file("pay/refund_test.go", go),
-        ],
-    )
-
-    assert _triples(claims) == [
-        ("rule: discount never exceeds 50 percent", Relation.CONSTRAINS, "pricing"),
-        ("rule: order requires a customer", Relation.CONSTRAINS, "pricing"),
-        ("rule: rejects an empty cart", Relation.CONSTRAINS, "cart"),
-        ("rule: refund at most once per order", Relation.CONSTRAINS, "refund"),
-    ]
-    assert claims[0].source == "tests/test_pricing.py:2"
-
-
 def test_replies_that_explain_a_choice_become_decisions():
     replies = [
         ("shop/stock.py", 12, "Intentional: zero-stock items stay listed. They ship on restock."),
