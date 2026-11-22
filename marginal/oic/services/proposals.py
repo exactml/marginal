@@ -158,12 +158,15 @@ def decisions_from_replies(
 
 
 def knowledge_claims(
-    knowledge: Iterable[tuple[str, str, str, str, str]],
+    knowledge: Iterable[tuple[str, str, str, str, int, str]],
     files: Iterable[dict[str, object]],
 ) -> list[ProposedClaim]:
-    """A claim for each `(kind, statement, about, file, quote)` a review
+    """A claim for each `(kind, statement, about, file, line, quote)` a review
     reported whose quote is still on a line of `file` in the merged diff: a
-    later push may have removed what the rule or decision rested on."""
+    later push may have removed what the rule or decision rested on.
+
+    The claim is about a path in the PR, so a reviewer can look it up by the
+    files a later PR changes: `about` when it names one, else `file`."""
     shown = {
         str(file["filename"]): [
             " ".join(text.split()) for _, text, _ in _patch_lines(str(file.get("patch") or ""))
@@ -172,11 +175,14 @@ def knowledge_claims(
     }
     relation = {"rule": Relation.CONSTRAINS, "decision": Relation.DECISION_ABOUT}
     claims = []
-    for kind, statement, about, file, quote in knowledge:
+    for kind, statement, about, file, line, quote in knowledge:
         quote = " ".join(quote.split())
-        still_there = bool(quote) and any(quote in line for line in shown.get(file, []))
+        still_there = bool(quote) and any(quote in text for text in shown.get(file, []))
         if kind in relation and still_there:
-            claims.append(ProposedClaim(f"{kind}: {statement}", relation[kind], about, file))
+            path = about if about in shown else file
+            claims.append(
+                ProposedClaim(f"{kind}: {statement}", relation[kind], path, f"{file}:{line}")
+            )
     return list({claim.id: claim for claim in claims}.values())
 
 

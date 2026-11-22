@@ -76,7 +76,10 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
         with_knowledge = [body for body in reviews if posted_knowledge([body])]
         knowledge = posted_knowledge(with_knowledge[-1:])
         claims += knowledge_claims(
-            ((k.kind, k.statement, k.about, k.evidence.file, k.evidence.quote) for k in knowledge),
+            (
+                (k.kind, k.statement, k.about, k.evidence.file, k.evidence.line, k.evidence.quote)
+                for k in knowledge
+            ),
             files,
         )
         state = _state(pull_request)
