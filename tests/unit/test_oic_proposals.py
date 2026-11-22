@@ -305,3 +305,19 @@ def test_url_dependency_with_extras_and_single_quoted_project_name():
     claims = extract_claims("widgets", [_file("pyproject.toml", patch)])
 
     assert _triples(claims) == [("lib", Relation.DEPENDS_ON, "pkg")]
+
+
+def test_empty_strings_in_a_dependency_array_do_not_pair_the_wrong_quotes():
+    patch = (
+        "@@ -1,2 +1,3 @@\n"
+        " [project.optional-dependencies]\n"
+        " x = []\n"
+        "+dev = [\"\", \"ruff>=0.6\", '', 'pytest>=8']\n"
+    )
+
+    claims = extract_claims("widgets", [_file("pyproject.toml", patch)])
+
+    assert _triples(claims) == [
+        ("widgets", Relation.DEPENDS_ON, "ruff>=0.6"),
+        ("widgets", Relation.DEPENDS_ON, "pytest>=8"),
+    ]

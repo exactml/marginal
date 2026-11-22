@@ -24,7 +24,7 @@ _HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)")
 _ANY_HUNK_HEADER = re.compile(r"^@@ -(\S+) \+(\S+) @@(.*)$")
 _REQUIREMENT = re.compile(r"([A-Za-z][A-Za-z0-9._-]*)(?:\[[^\]]*\])?\s*(.*)")
 # A TOML basic ("...") or literal ('...') string.
-_QUOTED = re.compile(r"""(["'])(.+?)\1""")
+_QUOTED = re.compile(r""""([^"]*)"|'([^']*)'""")
 _TOML_STRING = re.compile(r"""^(name|version)\s*=\s*(["'])(.+?)\2$""")
 _TOML_TABLE = re.compile(r"^\[\[?([^\]]+)\]\]?$")
 _TOML_ARRAY = re.compile(r"^([\w.-]+)\s*=\s*\[(.*)$")
@@ -256,7 +256,8 @@ def _pyproject(
         if opened:
             array, line = opened.group(1), opened.group(2)
         if number in added and array and _is_dependency_array(table, array):
-            for _, spec in _QUOTED.findall(line):
+            for basic, literal in _QUOTED.findall(line):
+                spec = basic or literal
                 yield from _dependency(project, spec, f"{path}:{number}", comment.strip())
         if line.rstrip(", ").endswith("]"):  # not `]` alone: extras like `pkg[x]` have one
             array = None
