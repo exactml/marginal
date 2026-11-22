@@ -205,7 +205,7 @@ _marginal is under active, in-the-open development. Jump into [Issues](https://g
 | `marginal review --local origin/main` | Reviews your unpushed work (local commits and uncommitted changes) with git alone, against the config a PR from this branch would get. Prints only. |
 | `marginal review ... --provider claude-code` | Runs the review on your Claude Code subscription instead of an API key, for this run only. |
 | `marginal compact --repo owner/name --pr 12 --comment` | Re-checks marginal's open findings against the latest code and resolves the ones that are fixed. `review --comment` already does this on every later push. |
-| `marginal propose --repo owner/name --pr 12 --comment` | On a merged PR, posts one comment with the knowledge it proposes: dependencies, owners and releases, plus business rules and decisions from normative test names, maintainer replies and the review. These are candidates for the team to review, not knowledge yet. On an open PR it prints a preview. No model call. |
+| `marginal propose --repo owner/name --pr 12 --comment` | On a merged PR, posts one comment with the knowledge it proposes: dependencies, owners and releases, with each dependency's version range and the reason its line gives, plus business rules and decisions from maintainer replies and the review. These are candidates for the team to review, not knowledge yet. On an open PR it prints a preview. No model call. |
 | `marginal doctor` | Checks config, credentials, and GitHub access without calling a model. |
 | `marginal help [command]`, `marginal --version` | Usage, and the installed version. |
 

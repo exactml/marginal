@@ -67,7 +67,7 @@ affected if this changes*, *why is this like this*, and *who should review this*
 | `schedules` (`scheduledBy`) | workflow → task | | workflow definition |
 | `ownedBy` (`ownerOf`) | component → team | | CODEOWNERS |
 | `decisionAbout` | decision → component | | maintainer reply to a finding, review |
-| `constrains` (`constrainedBy`) | rule → component | | test name, review |
+| `constrains` (`constrainedBy`) | rule → component | | review |
 
 The first seven are the **structural layer**: what the code is made of. The
 last two are the **business layer**: what the organization requires and why,
@@ -79,6 +79,15 @@ Which files a pull request changed is not a relation. Git already records it,
 and storing it would add one claim per directory per pull request, burying the
 claims that say something about the organization. Staleness reads a merged
 pull request's changed files as an event when it happens instead.
+
+The same goes for anything a reviewer can recompute when it needs it. A test
+already guards its invariant in CI, and the code graph names the tests that
+cover a change at review time, so test names are not proposed as rules. On
+50 large pull requests of a real repository they were about one candidate
+per pull request, mostly test-case wording.
+
+A rule or decision always points at a repository path, never a bare module
+name, so a reviewer can look claims up by the files a pull request changes.
 
 `ownedBy` is not functional: a CODEOWNERS line often names several teams, and
 each becomes its own claim. A change of owner shows up as a CODEOWNERS change,
@@ -210,8 +219,7 @@ pull request.
 
 | Source | Layer | How it is checked |
 |---|---|---|
-| Manifests, CODEOWNERS, version bumps | structural | read from the diff; what the removed side already said is not new |
-| Added tests whose name states a rule (`never`, `must`, `at most`, …) | business | the test name is the evidence |
+| Manifests (with the version range, and the line's comment as the reason), CODEOWNERS, version bumps | structural | read from the diff; what the removed side already said is not new |
 | A maintainer's reply that explains a marginal finding away ("intentional, because …") | business | the reply is the evidence |
 | Rules and decisions the review model reports, at most five per review, in the call the review already makes | business | its quote must be found in the diff when the review runs, and still be in the merged diff |
 
