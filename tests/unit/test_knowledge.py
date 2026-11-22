@@ -1,6 +1,6 @@
 from marginal.review import Evidence
 from marginal.review.knowledge import knowledge_marker, posted_knowledge
-from marginal.review.schema import Knowledge
+from marginal.review.schema import MAX_KNOWLEDGE_PER_REVIEW, FindingsResponse, Knowledge
 
 RULE = Knowledge(
     kind="rule",
@@ -29,3 +29,11 @@ def test_a_hand_edited_marker_that_does_not_parse_is_skipped():
     ]
 
     assert posted_knowledge(bodies) == [RULE]
+
+
+def test_more_knowledge_than_the_cap_is_cut_and_the_findings_survive():
+    response = FindingsResponse.model_validate(
+        {"findings": [], "knowledge": [RULE.model_dump()] * (MAX_KNOWLEDGE_PER_REVIEW + 3)}
+    )
+
+    assert len(response.knowledge) == MAX_KNOWLEDGE_PER_REVIEW

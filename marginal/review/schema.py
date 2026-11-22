@@ -148,7 +148,13 @@ class FindingsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", json_schema_extra=_every_field_required)
 
     findings: list[Finding] = Field(max_length=MAX_FINDINGS_PER_REVIEW)
-    knowledge: list[Knowledge] = Field(default_factory=list, max_length=MAX_KNOWLEDGE_PER_REVIEW)
+    knowledge: list[Knowledge] = Field(default_factory=list)
+
+    @field_validator("knowledge")
+    @classmethod
+    def _keep_the_first_knowledge(cls, knowledge: list[Knowledge]) -> list[Knowledge]:
+        # Cut, never reject: a long list must not cost the review its findings.
+        return knowledge[:MAX_KNOWLEDGE_PER_REVIEW]
 
 
 class Recheck(BaseModel):
