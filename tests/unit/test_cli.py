@@ -29,6 +29,7 @@ from marginal.review.knowledge import posted_knowledge
 from marginal.review.output import build_json_result
 from marginal.review.prompt import (
     FINDING_PROMPT_INSTRUCTIONS,
+    KNOWLEDGE_INSTRUCTIONS,
     MAX_GRAPH_CONTEXT_CALLERS,
     MAX_REPLY_THREADS,
     build_finding_prompt,
@@ -3915,6 +3916,8 @@ def test_review_hands_on_only_knowledge_whose_quote_is_in_the_diff(
 ):
     monkeypatch.chdir(tmp_path)
     _write_reviewer_config(tmp_path)
+    with open(tmp_path / ".marginal" / "config.yaml", "a") as config:
+        config.write("proposals:\n  enabled: true\n")
     client = mock_github_client.return_value
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = [
@@ -3943,3 +3946,36 @@ def test_review_hands_on_only_knowledge_whose_quote_is_in_the_diff(
 
     body = client.create_review.call_args.args[1]
     assert posted_knowledge([body]) == [quoted]
+    assert (
+        KNOWLEDGE_INSTRUCTIONS in mock_provider.return_value.generate_structured.call_args.args[0]
+    )
+
+
+def test_review_with_proposals_off_asks_for_and_posts_no_knowledge(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {
+            "filename": "shop/pricing.py",
+            "patch": "@@ -1,1 +1,2 @@\n x = 1\n+FREE_SHIPPING_MIN = 100",
+        }
+    ]
+    rule = Knowledge(
+        kind="rule",
+        statement="Orders of 100 or more ship free.",
+        about="shop/pricing.py",
+        evidence=Evidence(file="shop/pricing.py", line=2, quote="FREE_SHIPPING_MIN = 100"),
+    )
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(
+        return_value=FindingsResponse(findings=[], knowledge=[rule])
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"]) == 0
+
+    assert KNOWLEDGE_INSTRUCTIONS not in provider.generate_structured.call_args.args[0]
+    assert posted_knowledge([client.create_review.call_args.args[1]]) == []

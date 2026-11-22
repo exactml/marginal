@@ -44,9 +44,10 @@ def load_prompt(name: str) -> str:
     return text.removesuffix("\n")
 
 
-FINDING_PROMPT_INSTRUCTIONS = load_prompt("finding").format(
-    max_findings=MAX_FINDINGS_PER_REVIEW, max_knowledge=MAX_KNOWLEDGE_PER_REVIEW
-)
+FINDING_PROMPT_INSTRUCTIONS = load_prompt("finding").format(max_findings=MAX_FINDINGS_PER_REVIEW)
+
+# Added only with `proposals.enabled`: asking for business knowledge costs output tokens.
+KNOWLEDGE_INSTRUCTIONS = load_prompt("knowledge").format(max_knowledge=MAX_KNOWLEDGE_PER_REVIEW)
 
 RECHECK_INSTRUCTIONS = load_prompt("recheck")
 
@@ -69,10 +70,15 @@ def build_finding_prompt(
     replies: list[ReplyThread] | None = None,
     anti_policies: list[tuple[str, str]] | None = None,
     ci_conclusion: str | None = None,
+    knowledge: bool = False,
 ) -> str:
-    """The reviewer prompt. `files` must already be `redact_patches` output."""
+    """The reviewer prompt. `files` must already be `redact_patches` output.
+    With `knowledge`, it also asks for the business rules and decisions the
+    diff states."""
     diff = "\n\n".join(f"--- {file['filename']} ---\n{file['patch']}" for file in files)
     sections = [FINDING_PROMPT_INSTRUCTIONS]
+    if knowledge:
+        sections.append(KNOWLEDGE_INSTRUCTIONS)
     if policies:
         policy_text = "\n\n".join(f"--- {path} ---\n{content}" for path, content in policies)
         sections.append(

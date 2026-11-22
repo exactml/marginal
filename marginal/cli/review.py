@@ -464,6 +464,7 @@ def _review_files(
                 ci_conclusion=read_ci_conclusion(
                     client, config.permissions, str(pull_request["head"]["sha"])
                 ),
+                knowledge=config.proposals.enabled,
             )
         )
     except PromptOverBudget as exc:
@@ -481,7 +482,8 @@ def _review_files(
     knowledge = [
         k
         for k in response.knowledge
-        if view.has_quote(k.evidence.file, k.evidence.line, k.evidence.quote)
+        if config.proposals.enabled
+        and view.has_quote(k.evidence.file, k.evidence.line, k.evidence.quote)
     ]
     if not response.findings:
         return [], [], redacted_files, None, knowledge
@@ -655,6 +657,7 @@ async def _generate_findings(
     max_prompt_tokens: int,
     anti_policies: list[tuple[str, str]] | None = None,
     ci_conclusion: str | None = None,
+    knowledge: bool = False,
 ) -> FindingsResponse:
     """Generate a bounded list of unvalidated `Finding`s, and any business
     `Knowledge` the diff states, from `model_spec` over
@@ -666,7 +669,7 @@ async def _generate_findings(
     prompt string, so every section the builder adds counts toward the cap.
     """
     prompt = build_finding_prompt(
-        files, policies, graph_context, repo_root, replies, anti_policies, ci_conclusion
+        files, policies, graph_context, repo_root, replies, anti_policies, ci_conclusion, knowledge
     )
     estimated_tokens = estimate_tokens(prompt)
     if estimated_tokens > max_prompt_tokens:
