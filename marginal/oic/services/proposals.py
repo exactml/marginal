@@ -23,8 +23,9 @@ PullRequestState = Literal["open", "merged", "closed"]
 _HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)")
 _ANY_HUNK_HEADER = re.compile(r"^@@ -(\S+) \+(\S+) @@(.*)$")
 _REQUIREMENT = re.compile(r"([A-Za-z][A-Za-z0-9._-]*)(?:\[[^\]]*\])?\s*(.*)")
-_QUOTED = re.compile(r'"([^"]+)"')
-_TOML_STRING = re.compile(r'^(name|version)\s*=\s*"([^"]+)"$')
+# A TOML basic ("...") or literal ('...') string.
+_QUOTED = re.compile(r""""([^"]*)"|'([^']*)'""")
+_TOML_STRING = re.compile(r"""^(name|version)\s*=\s*(["'])(.+?)\2$""")
 _TOML_TABLE = re.compile(r"^\[\[?([^\]]+)\]\]?$")
 _TOML_ARRAY = re.compile(r"^([\w.-]+)\s*=\s*\[(.*)$")
 _REQUIREMENTS_FILE = re.compile(r"requirements[\w.-]*\.txt")
@@ -128,7 +129,8 @@ def render_proposal(claims: list[ProposedClaim], state: PullRequestState) -> str
     ]
     for claim in claims:
         cells = [_code(claim.id), _code(claim.subject), claim.relation.value, _code(claim.object)]
-        cells.append(claim.reason.replace("|", "\\|"))
+        # A code span, like the other cells: `@team` in a comment mustn't ping anyone.
+        cells.append(_code(claim.reason) if claim.reason else "")
         cells.append(_code(claim.source) if claim.source else "")
         lines.append(f"| {' | '.join(cells)} |")
     lines += [
@@ -213,7 +215,7 @@ def _owners(path: str, patch: str) -> Iterator[ProposedClaim]:
 
 def _requirements_txt(repo: str, path: str, patch: str) -> Iterator[ProposedClaim]:
     for number, text, added in _patch_lines(patch):
-        spec, _, comment = text.partition("#")
+        spec, comment = _split_comment(text)
         spec = spec.strip()
         if added and spec and not spec.startswith("-"):
             yield from _dependency(repo, spec, f"{path}:{number}", comment.strip())
@@ -234,7 +236,7 @@ def _pyproject(
     )
     project, table, array = repo, "", None
     for number, raw in rows:
-        line, _, comment = raw.partition("#")
+        line, comment = _split_comment(raw)
         line = line.strip()
         header = _TOML_TABLE.match(line)
         if header:
@@ -243,9 +245,9 @@ def _pyproject(
         field = _TOML_STRING.match(line)
         if field and table in ("", "project"):  # "": the table header isn't in the hunk
             if field.group(1) == "name":
-                project = field.group(2)
+                project = field.group(3)
             elif number in added:
-                version = field.group(2)
+                version = field.group(3)
                 yield ProposedClaim(
                     f"{project}@{version}", Relation.RELEASE_OF, project, f"{path}:{number}"
                 )
@@ -254,7 +256,8 @@ def _pyproject(
         if opened:
             array, line = opened.group(1), opened.group(2)
         if number in added and array and _is_dependency_array(table, array):
-            for spec in _QUOTED.findall(line):
+            for basic, literal in _QUOTED.findall(line):
+                spec = basic or literal
                 yield from _dependency(project, spec, f"{path}:{number}", comment.strip())
         if line.rstrip(", ").endswith("]"):  # not `]` alone: extras like `pkg[x]` have one
             array = None
@@ -266,10 +269,30 @@ def _is_dependency_array(table: str, array: str) -> bool:
     return array == "dependencies" and table in ("", "project")
 
 
+def _split_comment(line: str) -> tuple[str, str]:
+    """`line` and its trailing `#` comment; a `#` inside quotes isn't one."""
+    quote = None
+    for i, char in enumerate(line):
+        if char in "\"'" and quote in (None, char):
+            quote = None if quote else char
+        elif char == "#" and not quote:
+            return line[:i], line[i + 1 :].strip()
+    return line, ""
+
+
 def _dependency(repo: str, spec: str, source: str, reason: str = "") -> Iterator[ProposedClaim]:
     """`installs name@version` for an exact pin, else `dependsOn` with the range
     in the object, so a raised floor (`>=3.0.0` to `>=3.0.4`) is a new claim."""
-    match = _REQUIREMENT.fullmatch(spec.split(";", 1)[0].strip())
+    spec = spec.split(";", 1)[0].strip()
+    if "://" in spec:
+        # `name @ url` names its package; a bare URL or VCS line names none.
+        named = _REQUIREMENT.fullmatch(spec.split("@", 1)[0].strip()) if "@" in spec else None
+        # Only a bare name before `@` names a package: in `git+ssh://git@host/...`
+        # that `@` is the URL's user, and `named` keeps text after the name.
+        if named and not named.group(2):  # the name without extras, as elsewhere
+            yield ProposedClaim(repo, Relation.DEPENDS_ON, named.group(1).lower(), source, reason)
+        return
+    match = _REQUIREMENT.fullmatch(spec)
     if not match:
         return
     name, constraint = match.group(1).lower(), "".join(match.group(2).split())

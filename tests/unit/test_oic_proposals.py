@@ -238,3 +238,86 @@ def test_a_raised_floor_is_a_new_claim_with_its_comment_as_the_reason():
 
     assert _triples(claims) == [("lib", Relation.DEPENDS_ON, "core>=3.0.4,<4.0.0")]
     assert claims[0].reason == ">=3.0.4: io control works again"
+
+
+def test_url_and_vcs_dependencies_name_their_package_or_nothing():
+    requirements = (
+        "@@ -0,0 +1,4 @@\n"
+        "+git+https://github.com/acme/lib.git#egg=lib\n"
+        "+https://example.com/pkg-1.0.whl\n"
+        "+git+ssh://git@github.com/acme/lib.git\n"
+        "+tool @ https://example.com/tool-2.0.whl\n"
+    )
+    pyproject = (
+        "@@ -1,3 +1,4 @@\n"
+        " [project]\n"
+        ' name = "lib"\n'
+        " dependencies = [\n"
+        '+    "pkg @ git+https://host/repo.git#subdirectory=pkg", # vendored fork\n'
+    )
+
+    claims = extract_claims(
+        "widgets", [_file("requirements.txt", requirements), _file("pyproject.toml", pyproject)]
+    )
+
+    assert _triples(claims) == [
+        ("widgets", Relation.DEPENDS_ON, "tool"),
+        ("lib", Relation.DEPENDS_ON, "pkg"),
+    ]
+    assert claims[1].reason == "vendored fork"
+
+
+def test_a_reason_cannot_ping_or_render_markdown():
+    reason = "needed by @acme/payments <b> | `x`"
+    claim = ProposedClaim("lib", Relation.DEPENDS_ON, "pkg>=1", "pyproject.toml:4", reason)
+
+    assert "`needed by @acme/payments <b> \\| 'x'`" in render_proposal([claim], "merged")
+
+
+def test_single_quoted_toml_dependencies_are_read_whole():
+    patch = (
+        "@@ -1,3 +1,5 @@\n"
+        " [project]\n"
+        ' name = "lib"\n'
+        " dependencies = [\n"
+        "+    'pkg @ git+https://host/repo.git#subdirectory=pkg', # vendored fork\n"
+        "+    'core>=2', # it's pinned low on purpose\n"
+    )
+
+    claims = extract_claims("widgets", [_file("pyproject.toml", patch)])
+
+    assert _triples(claims) == [
+        ("lib", Relation.DEPENDS_ON, "pkg"),
+        ("lib", Relation.DEPENDS_ON, "core>=2"),
+    ]
+    assert [c.reason for c in claims] == ["vendored fork", "it's pinned low on purpose"]
+
+
+def test_url_dependency_with_extras_and_single_quoted_project_name():
+    patch = (
+        "@@ -1,3 +1,4 @@\n"
+        " [project]\n"
+        " name = 'lib'\n"
+        " dependencies = [\n"
+        '+    "pkg[socks] @ https://example.com/pkg-1.0.whl",\n'
+    )
+
+    claims = extract_claims("widgets", [_file("pyproject.toml", patch)])
+
+    assert _triples(claims) == [("lib", Relation.DEPENDS_ON, "pkg")]
+
+
+def test_empty_strings_in_a_dependency_array_do_not_pair_the_wrong_quotes():
+    patch = (
+        "@@ -1,2 +1,3 @@\n"
+        " [project.optional-dependencies]\n"
+        " x = []\n"
+        "+dev = [\"\", \"ruff>=0.6\", '', 'pytest>=8']\n"
+    )
+
+    claims = extract_claims("widgets", [_file("pyproject.toml", patch)])
+
+    assert _triples(claims) == [
+        ("widgets", Relation.DEPENDS_ON, "ruff>=0.6"),
+        ("widgets", Relation.DEPENDS_ON, "pytest>=8"),
+    ]
