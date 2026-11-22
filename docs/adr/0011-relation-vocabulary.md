@@ -191,6 +191,9 @@ not in this repository.
 
 ### 5. Each merged pull request posts one proposal; the team decides later
 
+Proposals are opt-in per repository (`proposals.enabled`, off by default): with
+them off, a review doesn't ask for business knowledge and nothing is proposed.
+
 When a pull request merges, marginal posts **one** comment on it listing the
 candidate claims the pull request evidences. An open or closed-unmerged pull
 request gets nothing, and a pull request with no candidates gets no comment.
