@@ -147,3 +147,24 @@ def test_pyproject_is_read_whole_at_the_head_commit(client, capsys):
     _propose()
 
     assert "| dependsOn | `sqlalchemy`" in capsys.readouterr().out
+
+
+def test_a_maintainer_explaining_a_finding_away_is_proposed_as_a_decision(client, capsys):
+    finding = {
+        "id": 1,
+        "path": "requirements.txt",
+        "line": 2,
+        "body": "🟡 **Medium**\n\nUnpinned.\n\n<!-- marginal:finding:0000000000000000 -->",
+        "user": {"login": "github-actions[bot]", "type": "Bot"},
+    }
+    reply = {
+        "id": 2,
+        "in_reply_to_id": 1,
+        "body": "Intentional: we pin requests because 2.32 broke retries.",
+        "user": {"login": "alice", "type": "User"},
+    }
+    client.list_review_comments.return_value = [finding, reply]
+
+    _propose()
+
+    assert "| decisionAbout | `requirements.txt`" in capsys.readouterr().out

@@ -37,6 +37,13 @@ _TEST_NAME = re.compile(
 # A test name with one of these words states a rule ("discount never exceeds
 # 50 percent"); most test names only describe a case and would be noise.
 # shortcut: English keywords only; extend the list when a team names tests otherwise.
+# A reply to a finding with one of these explains a choice, not a fix.
+_DECISION_WORDS = re.compile(
+    r"\b(intentional(ly)?|by design|on purpose|deliberate(ly)?|expected|because|so that|"
+    r"we want|we chose|we decided)\b",
+    re.IGNORECASE,
+)
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s")
 _RULE_WORDS = re.compile(
     r"\b(never|always|must|only|cannot|at least|at most|no more than|requires?|"
     r"rejects?|refuses?|forbids?|exceeds?|limit|maximum|minimum)\b"
@@ -136,6 +143,24 @@ def render_proposal(claims: list[ProposedClaim], state: PullRequestState) -> str
         "any goes into the graph.",
     ]
     return "\n".join(lines)
+
+
+def decisions_from_replies(
+    replies: Iterable[tuple[str, int | None, str]],
+) -> list[ProposedClaim]:
+    """A decision for each `(path, line, reply)` that answers a review finding
+    by explaining a choice ("intentional: zero-stock items stay listed"),
+    about the file the finding was on."""
+    claims = []
+    for path, line, reply in replies:
+        text = " ".join(reply.split())
+        if not _DECISION_WORDS.search(text):
+            continue
+        # The first sentence carries the decision; the rest is usually detail.
+        sentence = _SENTENCE_END.split(text, 1)[0][:200]
+        source = f"{path}:{line}" if line else path
+        claims.append(ProposedClaim(f"decision: {sentence}", Relation.DECISION_ABOUT, path, source))
+    return list({claim.id: claim for claim in claims}.values())
 
 
 def _code(value: str) -> str:

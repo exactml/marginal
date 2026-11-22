@@ -14,9 +14,11 @@ from marginal.oic.services.proposals import (
     PROPOSAL_MARKER,
     ProposedClaim,
     PullRequestState,
+    decisions_from_replies,
     extract_claims,
     render_proposal,
 )
+from marginal.review.replies import maintainer_replies
 
 # Permissions that count as a writer; GitHub reports `maintain` as `write`.
 _WRITERS = {"admin", "write"}
@@ -50,6 +52,11 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
                     if text is not None:
                         contents[name] = text
         claims = extract_claims(repo.split("/")[-1], files, head, base)
+        # A maintainer explaining a marginal finding away is a recorded decision.
+        threads = maintainer_replies(client.list_review_comments(pr_number))
+        claims += decisions_from_replies(
+            (t.path, t.line, reply) for t in threads for reply in t.replies
+        )
         state = _state(pull_request)
         body = render_proposal(claims, state)
         print(body)

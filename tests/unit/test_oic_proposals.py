@@ -2,6 +2,7 @@ from marginal.oic.domain.schema import Relation
 from marginal.oic.services.proposals import (
     PROPOSAL_MARKER,
     ProposedClaim,
+    decisions_from_replies,
     extract_claims,
     render_proposal,
 )
@@ -198,3 +199,27 @@ def test_added_tests_whose_names_state_a_rule_become_rules():
         ("rule: refund at most once per order", Relation.CONSTRAINS, "refund"),
     ]
     assert claims[0].source == "tests/test_pricing.py:2"
+
+
+def test_replies_that_explain_a_choice_become_decisions():
+    replies = [
+        ("shop/stock.py", 12, "Intentional: zero-stock items stay listed. They ship on restock."),
+        ("shop/stock.py", 30, "Good catch, fixed in abc123."),
+        ("shop/pricing.py", None, "We round down because finance reconciles to the cent."),
+    ]
+
+    claims = decisions_from_replies(replies)
+
+    assert _triples(claims) == [
+        (
+            "decision: Intentional: zero-stock items stay listed.",
+            Relation.DECISION_ABOUT,
+            "shop/stock.py",
+        ),
+        (
+            "decision: We round down because finance reconciles to the cent.",
+            Relation.DECISION_ABOUT,
+            "shop/pricing.py",
+        ),
+    ]
+    assert [c.source for c in claims] == ["shop/stock.py:12", "shop/pricing.py"]
