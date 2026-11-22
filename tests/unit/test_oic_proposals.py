@@ -291,3 +291,17 @@ def test_single_quoted_toml_dependencies_are_read_whole():
         ("lib", Relation.DEPENDS_ON, "core>=2"),
     ]
     assert [c.reason for c in claims] == ["vendored fork", "it's pinned low on purpose"]
+
+
+def test_url_dependency_with_extras_and_single_quoted_project_name():
+    patch = (
+        "@@ -1,3 +1,4 @@\n"
+        " [project]\n"
+        " name = 'lib'\n"
+        " dependencies = [\n"
+        '+    "pkg[socks] @ https://example.com/pkg-1.0.whl",\n'
+    )
+
+    claims = extract_claims("widgets", [_file("pyproject.toml", patch)])
+
+    assert _triples(claims) == [("lib", Relation.DEPENDS_ON, "pkg")]

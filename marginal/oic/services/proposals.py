@@ -25,7 +25,7 @@ _ANY_HUNK_HEADER = re.compile(r"^@@ -(\S+) \+(\S+) @@(.*)$")
 _REQUIREMENT = re.compile(r"([A-Za-z][A-Za-z0-9._-]*)(?:\[[^\]]*\])?\s*(.*)")
 # A TOML basic ("...") or literal ('...') string.
 _QUOTED = re.compile(r"""(["'])(.+?)\1""")
-_TOML_STRING = re.compile(r'^(name|version)\s*=\s*"([^"]+)"$')
+_TOML_STRING = re.compile(r"""^(name|version)\s*=\s*(["'])(.+?)\2$""")
 _TOML_TABLE = re.compile(r"^\[\[?([^\]]+)\]\]?$")
 _TOML_ARRAY = re.compile(r"^([\w.-]+)\s*=\s*\[(.*)$")
 _REQUIREMENTS_FILE = re.compile(r"requirements[\w.-]*\.txt")
@@ -245,9 +245,9 @@ def _pyproject(
         field = _TOML_STRING.match(line)
         if field and table in ("", "project"):  # "": the table header isn't in the hunk
             if field.group(1) == "name":
-                project = field.group(2)
+                project = field.group(3)
             elif number in added:
-                version = field.group(2)
+                version = field.group(3)
                 yield ProposedClaim(
                     f"{project}@{version}", Relation.RELEASE_OF, project, f"{path}:{number}"
                 )
@@ -285,9 +285,9 @@ def _dependency(repo: str, spec: str, source: str, reason: str = "") -> Iterator
     spec = spec.split(";", 1)[0].strip()
     if "://" in spec:
         # `name @ url` names its package; a bare URL or VCS line names none.
-        name = spec.split("@", 1)[0].strip()
-        if "@" in spec and _REQUIREMENT.fullmatch(name):
-            yield ProposedClaim(repo, Relation.DEPENDS_ON, name.lower(), source, reason)
+        named = _REQUIREMENT.fullmatch(spec.split("@", 1)[0].strip()) if "@" in spec else None
+        if named:  # the name without extras, as for any other dependency
+            yield ProposedClaim(repo, Relation.DEPENDS_ON, named.group(1).lower(), source, reason)
         return
     match = _REQUIREMENT.fullmatch(spec)
     if not match:
