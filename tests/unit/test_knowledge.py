@@ -37,3 +37,21 @@ def test_more_knowledge_than_the_cap_is_cut_and_the_findings_survive():
     )
 
     assert len(response.knowledge) == MAX_KNOWLEDGE_PER_REVIEW
+
+
+def test_a_malformed_knowledge_item_is_skipped_and_the_findings_survive():
+    bad = {
+        "kind": "opinion",
+        "statement": "x",
+        "about": "a.py",
+        "evidence": RULE.evidence.model_dump(),
+    }
+
+    response = FindingsResponse.model_validate(
+        {"findings": [], "knowledge": [bad, RULE.model_dump(), {"extra": 1}]}
+    )
+
+    assert response.knowledge == [RULE]
+    assert FindingsResponse.model_json_schema()["properties"]["knowledge"]["maxItems"] == (
+        MAX_KNOWLEDGE_PER_REVIEW
+    )

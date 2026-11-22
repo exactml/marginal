@@ -148,13 +148,25 @@ class FindingsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", json_schema_extra=_every_field_required)
 
     findings: list[Finding] = Field(max_length=MAX_FINDINGS_PER_REVIEW)
-    knowledge: list[Knowledge] = Field(default_factory=list)
+    # `maxItems` tells the model the cap; the validator enforces it without rejecting.
+    knowledge: list[Knowledge] = Field(
+        default_factory=list, json_schema_extra={"maxItems": MAX_KNOWLEDGE_PER_REVIEW}
+    )
 
-    @field_validator("knowledge")
+    @field_validator("knowledge", mode="before")
     @classmethod
-    def _keep_the_first_knowledge(cls, knowledge: list[Knowledge]) -> list[Knowledge]:
-        # Cut, never reject: a long list must not cost the review its findings.
-        return knowledge[:MAX_KNOWLEDGE_PER_REVIEW]
+    def _keep_the_first_valid_knowledge(cls, knowledge: object) -> list[Knowledge]:
+        # Cut and skip, never reject: knowledge is a side output, and a long list or
+        # a malformed item must not cost the review its findings.
+        kept: list[Knowledge] = []
+        for item in knowledge if isinstance(knowledge, list) else []:
+            if len(kept) == MAX_KNOWLEDGE_PER_REVIEW:
+                break
+            try:
+                kept.append(Knowledge.model_validate(item))
+            except ValueError:
+                continue
+        return kept
 
 
 class Recheck(BaseModel):
