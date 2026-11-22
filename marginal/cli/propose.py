@@ -16,8 +16,11 @@ from marginal.oic.services.proposals import (
     PullRequestState,
     decisions_from_replies,
     extract_claims,
+    knowledge_claims,
     render_proposal,
 )
+from marginal.review.knowledge import posted_knowledge
+from marginal.review.render import REVIEW_HEADING
 from marginal.review.replies import maintainer_replies
 
 # Permissions that count as a writer; GitHub reports `maintain` as `write`.
@@ -56,6 +59,13 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
         threads = maintainer_replies(client.list_review_comments(pr_number))
         claims += decisions_from_replies(
             (t.path, t.line, reply) for t in threads for reply in t.replies
+        )
+        # Rules and decisions marginal's reviews found in the same model call.
+        reviews = [r.get("body") or "" for r in client.list_reviews(pr_number)]
+        knowledge = posted_knowledge(body for body in reviews if REVIEW_HEADING in body)
+        claims += knowledge_claims(
+            ((k.kind, k.statement, k.about, k.evidence.file, k.evidence.quote) for k in knowledge),
+            files,
         )
         state = _state(pull_request)
         body = render_proposal(claims, state)

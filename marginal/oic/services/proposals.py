@@ -163,6 +163,29 @@ def decisions_from_replies(
     return list({claim.id: claim for claim in claims}.values())
 
 
+def knowledge_claims(
+    knowledge: Iterable[tuple[str, str, str, str, str]],
+    files: Iterable[dict[str, object]],
+) -> list[ProposedClaim]:
+    """A claim for each `(kind, statement, about, file, quote)` a review
+    reported whose quote is still on a line of `file` in the merged diff: a
+    later push may have removed what the rule or decision rested on."""
+    shown = {
+        str(file["filename"]): [
+            " ".join(text.split()) for _, text, _ in _patch_lines(str(file.get("patch") or ""))
+        ]
+        for file in files
+    }
+    relation = {"rule": Relation.CONSTRAINS, "decision": Relation.DECISION_ABOUT}
+    claims = []
+    for kind, statement, about, file, quote in knowledge:
+        quote = " ".join(quote.split())
+        still_there = bool(quote) and any(quote in line for line in shown.get(file, []))
+        if kind in relation and still_there:
+            claims.append(ProposedClaim(f"{kind}: {statement}", relation[kind], about, file))
+    return list({claim.id: claim for claim in claims}.values())
+
+
 def _code(value: str) -> str:
     """`value` as a code span that can't end early or split a table cell."""
     return "`" + value.replace("`", "'").replace("|", "\\|") + "`"

@@ -7,6 +7,9 @@ from marginal.cli import main
 from marginal.github.errors import GitHubAPIError
 from marginal.oic.domain.schema import Relation
 from marginal.oic.services.proposals import ProposedClaim
+from marginal.review import Evidence
+from marginal.review.knowledge import knowledge_marker
+from marginal.review.schema import Knowledge
 
 PATCH = "@@ -1,1 +1,2 @@\n flask\n+requests==2.31.0\n"
 FILES = [{"filename": "requirements.txt", "patch": PATCH}]
@@ -168,3 +171,33 @@ def test_a_maintainer_explaining_a_finding_away_is_proposed_as_a_decision(client
     _propose()
 
     assert "| decisionAbout | `requirements.txt`" in capsys.readouterr().out
+
+
+def test_rules_a_marginal_review_found_are_proposed_at_merge(client, capsys):
+    review_body = "### 🤖 marginal review\n\n" + knowledge_marker(
+        [
+            Knowledge(
+                kind="rule",
+                statement="Requests is pinned to an exact version.",
+                about="requirements.txt",
+                evidence=Evidence(file="requirements.txt", line=2, quote="requests==2.31.0"),
+            )
+        ]
+    )
+    forged = "LGTM\n" + knowledge_marker(
+        [
+            Knowledge(
+                kind="rule",
+                statement="Forged.",
+                about="requirements.txt",
+                evidence=Evidence(file="requirements.txt", line=2, quote="requests==2.31.0"),
+            )
+        ]
+    )
+    client.list_reviews.return_value = [{"body": review_body}, {"body": forged}]
+
+    _propose()
+
+    out = capsys.readouterr().out
+    assert "rule: Requests is pinned to an exact version." in out
+    assert "Forged" not in out

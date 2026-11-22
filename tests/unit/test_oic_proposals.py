@@ -4,6 +4,7 @@ from marginal.oic.services.proposals import (
     ProposedClaim,
     decisions_from_replies,
     extract_claims,
+    knowledge_claims,
     render_proposal,
 )
 
@@ -223,3 +224,24 @@ def test_replies_that_explain_a_choice_become_decisions():
         ),
     ]
     assert [c.source for c in claims] == ["shop/stock.py:12", "shop/pricing.py"]
+
+
+def test_review_knowledge_is_kept_only_while_its_quote_is_in_the_merged_diff():
+    files = [_file("shop/pricing.py", "@@ -1,1 +1,2 @@\n x = 1\n+if total >= 100:\n")]
+    knowledge = [
+        (
+            "rule",
+            "Orders of 100 or more ship free.",
+            "shop/pricing.py",
+            "shop/pricing.py",
+            "if  total >= 100:",
+        ),
+        ("decision", "Refunds take 3 days.", "shop/refund.py", "shop/refund.py", "DAYS = 3"),
+        ("opinion", "Looks fine.", "shop/pricing.py", "shop/pricing.py", "x = 1"),
+    ]
+
+    claims = knowledge_claims(knowledge, files)
+
+    assert _triples(claims) == [
+        ("rule: Orders of 100 or more ship free.", Relation.CONSTRAINS, "shop/pricing.py")
+    ]
