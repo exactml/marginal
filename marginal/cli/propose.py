@@ -37,11 +37,15 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
     the comment instead of posting a second. Which claims become knowledge is
     decided later, outside the PR. No model call. Errors print one stderr
     line and exit 1.
+
+    With `proposals.enabled` off (the default) it does nothing and prints nothing.
     """
     base_client = GitHubClient(repo, PermissionsConfig())
     try:
         pull_request = base_client.get_pull_request(pr_number)
         config, _ = load_base_config(base_client, pull_request, path)
+        if not config.proposals.enabled:
+            return 0
         client = GitHubClient(repo, config.permissions)
         files = client.get_pull_request_files(pr_number)
         comments = client.list_issue_comments(pr_number)

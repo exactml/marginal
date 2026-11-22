@@ -21,7 +21,7 @@ MERGED = {"base": {"sha": "abc"}, "head": {"sha": "def"}, "state": "closed", "me
 def client(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".marginal").mkdir()
-    (tmp_path / ".marginal" / "config.yaml").write_text("version: 1\n")
+    (tmp_path / ".marginal" / "config.yaml").write_text("version: 1\nproposals:\n  enabled: true\n")
     with patch("marginal.cli.propose.GitHubClient") as cls:
         github = cls.return_value
         github.get_file.side_effect = working_tree_file
@@ -252,3 +252,13 @@ def test_only_the_newest_reviews_knowledge_is_proposed(client, capsys):
     out = capsys.readouterr().out
     assert "Requests is pinned to an exact version." in out
     assert "Requests must be pinned." not in out
+
+
+def test_with_proposals_off_it_does_nothing_and_prints_nothing(client, tmp_path, capsys):
+    (tmp_path / ".marginal" / "config.yaml").write_text("version: 1\n")
+
+    assert _propose("--comment") == 0
+
+    assert capsys.readouterr() == ("", "")
+    client.get_pull_request_files.assert_not_called()
+    client.create_issue_comment.assert_not_called()
