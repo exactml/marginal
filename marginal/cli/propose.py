@@ -26,6 +26,8 @@ from marginal.review.replies import maintainer_replies
 
 # Permissions that count as a writer; GitHub reports `maintain` as `write`.
 _WRITERS = {"admin", "write"}
+# The account a workflow's GITHUB_TOKEN posts as, which is how marginal posts in CI.
+_WORKFLOW_BOT = "github-actions[bot]"
 
 
 def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = False) -> int:
@@ -98,17 +100,21 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
 
 
 def _trusted_author(client: GitHubClient) -> Callable[[dict[str, object]], bool]:
-    """Whether a comment or review's author speaks for the repository: a bot
-    (marginal posting with the workflow's token) or someone with write access
-    (marginal run with a personal token posts as that person). Each login's
+    """Whether a comment or review's author speaks for the repository: the
+    account marginal posts as with the workflow's token, or someone with write
+    access (marginal run with a personal token posts as that person). Any other
+    bot is not trusted: it may echo text someone else wrote. Each login's
     permission is looked up once."""
     permissions: dict[str, str] = {}
 
     def trusted(item: dict[str, object]) -> bool:
-        user = item.get("user") or {}
-        if user.get("type") == "Bot":
+        login = str((item.get("user") or {}).get("login", ""))
+        # shortcut: only the GITHUB_TOKEN bot; a GitHub App token posts as its own
+        # bot login, which would need a setting under `proposals:`.
+        if login == _WORKFLOW_BOT:
             return True
-        login = str(user.get("login", ""))
+        if not login:
+            return False
         if login not in permissions:
             permissions[login] = client.get_permission(login)
         return permissions[login] in _WRITERS
