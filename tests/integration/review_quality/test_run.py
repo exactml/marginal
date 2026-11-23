@@ -113,3 +113,52 @@ def test_pr_agent_never_reads_an_earlier_runs_review(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError, match="credit too low"):
         run.review_with_pr_agent(attempt, case, checkout)
+
+
+def test_build_checkout_seeds_accepted_knowledge_at_the_base_and_diffs_to_the_head(
+    tmp_path, monkeypatch
+):
+    """marginal reads the seeded claim from the base commit, as it would from a
+    PR's, and the diff is exactly base -> head."""
+    from marginal.context.knowledge import load_accepted
+    from marginal.context.local import LocalCheckout
+
+    trees = {
+        "b" * 40: {"shop/cart.py": "TOTAL = 1\n", "shop/gone.py": "x = 1\n"},
+        "h" * 40: {"shop/cart.py": "TOTAL = 2\n", "shop/new.py": "y = 1\n"},
+    }
+
+    def fake_download(upstream, sha, dest):
+        root = dest / f"repo-{sha[:7]}"
+        for path, text in trees[sha].items():
+            (root / path).parent.mkdir(parents=True, exist_ok=True)
+            (root / path).write_text(text)
+        return root
+
+    monkeypatch.setattr(run, "download_snapshot", fake_download)
+    case = Case.model_validate(
+        {
+            "id": "totals-reversal",
+            "upstream": "owner/shop",
+            "base": "b" * 40,
+            "head": "h" * 40,
+            "kind": "reversal",
+            "merged": "2026-07-01",
+            "source": "https://github.com/owner/shop/pull/2",
+            "must_find": [{"file": "shop/cart.py", "lines": [1, 1], "severity": "medium"}],
+            "accepted": [
+                {"kind": "rule", "about": "shop/cart.py", "statement": "Totals stay 1.", "pr": 1}
+            ],
+        }
+    )
+
+    root = run.build_checkout(case, tmp_path)
+    (root / ".marginal" / "config.yaml").write_text("version: 1\n")
+
+    checkout = LocalCheckout(str(root))
+    base = checkout.merge_base("HEAD~1")
+    [claim] = load_accepted(checkout, base, "shop", ["shop/cart.py"])
+    assert (claim.statement, claim.pr) == ("Totals stay 1.", 1)
+    changed = sorted(f["filename"] for f in checkout.get_compare_files(base, "HEAD"))
+    # The knowledge and the per-attempt config are never part of the diff.
+    assert changed == ["shop/cart.py", "shop/gone.py", "shop/new.py"]
