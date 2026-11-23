@@ -116,18 +116,18 @@ def build_finding_prompt(
 
 
 def build_accepted_section(accepted: list[AcceptedClaim]) -> str:
-    """A prompt section listing the rules and decisions the team accepted
-    about the files this diff touches."""
+    """A prompt section listing the rules and decisions the team accepted,
+    repo-wide or about the files this diff touches."""
     rows = []
     for claim in accepted:
         source = f"PR #{claim.pr}, " if claim.pr else ""
-        rows.append(f"- {claim.kind} ({source}{claim.about}): {claim.statement}")
+        rows.append(f"- {claim.kind} ({source}{claim.about or 'repo-wide'}): {claim.statement}")
     return (
-        "The team accepted these rules and decisions in earlier pull requests, about "
-        "the files this diff touches. A change that breaks one of these rules, or "
-        "reverses one of these decisions without saying why, is worth a finding that "
-        "names the pull request it came from. Behavior a decision says is intended "
-        "is not a bug:\n\n" + "\n".join(rows)
+        "The team accepted these rules and decisions in earlier pull requests, for "
+        "the whole repository or the files this diff touches. A change that breaks "
+        "one of these rules, or reverses one of these decisions without saying why, "
+        "is worth a finding that names the pull request it came from. Behavior a "
+        "decision says is intended is not a bug:\n\n" + "\n".join(rows)
     )
 
 

@@ -1,98 +1,128 @@
-"""The rules and decisions a team accepted, from `.marginal/knowledge.yaml`
-as of the PR's base commit, so a PR can't change the knowledge it's reviewed by.
+"""The rules and decisions a team accepted, from `.marginal/knowledge/` as of
+the PR's base commit, so a PR can't change the knowledge it's reviewed by.
 
-The file is the opt-in: without it a review is unchanged.
+One small YAML file per claim, named by its id, so adding or removing one
+never conflicts with another:
+
+    .marginal/knowledge/repo/d2e8a1.yaml         repo-wide: every review
+    .marginal/knowledge/paths/shop/c41d07.yaml   about shop/: reviews touching it
+
+The folder is the opt-in: without it a review is unchanged.
 """
 
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterable
 from fnmatch import fnmatch
 from pathlib import PurePosixPath
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, ValidationError
 
 from marginal.github.client import GitHubClient
 
-KNOWLEDGE_PATH = ".marginal/knowledge.yaml"
-# The most entries one review loads: each costs prompt tokens on every review.
+KNOWLEDGE_DIR = ".marginal/knowledge"
+REPO_DIR = f"{KNOWLEDGE_DIR}/repo/"
+PATHS_DIR = f"{KNOWLEDGE_DIR}/paths/"
+# Each loaded claim costs prompt tokens on every review it reaches.
 MAX_ACCEPTED_PER_REVIEW = 15
+# Repo-wide claims reach every review, so they get a smaller share.
+MAX_REPO_WIDE_PER_REVIEW = 5
 
 
 class AcceptedClaim(BaseModel):
     # Unknown keys are ignored, so a file written for a newer marginal still loads.
-    id: str
+    id: str  # the file's name
     repo: str
     # Repo names or globs (`customer-pipeline-*`) it applies to; empty means `repo`.
     applies_to: list[str] = []
     kind: Literal["rule", "decision"]
     statement: str
-    # A file, or a folder ending in `/`.
-    about: str
+    # A file, or a folder ending in `/`; a repo-wide claim needs none.
+    about: str = ""
     pr: int | None = None
     author: str | None = None
-
-    @field_validator("id", mode="before")
-    @classmethod
-    def _id_as_text(cls, value: object) -> object:
-        # An unquoted hex id of only digits (`123456`) loads as a YAML number.
-        return str(value) if isinstance(value, int) else value
 
 
 def load_accepted(
     client: GitHubClient, base_sha: str, repo: str, changed: list[str]
 ) -> list[AcceptedClaim]:
-    """The accepted claims at `base_sha` for `repo` about `changed` files."""
-    text = client.get_file(KNOWLEDGE_PATH, base_sha)
-    if text is None:
-        return []
-    return matching(parse_accepted(text), repo, changed)
+    """The accepted claims at `base_sha` for `repo` (its name; an `owner/`
+    prefix is dropped): the newest `MAX_REPO_WIDE_PER_REVIEW` repo-wide ones,
+    then the newest about `changed` files, `MAX_ACCEPTED_PER_REVIEW` in all.
 
-
-def parse_accepted(text: str) -> list[AcceptedClaim]:
-    """Each valid entry of the file's list. People edit the file, so a bad
-    entry is skipped with a warning instead of failing the review."""
-    try:
-        entries = yaml.safe_load(text)
-    except yaml.YAMLError as exc:
-        _warn(f"{KNOWLEDGE_PATH} isn't valid YAML, so no knowledge is loaded: {exc}")
-        return []
-    if entries is None:
-        return []
-    if not isinstance(entries, list):
-        _warn(f"{KNOWLEDGE_PATH} must be a list of entries, so no knowledge is loaded")
-        return []
-    claims = []
-    for number, entry in enumerate(entries, 1):
-        try:
-            claims.append(AcceptedClaim.model_validate(entry))
-        except ValidationError as exc:
-            fields = ", ".join(".".join(map(str, e["loc"])) or "entry" for e in exc.errors())
-            _warn(f"skipping entry {number} in {KNOWLEDGE_PATH}: bad or missing {fields}")
-    return claims
-
-
-def matching(claims: list[AcceptedClaim], repo: str, changed: list[str]) -> list[AcceptedClaim]:
-    """The newest `MAX_ACCEPTED_PER_REVIEW` claims for `repo` (its name; an
-    `owner/` prefix is dropped) whose `about` is a changed file, a folder
-    holding one, or a file in the same folder as one."""
+    Only files in a changed file's folder or a folder above it are read."""
     name = repo.rsplit("/", 1)[-1]
-    folders = {PurePosixPath(path).parent for path in changed}
-
-    def about_changed(about: str) -> bool:
-        if about.endswith("/"):
-            return any(path.startswith(about) for path in changed)
-        return about in changed or PurePosixPath(about).parent in folders
-
-    picked = [
+    files = [f for f in client.list_files(KNOWLEDGE_DIR, base_sha) if f.endswith((".yaml", ".yml"))]
+    wanted = {PurePosixPath(PATHS_DIR, folder) for path in changed for folder in _folders(path)}
+    repo_wide = _newest(_read(client, base_sha, f, name) for f in files if f.startswith(REPO_DIR))
+    if len(repo_wide) > MAX_REPO_WIDE_PER_REVIEW:
+        _warn(
+            f"{len(repo_wide)} repo-wide claims in {REPO_DIR}, but a review loads only the "
+            f"newest {MAX_REPO_WIDE_PER_REVIEW}: keep the folder to what applies everywhere"
+        )
+    repo_wide = repo_wide[:MAX_REPO_WIDE_PER_REVIEW]
+    about = _newest(
         claim
-        for claim in reversed(claims)  # the file grows at the end: newest last
-        if any(fnmatch(name, pattern) for pattern in claim.applies_to or [claim.repo])
-        and about_changed(claim.about)
-    ]
-    return picked[:MAX_ACCEPTED_PER_REVIEW]
+        for f in files
+        if f.startswith(PATHS_DIR) and PurePosixPath(f).parent in wanted
+        for claim in [_read(client, base_sha, f, name)]
+        if claim and _about_changed(claim.about, changed)
+    )
+    return repo_wide + about[: MAX_ACCEPTED_PER_REVIEW - len(repo_wide)]
+
+
+def parse_accepted(path: str, text: str) -> AcceptedClaim | None:
+    """The claim in file `path`. People edit these files, so a bad one is
+    skipped with a warning instead of failing the review."""
+    try:
+        entry = yaml.safe_load(text)
+    except yaml.YAMLError:
+        _warn(f"skipping {path}: not valid YAML")
+        return None
+    if not isinstance(entry, dict):
+        _warn(f"skipping {path}: it must hold one claim's fields")
+        return None
+    try:
+        claim = AcceptedClaim.model_validate({**entry, "id": PurePosixPath(path).stem})
+    except ValidationError as exc:
+        fields = ", ".join(".".join(map(str, e["loc"])) or "claim" for e in exc.errors())
+        _warn(f"skipping {path}: bad or missing {fields}")
+        return None
+    if path.startswith(PATHS_DIR) and not claim.about:
+        _warn(f"skipping {path}: a claim under {PATHS_DIR} needs `about`")
+        return None
+    return claim
+
+
+def _read(client: GitHubClient, ref: str, path: str, repo: str) -> AcceptedClaim | None:
+    """The claim in `path` at `ref`, if it's valid and applies to `repo`."""
+    text = client.get_file(path, ref)
+    claim = parse_accepted(path, text) if text is not None else None
+    if claim and any(fnmatch(repo, pattern) for pattern in claim.applies_to or [claim.repo]):
+        return claim
+    return None
+
+
+def _newest(claims: Iterable[AcceptedClaim | None]) -> list[AcceptedClaim]:
+    """`claims` without the `None`s, newest PR first; ones without a PR last."""
+    return sorted((c for c in claims if c), key=lambda c: -(c.pr or 0))
+
+
+def _folders(path: str) -> list[str]:
+    """The folders `path` sits in, innermost first, down to the root (`.`)."""
+    return [str(folder) for folder in PurePosixPath(path).parents]
+
+
+def _about_changed(about: str, changed: list[str]) -> bool:
+    """`about` is a changed file, a folder holding one, or a file in the same
+    folder as one."""
+    if about.endswith("/"):
+        return any(path.startswith(about) for path in changed)
+    folder = PurePosixPath(about).parent
+    return about in changed or any(PurePosixPath(path).parent == folder for path in changed)
 
 
 def _warn(message: str) -> None:
