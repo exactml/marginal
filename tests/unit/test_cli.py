@@ -2437,11 +2437,11 @@ def test_review_reads_policy_content_from_the_base_commit(
     assert "Anything goes." not in prompt
 
 
-_KNOWLEDGE_FILE = ".marginal/knowledge/paths/rocks/a3f91c.yaml"
+_KNOWLEDGE_FILE = ".marginal/knowledge/paths/shop/a3f91c.yaml"
 _KNOWLEDGE = """repo: widgets
 kind: rule
 statement: agg levels stay ordered from coarse to fine
-about: rocks/helpers.py
+about: shop/helpers.py
 pr: 462
 """
 
@@ -2456,10 +2456,10 @@ def test_review_loads_accepted_knowledge_from_the_base_commit(
         mock_provider,
         {".marginal/config.yaml": _BASE_CONFIG, _KNOWLEDGE_FILE: _KNOWLEDGE},
         # A sibling of the file the rule is about.
-        [{"filename": "rocks/selection.py", "patch": "+levels.reverse()"}],
+        [{"filename": "shop/selection.py", "patch": "+levels.reverse()"}],
     )
 
-    assert "- rule (PR #462, rocks/helpers.py): agg levels stay ordered" in prompt
+    assert "- rule (PR #462, shop/helpers.py): agg levels stay ordered" in prompt
     assert "loaded 1 accepted rule(s) and decision(s)" in capsys.readouterr().err
 
 
@@ -2471,7 +2471,7 @@ def test_review_ignores_knowledge_the_pr_adds_or_about_other_files(
     # The PR adds the file, and touches the file it's about: still not loaded.
     pr_files = [
         {"filename": _KNOWLEDGE_FILE, "patch": "+" + _KNOWLEDGE},
-        {"filename": "rocks/helpers.py", "patch": "+levels.reverse()"},
+        {"filename": "shop/helpers.py", "patch": "+levels.reverse()"},
     ]
 
     added = _review_prompt(mock_github_client, mock_provider, base, pr_files)

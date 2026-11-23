@@ -36,7 +36,7 @@ class AcceptedClaim(BaseModel):
     # Unknown keys are ignored, so a file written for a newer marginal still loads.
     id: str  # the file's name
     repo: str
-    # Repo names or globs (`customer-pipeline-*`) it applies to; empty means the
+    # Repo names or globs (`widgets-*`) it applies to; empty means the
     # repo whose folder holds it, whatever that repo is named.
     applies_to: list[str] = []
     kind: Literal["rule", "decision"]
