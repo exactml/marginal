@@ -141,7 +141,11 @@ def _add_to_knowledge_pr(
 ) -> str | None:
     """Add one file per rule or decision in `claims` to the knowledge branch,
     and open the knowledge PR if none is open. Returns its URL, or `None`
-    with no rule or decision to add."""
+    with no rule or decision to add, or for a PR merged into a branch other
+    than the default one: reviews read knowledge from the default branch."""
+    base = str(pull_request["base"]["ref"])
+    if base != (pull_request["base"].get("repo") or {}).get("default_branch"):
+        return None
     kinds = {Relation.CONSTRAINS: "rule", Relation.DECISION_ABOUT: "decision"}
     pr_author = str((pull_request.get("user") or {}).get("login") or "")
     files = [
@@ -162,7 +166,6 @@ def _add_to_knowledge_pr(
     ]
     if not files:
         return None
-    base = str(pull_request["base"]["ref"])
     pulls = client.list_pull_requests(KNOWLEDGE_BRANCH)
     knowledge_pr = next((p for p in pulls if p["state"] == "open"), None)
     branch_sha = client.get_branch_sha(KNOWLEDGE_BRANCH)

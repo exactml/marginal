@@ -298,7 +298,7 @@ def pushing(client, tmp_path):
     )
     client.get_pull_request.return_value = {
         **MERGED,
-        "base": {"sha": "abc", "ref": "master"},
+        "base": {"sha": "abc", "ref": "master", "repo": {"default_branch": "master"}},
         "user": {"login": "bob"},
     }
     finding = {
@@ -425,3 +425,16 @@ def test_files_no_pr_carried_yet_are_kept_and_get_their_pr(pushing):
     pushing.set_branch.assert_not_called()
     pushing.create_file.assert_called_once()
     pushing.create_pull_request.assert_called_once()
+
+
+def test_a_pr_merged_into_another_branch_adds_nothing_to_the_knowledge_pr(pushing):
+    pushing.get_pull_request.return_value = {
+        **pushing.get_pull_request.return_value,
+        "base": {"sha": "abc", "ref": "release/1.x", "repo": {"default_branch": "master"}},
+    }
+
+    _propose("--comment")
+
+    pushing.set_branch.assert_not_called()
+    pushing.create_file.assert_not_called()
+    assert "Added to" not in pushing.create_issue_comment.call_args.args[1]
