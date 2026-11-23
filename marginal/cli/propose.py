@@ -10,7 +10,13 @@ from pathlib import PurePosixPath
 from marginal.config.errors import ConfigError
 from marginal.config.schema import PermissionsConfig
 from marginal.context import load_base_config
-from marginal.context.knowledge import KNOWLEDGE_DIR, REJECTED_DIR, AcceptedClaim, claim_file
+from marginal.context.knowledge import (
+    KNOWLEDGE_DIR,
+    REJECTED_DIR,
+    REPO_DIR,
+    AcceptedClaim,
+    claim_file,
+)
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubError
 from marginal.oic.domain.schema import Relation
@@ -222,6 +228,11 @@ def _add_to_knowledge_pr(
     retired: set[str] = set()
     for claim in new:
         old = live.get(claim.supersedes or "") if claim.supersedes != claim.id else None
+        # Only one the review could have shown: repo-wide, or in this claim's folder
+        # or a folder above it, as reviews load them.
+        folders = PurePosixPath(claim_file(claim)[0]).parents
+        if old and not (old.startswith(REPO_DIR) or PurePosixPath(old).parent in folders):
+            old = None
         path, text = claim_file(claim if old else claim.model_copy(update={"supersedes": None}))
         client.create_file(
             path, text, KNOWLEDGE_BRANCH, f"Propose knowledge from #{pr_number}: {path}"

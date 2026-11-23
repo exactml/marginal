@@ -544,7 +544,8 @@ def test_a_rejection_already_recorded_on_the_base_is_not_written_again(pushing):
 
 # -- supersession --------------------------------------------------------------
 
-OLD = ".marginal/knowledge/paths/requirements/7be210.yaml"
+# The new rule is about requirements.txt, so its file sits at the top of paths/.
+OLD = ".marginal/knowledge/paths/7be210.yaml"
 
 
 def _review_replacing(pushing, replaces):
@@ -565,9 +566,10 @@ def _review_replacing(pushing, replaces):
     ]
 
 
-def test_a_claim_that_replaces_an_accepted_one_supersedes_it(pushing):
+@pytest.mark.parametrize("old", [OLD, ".marginal/knowledge/repo/7be210.yaml"])
+def test_a_claim_that_replaces_an_accepted_one_supersedes_it(pushing, old):
     _review_replacing(pushing, "7be210")
-    pushing.list_files.return_value = [OLD]
+    pushing.list_files.return_value = [old]
 
     _propose("--comment")
 
@@ -575,14 +577,19 @@ def test_a_claim_that_replaces_an_accepted_one_supersedes_it(pushing):
     assert "supersedes: 7be210" in text
     stem = path.rsplit("/", 1)[-1].removesuffix(".yaml")
     pushing.delete_file.assert_called_once_with(
-        OLD, "marginal/knowledge", f"Supersede 7be210 with {stem}"
+        old, "marginal/knowledge", f"Supersede 7be210 with {stem}"
     )
 
 
 @pytest.mark.parametrize(
     "on_branch",
-    # The id the model gave matches nothing, or only a claim the team rejected.
-    [[], [".marginal/knowledge/rejected/7be210.yaml"]],
+    # The id the model gave matches nothing, a claim the team rejected, or one in
+    # another area, which the review never showed.
+    [
+        [],
+        [".marginal/knowledge/rejected/7be210.yaml"],
+        [".marginal/knowledge/paths/shop/7be210.yaml"],
+    ],
 )
 def test_a_replaced_id_the_team_doesnt_hold_supersedes_nothing(pushing, on_branch):
     _review_replacing(pushing, "7be210")
