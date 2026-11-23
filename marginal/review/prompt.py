@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from importlib import resources
 from pathlib import Path, PurePosixPath
 
+from marginal.context.knowledge import AcceptedClaim
 from marginal.graph import CallSite, ChangedDefinition
 from marginal.review.redact import redact_secrets
 from marginal.review.replies import ReplyThread
@@ -71,10 +72,11 @@ def build_finding_prompt(
     anti_policies: list[tuple[str, str]] | None = None,
     ci_conclusion: str | None = None,
     knowledge: bool = False,
+    accepted: list[AcceptedClaim] | None = None,
 ) -> str:
     """The reviewer prompt. `files` must already be `redact_patches` output.
     With `knowledge`, it also asks for the business rules and decisions the
-    diff states."""
+    diff states; `accepted` are the ones the team already accepted."""
     diff = "\n\n".join(f"--- {file['filename']} ---\n{file['patch']}" for file in files)
     sections = [FINDING_PROMPT_INSTRUCTIONS]
     if knowledge:
@@ -96,6 +98,8 @@ def build_finding_prompt(
             "raised in review. Leave such issues out of your findings entirely, even "
             f"if they would otherwise look like a problem:\n\n{anti_policy_text}"
         )
+    if accepted:
+        sections.append(build_accepted_section(accepted))
     if ci_conclusion:
         sections.append(
             f"CI status: {ci_conclusion} (the GitHub Actions run that triggered this "
@@ -109,6 +113,22 @@ def build_finding_prompt(
         sections.append(build_replies_section(replies))
     sections.append(diff)
     return "\n\n".join(sections)
+
+
+def build_accepted_section(accepted: list[AcceptedClaim]) -> str:
+    """A prompt section listing the rules and decisions the team accepted
+    about the files this diff touches."""
+    rows = []
+    for claim in accepted:
+        source = f"PR #{claim.pr}, " if claim.pr else ""
+        rows.append(f"- {claim.kind} ({source}{claim.about}): {claim.statement}")
+    return (
+        "The team accepted these rules and decisions in earlier pull requests, about "
+        "the files this diff touches. A change that breaks one of these rules, or "
+        "reverses one of these decisions without saying why, is worth a finding that "
+        "names the pull request it came from. Behavior a decision says is intended "
+        "is not a bug:\n\n" + "\n".join(rows)
+    )
 
 
 def build_graph_context_section(
