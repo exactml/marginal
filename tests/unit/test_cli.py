@@ -2357,6 +2357,7 @@ def _base_commit(files):
 def _review_prompt(mock_github_client, mock_provider, base_files, pr_files):
     client = mock_github_client.return_value
     client.get_file.side_effect = _base_commit(base_files)
+    client.list_files.side_effect = lambda path, ref: [f for f in base_files if f.startswith(path)]
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = pr_files
     client.list_review_comments.return_value = []
@@ -2432,13 +2433,12 @@ def test_review_reads_policy_content_from_the_base_commit(
     assert "Anything goes." not in prompt
 
 
-_KNOWLEDGE = """
-- id: a3f91c
-  repo: widgets
-  kind: rule
-  statement: agg levels stay ordered from coarse to fine
-  about: rocks/helpers.py
-  pr: 462
+_KNOWLEDGE_FILE = ".marginal/knowledge/paths/rocks/a3f91c.yaml"
+_KNOWLEDGE = """repo: widgets
+kind: rule
+statement: agg levels stay ordered from coarse to fine
+about: rocks/helpers.py
+pr: 462
 """
 
 
@@ -2450,7 +2450,7 @@ def test_review_loads_accepted_knowledge_from_the_base_commit(
     prompt = _review_prompt(
         mock_github_client,
         mock_provider,
-        {".marginal/config.yaml": _BASE_CONFIG, ".marginal/knowledge.yaml": _KNOWLEDGE},
+        {".marginal/config.yaml": _BASE_CONFIG, _KNOWLEDGE_FILE: _KNOWLEDGE},
         # A sibling of the file the rule is about.
         [{"filename": "rocks/selection.py", "patch": "+levels.reverse()"}],
     )
@@ -2466,7 +2466,7 @@ def test_review_ignores_knowledge_the_pr_adds_or_about_other_files(
     base = {".marginal/config.yaml": _BASE_CONFIG}
     # The PR adds the file, and touches the file it's about: still not loaded.
     pr_files = [
-        {"filename": ".marginal/knowledge.yaml", "patch": "+" + _KNOWLEDGE},
+        {"filename": _KNOWLEDGE_FILE, "patch": "+" + _KNOWLEDGE},
         {"filename": "rocks/helpers.py", "patch": "+levels.reverse()"},
     ]
 
@@ -2474,7 +2474,7 @@ def test_review_ignores_knowledge_the_pr_adds_or_about_other_files(
     elsewhere = _review_prompt(
         mock_github_client,
         mock_provider,
-        {**base, ".marginal/knowledge.yaml": _KNOWLEDGE},
+        {**base, _KNOWLEDGE_FILE: _KNOWLEDGE},
         [{"filename": "api/handler.py", "patch": "+return 1"}],
     )
 

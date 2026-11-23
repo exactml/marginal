@@ -18,7 +18,7 @@ from marginal.context import (
     load_base_policies,
     read_ci_conclusion,
 )
-from marginal.context.knowledge import KNOWLEDGE_PATH, AcceptedClaim, load_accepted
+from marginal.context.knowledge import KNOWLEDGE_DIR, AcceptedClaim, load_accepted
 from marginal.context.local import LocalCheckout
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubError
@@ -462,7 +462,7 @@ def _review_files(
     if accepted:
         print(
             f"marginal review: loaded {len(accepted)} accepted rule(s) and decision(s) "
-            f"from {KNOWLEDGE_PATH}",
+            f"from {KNOWLEDGE_DIR}",
             file=sys.stderr,
         )
     try:
