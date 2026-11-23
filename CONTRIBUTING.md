@@ -62,6 +62,13 @@ later fixed or reverted, or a clean PR with nothing to flag.
   proves it (`evidence`), and give the file, line range, and expected
   severity. A case without evidence won't be merged.
 
+A **reversal** case (`kind: reversal`) is a PR that broke a rule or decision an
+earlier PR stated, with a later fix or revert that proves it. Put that rule
+under `accepted`, with the earlier PR's number; the runner writes it into the
+case's `.marginal/knowledge/` before the review (ADR 0012). Any case can also
+list `accepted` rules unrelated to its bug, and `must_propose`: the rules and
+decisions the PR's own diff states, each with the line range that states it.
+
 Rate the expected severity the way the reviewer is told to, by how bad the
 effect is when it happens and how likely it is to happen:
 
