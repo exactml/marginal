@@ -2432,6 +2432,57 @@ def test_review_reads_policy_content_from_the_base_commit(
     assert "Anything goes." not in prompt
 
 
+_KNOWLEDGE = """
+- id: a3f91c
+  repo: widgets
+  kind: rule
+  statement: agg levels stay ordered from coarse to fine
+  about: rocks/helpers.py
+  pr: 462
+"""
+
+
+def test_review_loads_accepted_knowledge_from_the_base_commit(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+
+    prompt = _review_prompt(
+        mock_github_client,
+        mock_provider,
+        {".marginal/config.yaml": _BASE_CONFIG, ".marginal/knowledge.yaml": _KNOWLEDGE},
+        # A sibling of the file the rule is about.
+        [{"filename": "rocks/selection.py", "patch": "+levels.reverse()"}],
+    )
+
+    assert "- rule (PR #462, rocks/helpers.py): agg levels stay ordered" in prompt
+    assert "loaded 1 accepted rule(s) and decision(s)" in capsys.readouterr().err
+
+
+def test_review_ignores_knowledge_the_pr_adds_or_about_other_files(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    base = {".marginal/config.yaml": _BASE_CONFIG}
+    # The PR adds the file, and touches the file it's about: still not loaded.
+    pr_files = [
+        {"filename": ".marginal/knowledge.yaml", "patch": "+" + _KNOWLEDGE},
+        {"filename": "rocks/helpers.py", "patch": "+levels.reverse()"},
+    ]
+
+    added = _review_prompt(mock_github_client, mock_provider, base, pr_files)
+    elsewhere = _review_prompt(
+        mock_github_client,
+        mock_provider,
+        {**base, ".marginal/knowledge.yaml": _KNOWLEDGE},
+        [{"filename": "api/handler.py", "patch": "+return 1"}],
+    )
+
+    assert "The team accepted" not in added
+    assert "The team accepted" not in elsewhere
+    assert "loaded" not in capsys.readouterr().err
+
+
 def test_review_uses_the_working_tree_config_when_the_base_has_none(
     tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
 ):

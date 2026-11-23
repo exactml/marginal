@@ -18,6 +18,7 @@ from marginal.context import (
     load_base_policies,
     read_ci_conclusion,
 )
+from marginal.context.knowledge import KNOWLEDGE_PATH, AcceptedClaim, load_accepted
 from marginal.context.local import LocalCheckout
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubError
@@ -291,6 +292,7 @@ def run_review(
             path,
             policies,
             anti_policies,
+            repo,
         )
     except MissingCredentialsError as exc:
         print(f"marginal review: {exc}", file=sys.stderr)
@@ -435,6 +437,7 @@ def _review_files(
     path: str,
     policies: list[tuple[str, str]],
     anti_policies: list[tuple[str, str]],
+    repo: str,
 ) -> tuple[list[Finding], list[Decision], list[str], PromptOverBudget | None, list[Knowledge]]:
     """Have the reviewer model review `files`, then check what it found.
 
@@ -450,6 +453,18 @@ def _review_files(
     redacted = redact_patches(files)
     redacted_files = redacted_filenames(files, redacted)
     graph_context = build_graph_context(path, files, enabled=config.context.code_graph)
+    accepted = load_accepted(
+        client,
+        str(pull_request["base"]["sha"]),
+        repo,
+        [str(file["filename"]) for file in files],
+    )
+    if accepted:
+        print(
+            f"marginal review: loaded {len(accepted)} accepted rule(s) and decision(s) "
+            f"from {KNOWLEDGE_PATH}",
+            file=sys.stderr,
+        )
     try:
         response = asyncio.run(
             _generate_findings(
@@ -465,6 +480,7 @@ def _review_files(
                     client, config.permissions, str(pull_request["head"]["sha"])
                 ),
                 knowledge=config.proposals.enabled,
+                accepted=accepted,
             )
         )
     except PromptOverBudget as exc:
@@ -658,18 +674,28 @@ async def _generate_findings(
     anti_policies: list[tuple[str, str]] | None = None,
     ci_conclusion: str | None = None,
     knowledge: bool = False,
+    accepted: list[AcceptedClaim] | None = None,
 ) -> FindingsResponse:
     """Generate a bounded list of unvalidated `Finding`s, and any business
     `Knowledge` the diff states, from `model_spec` over
     `files`' diffs, `policies`, `graph_context`, maintainer `replies`,
-    `anti_policies`, and the triggering CI run's `ci_conclusion`.
+    `anti_policies`, the triggering CI run's `ci_conclusion`, and the
+    team's `accepted` rules and decisions.
 
     Raises `PromptOverBudget` without touching the provider if the built
     prompt is estimated over `max_prompt_tokens`. The check runs on the final
     prompt string, so every section the builder adds counts toward the cap.
     """
     prompt = build_finding_prompt(
-        files, policies, graph_context, repo_root, replies, anti_policies, ci_conclusion, knowledge
+        files,
+        policies,
+        graph_context,
+        repo_root,
+        replies,
+        anti_policies,
+        ci_conclusion,
+        knowledge,
+        accepted,
     )
     estimated_tokens = estimate_tokens(prompt)
     if estimated_tokens > max_prompt_tokens:
