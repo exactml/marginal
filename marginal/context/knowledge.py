@@ -91,10 +91,15 @@ def parse_accepted(path: str, text: str) -> AcceptedClaim | None:
         fields = ", ".join(".".join(map(str, e["loc"])) or "claim" for e in exc.errors())
         _warn(f"skipping {path}: bad or missing {fields}")
         return None
-    if path.startswith(PATHS_DIR) and not claim.about:
-        _warn(f"skipping {path}: a claim under {PATHS_DIR} needs `about`")
-        return None
-    return claim
+    about = claim.about.strip().removeprefix("./").lstrip("/")
+    if path.startswith(PATHS_DIR):
+        if not about:
+            _warn(f"skipping {path}: a claim under {PATHS_DIR} needs `about`")
+            return None
+        # A claim about the folder it sits in is a folder claim, `/` or not.
+        if about.rstrip("/") == str(PurePosixPath(path).parent.relative_to(PATHS_DIR)):
+            about = about.rstrip("/") + "/"
+    return claim.model_copy(update={"about": about})
 
 
 def _read(client: GitHubClient, ref: str, path: str, repo: str) -> AcceptedClaim | None:
@@ -118,11 +123,13 @@ def _folders(path: str) -> list[str]:
 
 def _about_changed(about: str, changed: list[str]) -> bool:
     """`about` is a changed file, a folder holding one, or a file in the same
-    folder as one."""
+    folder as one, except at the root, where every top-level file is one."""
     if about.endswith("/"):
         return any(path.startswith(about) for path in changed)
     folder = PurePosixPath(about).parent
-    return about in changed or any(PurePosixPath(path).parent == folder for path in changed)
+    if about in changed:
+        return True
+    return folder != PurePosixPath(".") and any(PurePosixPath(p).parent == folder for p in changed)
 
 
 def _warn(message: str) -> None:

@@ -93,6 +93,28 @@ def test_load_matches_the_file_its_folder_and_its_siblings_and_reads_no_other_ar
     assert f"{PATHS}/rocks/noob/notes.md" not in commit.read
 
 
+def test_load_reads_about_as_written_by_hand():
+    commit = _Commit(
+        {
+            f"{PATHS}/shop/dotted.yaml": _yaml("./shop/pricing.py", pr=4),
+            f"{PATHS}/shop/rooted.yaml": _yaml("/shop/pricing.py", pr=3),
+            # Its own folder, without the trailing `/`: still a folder claim.
+            f"{PATHS}/shop/folder.yaml": _yaml("shop", pr=2),
+            f"{PATHS}/setup.yaml": _yaml("setup.py", pr=1),
+        }
+    )
+
+    assert _ids(load_accepted(commit, "abc", "widgets", ["shop/deep/cart.py"])) == ["folder"]
+    assert _ids(load_accepted(commit, "abc", "widgets", ["shop/tax.py"])) == [
+        "dotted",
+        "rooted",
+        "folder",
+    ]
+    # At the root a file has no siblings: every top-level file would be one.
+    assert _ids(load_accepted(commit, "abc", "widgets", ["README.md"])) == []
+    assert _ids(load_accepted(commit, "abc", "widgets", ["setup.py"])) == ["setup"]
+
+
 def test_load_puts_repo_wide_claims_first_on_every_review():
     commit = _Commit(
         {
