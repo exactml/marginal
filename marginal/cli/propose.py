@@ -172,16 +172,19 @@ def _add_to_knowledge_pr(
     # A merged or closed PR's files are done with (a closed one was rejected), so
     # start over from the base branch. Files no PR carried yet, because opening
     # one failed, stay: the PR is opened below.
-    if knowledge_pr is None and (
+    restart = knowledge_pr is None and (
         branch_sha is None or any(p["head"]["sha"] == branch_sha for p in pulls)
-    ):
+    )
+    if restart:
         base_sha = client.get_branch_sha(base)
         if base_sha is None:
             raise GitHubError(f"base branch {base} not found")
         client.set_branch(KNOWLEDGE_BRANCH, base_sha)
-    for path, text in files:
-        if client.get_file(path, KNOWLEDGE_BRANCH) is None:  # proposed again: keep the first
-            client.create_file(path, text, KNOWLEDGE_BRANCH, f"Propose knowledge from #{pr_number}")
+    new = [(path, text) for path, text in files if client.get_file(path, KNOWLEDGE_BRANCH) is None]
+    for path, text in new:  # one already there was proposed or accepted before: keep it
+        client.create_file(path, text, KNOWLEDGE_BRANCH, f"Propose knowledge from #{pr_number}")
+    if knowledge_pr is None and restart and not new:
+        return None  # all accepted already: a PR with no commits can't be opened
     if knowledge_pr is None:
         knowledge_pr = client.create_pull_request(
             KNOWLEDGE_BRANCH, base, _KNOWLEDGE_PR_TITLE, _KNOWLEDGE_PR_BODY

@@ -438,3 +438,16 @@ def test_a_pr_merged_into_another_branch_adds_nothing_to_the_knowledge_pr(pushin
     pushing.set_branch.assert_not_called()
     pushing.create_file.assert_not_called()
     assert "Added to" not in pushing.create_issue_comment.call_args.args[1]
+
+
+def test_claims_all_accepted_already_open_no_empty_knowledge_pr(pushing):
+    pushing.get_file.side_effect = lambda path, ref: (
+        "kind: decision\n" if ref == "marginal/knowledge" else None
+    )
+
+    _propose("--comment")
+
+    pushing.set_branch.assert_called_once()
+    pushing.create_file.assert_not_called()
+    pushing.create_pull_request.assert_not_called()
+    assert "Added to" not in pushing.create_issue_comment.call_args.args[1]
