@@ -592,3 +592,17 @@ def test_a_replaced_id_the_team_doesnt_hold_supersedes_nothing(pushing, on_branc
 
     assert "supersedes" not in pushing.create_file.call_args.args[1]
     pushing.delete_file.assert_not_called()
+
+
+def test_a_knowledge_pr_past_githubs_commit_listing_cap_warns(pushing, capsys):
+    _previous_pr(pushing, merged=True, on_base=[KEPT])
+    commits = pushing.list_pull_request_commits.return_value
+    pushing.list_pull_request_commits.return_value = commits + [
+        {"sha": f"x{i}", "commit": {"message": "Edit"}} for i in range(250 - len(commits))
+    ]
+
+    _propose("--comment")
+
+    assert "knowledge PR #7 has 250 or more commits" in capsys.readouterr().err
+    # What the listing shows is still recorded.
+    assert ".marginal/knowledge/rejected/7be210.yaml" in _recorded(pushing)

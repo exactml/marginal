@@ -39,6 +39,8 @@ _KNOWLEDGE_PR_TITLE = "marginal: knowledge to review"
 _COMMITTED_FILE = re.compile(
     r"(?:Propose knowledge from|Record knowledge rejected in) #\d+: (?P<path>.+\.yaml)$"
 )
+# GitHub lists at most this many of a pull request's commits.
+_MAX_PR_COMMITS = 250
 _KNOWLEDGE_PR_BODY = """Rules and decisions marginal found in merged pull requests, one file each \
 under `.marginal/knowledge/paths/`. Once merged, a review loads the ones about the files \
 it changes.
@@ -248,7 +250,17 @@ def _rejected(client: GitHubClient, previous: dict[str, object], base_sha: str) 
     on_base = {PurePosixPath(f).stem for f in client.list_files(KNOWLEDGE_DIR, base_sha)}
     merged = bool(previous.get("merged_at"))
     committed: dict[str, tuple[str, str]] = {}
-    for commit in client.list_pull_request_commits(int(previous["number"])):
+    commits = client.list_pull_request_commits(int(previous["number"]))
+    # shortcut: GitHub lists a PR's first 250 commits only; reading further means
+    # walking the branch's history, worth it if knowledge PRs grow that long.
+    if len(commits) >= _MAX_PR_COMMITS:
+        print(
+            f"marginal propose: warning: knowledge PR #{previous['number']} has "
+            f"{_MAX_PR_COMMITS} or more commits; a claim deleted after the first "
+            f"{_MAX_PR_COMMITS} isn't recorded as rejected and may be proposed again",
+            file=sys.stderr,
+        )
+    for commit in commits:
         match = _COMMITTED_FILE.match(str(commit["commit"]["message"]).splitlines()[0])
         if not match or (merged and match["path"].startswith(REJECTED_DIR)):
             continue
