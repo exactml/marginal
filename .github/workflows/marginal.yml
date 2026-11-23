@@ -37,8 +37,11 @@ jobs:
       github.event.action == 'closed' && github.event.pull_request.merged &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    # Two merges at once would both write the knowledge branch.
+    concurrency: marginal-knowledge
     permissions:
       pull-requests: write
+      # `write` with permissions.write.push, to add to the rolling knowledge PR.
       contents: read
     steps:
       - uses: actions/checkout@v7
