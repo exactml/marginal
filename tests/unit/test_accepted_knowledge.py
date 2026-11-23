@@ -232,16 +232,16 @@ def test_a_claim_file_sits_in_its_about_folder_and_reads_back_the_same():
             repo="w",
             kind="rule",
             statement="levels: ordered #1",
-            about="rocks/noob/helpers.py",
+            about="shop/cart/helpers.py",
             pr=462,
             author="bob",
         ),
         AcceptedClaim(id="a2", repo="w", kind="decision", statement="s", about="setup.py"),
-        AcceptedClaim(id="a3", repo="w", kind="rule", statement="s", about="rocks/"),
+        AcceptedClaim(id="a3", repo="w", kind="rule", statement="s", about="shop/"),
     ]
 
     paths = [claim_file(claim)[0] for claim in claims]
 
-    assert paths == [f"{PATHS}/rocks/noob/a1.yaml", f"{PATHS}/a2.yaml", f"{PATHS}/rocks/a3.yaml"]
+    assert paths == [f"{PATHS}/shop/cart/a1.yaml", f"{PATHS}/a2.yaml", f"{PATHS}/shop/a3.yaml"]
     for claim in claims:
         assert parse_accepted(*claim_file(claim)) == claim
