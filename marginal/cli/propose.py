@@ -219,13 +219,15 @@ def _add_to_knowledge_pr(
         if f.endswith((".yaml", ".yml")) and not f.startswith(REJECTED_DIR)
     }
     new = [c for c in accepted if c.id not in known]
+    retired: set[str] = set()
     for claim in new:
         old = live.get(claim.supersedes or "") if claim.supersedes != claim.id else None
         path, text = claim_file(claim if old else claim.model_copy(update={"supersedes": None}))
         client.create_file(
             path, text, KNOWLEDGE_BRANCH, f"Propose knowledge from #{pr_number}: {path}"
         )
-        if old:
+        if old and old not in retired:
+            retired.add(old)  # two new claims may replace the same one
             # The team sees the old file's deletion in the knowledge PR, and can undo it.
             client.delete_file(
                 old, KNOWLEDGE_BRANCH, f"Supersede {claim.supersedes} with {claim.id}"

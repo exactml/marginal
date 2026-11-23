@@ -606,3 +606,30 @@ def test_a_knowledge_pr_past_githubs_commit_listing_cap_warns(pushing, capsys):
     assert "knowledge PR #7 has 250 or more commits" in capsys.readouterr().err
     # What the listing shows is still recorded.
     assert ".marginal/knowledge/rejected/7be210.yaml" in _recorded(pushing)
+
+
+def test_two_claims_replacing_the_same_one_delete_it_once(pushing):
+    rules = [
+        Knowledge(
+            kind=kind,
+            statement=f"Requests is pinned ({kind}).",
+            about="requirements.txt",
+            evidence=Evidence(file="requirements.txt", line=2, quote="requests==2.31.0"),
+            replaces="7be210",
+        )
+        for kind in ("rule", "decision")
+    ]
+    pushing.list_review_comments.return_value = []
+    pushing.list_reviews.return_value = [
+        {
+            "body": "### 🤖 marginal review\n\n" + knowledge_marker(rules),
+            "user": {"login": "github-actions[bot]", "type": "Bot"},
+        }
+    ]
+    pushing.list_files.return_value = [OLD]
+
+    _propose("--comment")
+
+    texts = [c.args[1] for c in pushing.create_file.call_args_list]
+    assert len(texts) == 2 and all("supersedes: 7be210" in t for t in texts)
+    pushing.delete_file.assert_called_once()
