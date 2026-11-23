@@ -208,6 +208,15 @@ def test_prompt_redacts_a_secret_in_a_statement():
     assert "use key [REDACTED" in prompt
 
 
+def test_prompt_redacts_a_secret_the_cut_would_split():
+    files = [{"filename": "a.py", "patch": "+x = 1"}]
+    claim = _claim("a.py").model_copy(update={"statement": "x" * 290 + " AKIAIOSFODNN7EXAMPLE"})
+
+    prompt = build_finding_prompt(files, [], [], ".", accepted=[claim])
+
+    assert "AKIAIOS" not in prompt
+
+
 def test_prompt_cuts_a_long_statement():
     files = [{"filename": "a.py", "patch": "+x = 1"}]
     claim = _claim("a.py").model_copy(update={"statement": "word " * 200})
