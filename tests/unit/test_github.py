@@ -214,6 +214,48 @@ def test_get_file_is_none_for_a_missing_path_or_a_directory(monkeypatch, respons
     assert _client(session=session).get_file(".marginal/policies", "abc123") is None
 
 
+def test_list_files_reads_each_subfolder_as_one_tree(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.side_effect = [
+        _response(
+            200,
+            [
+                {"type": "file", "path": ".marginal/knowledge/README.md"},
+                {"type": "dir", "path": ".marginal/knowledge/paths", "sha": "t1"},
+            ],
+        ),
+        _response(
+            200,
+            {
+                "tree": [
+                    {"type": "tree", "path": "shop"},
+                    {"type": "blob", "path": "shop/c41d07.yaml"},
+                ]
+            },
+        ),
+    ]
+
+    files = _client(session=session).list_files(".marginal/knowledge", "abc123")
+
+    assert files == [".marginal/knowledge/README.md", ".marginal/knowledge/paths/shop/c41d07.yaml"]
+    args, kwargs = session.request.call_args
+    assert args[1] == "https://api.github.com/repos/acme/widgets/git/trees/t1"
+    assert kwargs["params"] == {"recursive": "1"}
+
+
+@pytest.mark.parametrize(
+    "response",
+    [_response(404, {"message": "Not Found"}), _response(200, {"content": "eA=="})],
+)
+def test_list_files_is_empty_for_a_missing_folder_or_a_file(monkeypatch, response):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = response
+
+    assert _client(session=session).list_files(".marginal/knowledge", "abc123") == []
+
+
 def test_get_pull_request_files_returns_json_list(monkeypatch):
     monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
     session = MagicMock()

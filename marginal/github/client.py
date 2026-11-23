@@ -82,6 +82,36 @@ class GitHubClient:
             return None
         return base64.b64decode(str(data["content"])).decode()
 
+    def list_files(self, path: str, ref: str) -> list[str]:
+        """Every file under folder `path` as of commit `ref`, at any depth, or
+        `[]` if it isn't a folder there. One call for `path`, plus one per
+        folder directly in it, however many files they hold."""
+        self._require_read("repository")
+        try:
+            entries = self._request(
+                "GET", f"/repos/{self._repo}/contents/{path}", params={"ref": ref}
+            )
+        except GitHubNotFoundError:
+            return []
+        if not isinstance(entries, list):  # a file, not a folder
+            return []
+        files = []
+        for entry in entries:
+            if entry["type"] == "file":
+                files.append(str(entry["path"]))
+            elif entry["type"] == "dir":
+                tree = self._request(
+                    "GET",
+                    f"/repos/{self._repo}/git/trees/{entry['sha']}",
+                    params={"recursive": "1"},
+                )
+                files += [
+                    f"{entry['path']}/{item['path']}"
+                    for item in tree["tree"]
+                    if item["type"] == "blob"
+                ]
+        return files
+
     def get_workflow_run(self, run_id: int) -> dict[str, object]:
         """Return GitHub Actions workflow run `run_id`, including its
         `conclusion` (`None` while the run is still in progress)."""

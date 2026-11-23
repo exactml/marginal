@@ -122,6 +122,20 @@ def test_local_get_file_reads_a_commit_not_the_working_tree(repo):
     assert checkout.get_file("missing.py", "HEAD") is None
 
 
+def test_local_list_files_lists_a_folder_at_a_commit(repo):
+    (repo / ".marginal" / "knowledge" / "repo").mkdir(parents=True)
+    (repo / ".marginal" / "knowledge" / "repo" / "d2e8a1.yaml").write_text("kind: rule\n")
+    checkout = LocalCheckout(str(repo))
+    assert checkout.list_files(".marginal/knowledge", "HEAD") == []
+
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "knowledge")
+
+    assert checkout.list_files(".marginal/knowledge", "HEAD") == [
+        ".marginal/knowledge/repo/d2e8a1.yaml"
+    ]
+
+
 def test_local_merge_base_of_an_unknown_ref_fails_cleanly(repo):
     with pytest.raises(LocalGitError, match="merge-base"):
         LocalCheckout(str(repo)).merge_base("no-such-ref")
