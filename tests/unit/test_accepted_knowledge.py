@@ -185,7 +185,7 @@ def test_prompt_lists_accepted_claims_before_the_diff():
 
     prompt = build_finding_prompt(files, [], [], ".", accepted=[_claim("a.py", pr=462)])
 
-    assert "- rule (PR #462, a.py): levels stay ordered" in prompt
+    assert "- rule a3f91c (PR #462, a.py): levels stay ordered" in prompt
     assert "don't report them again as new knowledge" in prompt
     assert prompt.index("levels stay ordered") < prompt.index("+x = 1")
 
@@ -195,7 +195,7 @@ def test_prompt_names_a_repo_wide_claim_as_such():
 
     prompt = build_finding_prompt(files, [], [], ".", accepted=[_claim("")])
 
-    assert "- rule (repo-wide): levels stay ordered" in prompt
+    assert "- rule a3f91c (repo-wide): levels stay ordered" in prompt
 
 
 def test_prompt_redacts_a_secret_in_a_statement():

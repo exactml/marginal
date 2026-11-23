@@ -201,9 +201,9 @@ def test_review_knowledge_is_kept_only_while_its_quote_is_in_the_merged_diff():
     files = [_file("shop/pricing.py", "@@ -1,1 +1,2 @@\n x = 1\n+if total >= 100:\n")]
     pricing, refund = "shop/pricing.py", "shop/refund.py"
     knowledge = [
-        ("rule", "Orders of 100 or more ship free.", pricing, pricing, 2, "if  total >= 100:"),
-        ("decision", "Refunds take 3 days.", refund, refund, 9, "DAYS = 3"),
-        ("opinion", "Looks fine.", pricing, pricing, 1, "x = 1"),
+        ("rule", "Orders of 100 or more ship free.", pricing, pricing, 2, "if  total >= 100:", ""),
+        ("decision", "Refunds take 3 days.", refund, refund, 9, "DAYS = 3", ""),
+        ("opinion", "Looks fine.", pricing, pricing, 1, "x = 1", ""),
     ]
 
     claims = knowledge_claims(knowledge, files)
@@ -216,7 +216,9 @@ def test_review_knowledge_is_kept_only_while_its_quote_is_in_the_merged_diff():
 
 def test_review_knowledge_about_something_not_a_path_points_at_its_evidence_file():
     files = [_file("shop/pricing.py", "@@ -1,1 +1,2 @@\n x = 1\n+if total >= 100:\n")]
-    knowledge = [("rule", "Free shipping.", "pricing logic", "shop/pricing.py", 2, "total >= 100")]
+    knowledge = [
+        ("rule", "Free shipping.", "pricing logic", "shop/pricing.py", 2, "total >= 100", "")
+    ]
 
     assert _triples(knowledge_claims(knowledge, files)) == [
         ("rule: Free shipping.", Relation.CONSTRAINS, "shop/pricing.py")

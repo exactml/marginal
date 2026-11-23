@@ -110,7 +110,15 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
         knowledge = posted_knowledge(with_knowledge[-1:])
         claims += knowledge_claims(
             (
-                (k.kind, k.statement, k.about, k.evidence.file, k.evidence.line, k.evidence.quote)
+                (
+                    k.kind,
+                    k.statement,
+                    k.about,
+                    k.evidence.file,
+                    k.evidence.line,
+                    k.evidence.quote,
+                    k.replaces,
+                )
                 for k in knowledge
             ),
             files,

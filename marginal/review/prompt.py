@@ -128,7 +128,9 @@ def build_accepted_section(accepted: list[AcceptedClaim]) -> str:
         # Redacted like the replies and caller snippets, before the cut, which
         # could split a key so it no longer looks like one.
         statement = redact_secrets(" ".join(claim.statement.split()))[:_ACCEPTED_STATEMENT_CHARS]
-        rows.append(f"- {claim.kind} ({source}{claim.about or 'repo-wide'}): {statement}")
+        rows.append(
+            f"- {claim.kind} {claim.id} ({source}{claim.about or 'repo-wide'}): {statement}"
+        )
     return (
         "The team accepted these rules and decisions in earlier pull requests, for "
         "the whole repository or the files this diff touches. A change that breaks "
