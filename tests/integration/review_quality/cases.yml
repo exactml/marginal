@@ -29,6 +29,32 @@ cases:
     - 1192
     severity: high
   must_not_flag: []
+  accepted:
+  - kind: rule
+    about: mlflow/server/auth/__init__.py
+    statement: Any workspace member may list users, but the roster is workspace-scoped so it isn't leaked
+      across workspaces; listing grants no access on its own.
+    source: mlflow/server/auth/__init__.py:1632
+  - kind: rule
+    about: mlflow/server/auth/__init__.py
+    statement: A custom review queue may not take a registered username, since it would shadow that user's
+      personal queue.
+    source: mlflow/server/auth/__init__.py:2304
+  must_propose:
+  - kind: decision
+    file: mlflow/server/auth/__init__.py
+    lines:
+    - 1177
+    - 1181
+    statement: Creating a model version requires READ on the source run/model, to keep create-time access
+      consistent with artifact-read gating on the registered model.
+  - kind: decision
+    file: mlflow/server/auth/__init__.py
+    lines:
+    - 1186
+    - 1188
+    statement: The source-read guard keys on presence of run_id/model_id, not truthiness, so an explicitly
+      supplied empty id is denied rather than treated as absent.
 - id: unset-proto-field-treated-as-zero
   upstream: mlflow/mlflow
   base: f4f92549e194a80746d85b1e869fe552457525e6
@@ -46,6 +72,17 @@ cases:
     - 1177
     severity: medium
   must_not_flag: []
+  accepted:
+  - kind: rule
+    about: mlflow/server/handlers.py
+    statement: Always send artifacts as attachments so the browser doesn't display them on the server's
+      domain, which might enable XSS.
+    source: mlflow/server/handlers.py:583
+  - kind: decision
+    about: mlflow/server/handlers.py
+    statement: If a model version is a prompt, its source is not validated.
+    source: mlflow/server/handlers.py:1989
+  must_propose: []
 - id: clean-from-proto-classmethods
   upstream: mlflow/mlflow
   base: 2aec126dafd5728ce82e3069b3cd913a983a7697
@@ -55,6 +92,17 @@ cases:
   source: https://github.com/mlflow/mlflow/pull/23722
   must_find: []
   must_not_flag: []
+  accepted:
+  - kind: rule
+    about: mlflow/entities/trace_location.py
+    statement: Arclight catalogs are not supported as a UnityCatalog trace location.
+    source: mlflow/entities/trace_location.py:141
+  - kind: decision
+    about: mlflow/entities/trace_location.py
+    statement: UC schema locations are not converted in TraceLocation.to_proto because they are Databricks-specific;
+      databricks utils handle that proto conversion.
+    source: mlflow/entities/trace_location.py:345
+  must_propose: []
 - id: fish-completion-splits-on-unquoted-newline
   upstream: pallets/click
   base: c69643b60cf971cd5d8e5d3902632807ceab9b8f
@@ -78,6 +126,18 @@ cases:
     - 436
     severity: high
   must_not_flag: []
+  accepted:
+  - kind: decision
+    about: src/click/shell_completion.py
+    statement: The zsh completion script is widely deployed, so it is frozen; colon handling is done in
+      ZshComplete.format_completion instead.
+    source: src/click/shell_completion.py:131
+  - kind: decision
+    about: src/click/shell_completion.py
+    statement: Since shells treat '=' between a long option and its value differently, completion always
+      splits and discards the '='.
+    source: src/click/shell_completion.py:635
+  must_propose: []
 - id: eager-optional-numpy-import-in-approx-eq
   upstream: pytest-dev/pytest
   base: e35f1bfe8b2848cbe674b0390973c9a70c844a4e
@@ -95,6 +155,17 @@ cases:
     - 434
     severity: low
   must_not_flag: []
+  accepted:
+  - kind: rule
+    about: src/_pytest/python_api.py
+    statement: By default approx treats numbers within a relative tolerance of 1e-6 (and an absolute tolerance
+      of 1e-12) of the expected value as equal.
+    source: src/_pytest/python_api.py:588
+  - kind: rule
+    about: src/_pytest/python_api.py
+    statement: Infinity is only approximately equal to itself, regardless of the relative tolerance.
+    source: src/_pytest/python_api.py:452
+  must_propose: []
 - id: indexable-hands-wrapped-frames-to-estimators
   upstream: scikit-learn/scikit-learn
   base: aade86fe5f42d2e11a8ec46ff6e14a9a0609e62b
@@ -112,6 +183,25 @@ cases:
     - 481
     severity: high
   must_not_flag: []
+  accepted:
+  - kind: decision
+    about: sklearn/utils/validation.py
+    statement: check_array always copies a read-only input when a writeable output is requested, even if
+      avoidable, so the user's data is not overwritten by surprise.
+    source: sklearn/utils/validation.py:1143
+  - kind: decision
+    about: sklearn/utils/validation.py
+    statement: _deprecate_positional_args is kept although unused, in case a public function without keyword-only
+      args is merged by mistake and needs a deprecation cycle.
+    source: sklearn/utils/validation.py:48
+  must_propose:
+  - kind: decision
+    file: sklearn/utils/validation.py
+    lines:
+    - 478
+    - 481
+    statement: _make_indexable converts dataframes to narwhals objects because dataframe __getitem__ semantics
+      differ (pandas df[0] is a column lookup, polars df[0] a row).
 - id: disable-prefetch-assumes-virtual-channel-qos
   upstream: celery/celery
   base: 6804ea8615afcdbc95ed68e95b47ae623080fa2b
@@ -129,6 +219,32 @@ cases:
     - 56
     severity: medium
   must_not_flag: []
+  accepted:
+  - kind: rule
+    about: docs/userguide/optimizing.rst
+    statement: Don't set worker_max_tasks_per_child / worker_max_memory_per_child too low, or workers spend
+      most of their time restarting child processes.
+    source: docs/userguide/optimizing.rst:211
+  - kind: rule
+    about: docs/userguide/optimizing.rst
+    statement: Monitor queue lengths and set up alerts that fire as soon as any queue reaches an unacceptable
+      size.
+    source: docs/userguide/optimizing.rst:37
+  must_propose:
+  - kind: rule
+    file: docs/userguide/configuration.rst
+    lines:
+    - 3210
+    - 3213
+    statement: With worker_disable_prefetch (default False) a worker only consumes from the broker when
+      a process is free, disabling prefetch while keeping early acks so tasks are fairly distributed.
+  - kind: decision
+    file: celery/worker/consumer/tasks.py
+    lines:
+    - 59
+    - 60
+    statement: With prefetch disabled, the reservation limit is the autoscaler's max_concurrency when set,
+      otherwise the pool size.
 - id: db-pool-closed-after-each-task-in-thread-pools
   upstream: celery/celery
   base: 273186043cb93bcb2ce82886b54bfbcd7ddb3459
@@ -146,6 +262,24 @@ cases:
     - 208
     severity: high
   must_not_flag: []
+  accepted:
+  - kind: decision
+    about: celery/fixups/django.py
+    statement: The Django project directory takes precedence over system modules, so it is prepended to
+      sys.path.
+    source: celery/fixups/django.py:75
+  - kind: rule
+    about: celery/fixups/django.py
+    statement: django.setup() must be called before task modules are imported.
+    source: celery/fixups/django.py:100
+  must_propose:
+  - kind: decision
+    file: docs/django/first-steps-with-django.rst
+    lines:
+    - 222
+    - 225
+    statement: When Django (5.1+) DB connection pooling is enabled, Celery closes the pool in worker processes
+      via close_pool, since connections can't be shared across processes.
 - id: parser-cancellation-leaves-connection-open
   upstream: aio-libs/aiohttp
   base: f049588a8ab5b6b6757677b539845c63698d61f7
@@ -163,6 +297,18 @@ cases:
     - 328
     severity: high
   must_not_flag: []
+  accepted:
+  - kind: rule
+    about: aiohttp/http_parser.py
+    statement: Content-Length must be plain digits; +/- or other number formats are not allowed (RFC 9110
+      8.6).
+    source: aiohttp/http_parser.py:329
+  - kind: decision
+    about: aiohttp/http_parser.py
+    statement: The old websocket spec (Sec-WebSocket-Key1) is not supported and is rejected as an invalid
+      header.
+    source: aiohttp/http_parser.py:338
+  must_propose: []
 - id: new-required-kwarg-breaks-direct-responder-use
   upstream: Kludex/starlette
   base: 5567e274c8c4a0811fb3bc602c3b6631571b8e80
@@ -180,6 +326,31 @@ cases:
     - 156
     severity: medium
   must_not_flag: []
+  accepted:
+  - kind: rule
+    about: docs/middleware.md
+    statement: GZipMiddleware won't compress responses that already have a Content-Encoding (no double encoding)
+      or are text/event-stream (server-sent events).
+    source: docs/middleware.md:245
+  - kind: decision
+    about: starlette/middleware/gzip.py
+    statement: GZip is not applied to pathsend responses.
+    source: starlette/middleware/gzip.py:106
+  must_propose:
+  - kind: decision
+    file: docs/middleware.md
+    lines:
+    - 244
+    - 244
+    statement: Body chunks of at least thread_minimum_size (default 128 KiB) are compressed in a worker
+      thread; smaller ones compress inline since thread dispatch cost would dominate.
+  - kind: decision
+    file: starlette/middleware/gzip.py
+    lines:
+    - 21
+    - 22
+    statement: GZip compression uses its own capacity limiter, isolated from AnyIO's default worker-thread
+      limiter but matching its default concurrency (40).
 - id: password-hasher-decodes-bytes-as-utf8
   upstream: django/django
   base: e709301000edddc48ebfe9535e2e2177d3bcedb1
@@ -202,6 +373,18 @@ cases:
     - 662
     severity: medium
   must_not_flag: []
+  accepted:
+  - kind: decision
+    about: django/contrib/auth/hashers.py
+    statement: When the encoded hash is gibberish or its hasher is missing, still run the default hasher
+      once to reduce the timing difference that would reveal nonexistent users.
+    source: django/contrib/auth/hashers.py:52
+  - kind: rule
+    about: django/contrib/auth/hashers.py
+    statement: make_password(None) returns UNUSABLE_PASSWORD_PREFIX plus a random string, which disallows
+      logins; the random suffix reduces chances of gaining access to staff accounts.
+    source: django/contrib/auth/hashers.py:100
+  must_propose: []
 - id: async-login-leaves-stale-request-user
   upstream: django/django
   base: 117f90dea53b0dd121eb14f07bcbadb295665ff7
@@ -224,6 +407,18 @@ cases:
     - 282
     severity: medium
   must_not_flag: []
+  accepted:
+  - kind: rule
+    about: django/contrib/auth/__init__.py
+    statement: To avoid reusing another user's session, login creates a new, empty session if the existing
+      session belongs to a different authenticated user.
+    source: django/contrib/auth/__init__.py:225
+  - kind: rule
+    about: django/contrib/auth/__init__.py
+    statement: If a backend raises PermissionDenied, authentication stops immediately and no further backends
+      are tried; that user must not be allowed in at all.
+    source: django/contrib/auth/__init__.py:116
+  must_propose: []
 - id: hardcoded-kwarg-collides-with-user-option
   upstream: django/django
   base: 1b0d46f715849de53563aaf6912b4ded7d61641d
@@ -241,6 +436,18 @@ cases:
     - 64
     severity: medium
   must_not_flag: []
+  accepted:
+  - kind: decision
+    about: django/core/serializers/pyyaml.py
+    statement: Time values are serialized as strings because the safe YAML dumper is used for interoperability
+      and a !!python/time tag would halt deserialization in other languages.
+    source: django/core/serializers/pyyaml.py:50
+  - kind: decision
+    about: django/core/serializers/pyyaml.py
+    statement: Use the faster C implementation of the YAML SafeDumper/SafeLoader when available, falling
+      back to the pure-Python ones.
+    source: django/core/serializers/pyyaml.py:17
+  must_propose: []
 - id: sync-wrapper-hides-async-view
   upstream: django/django
   base: 7112007fcaf7a7db8a4a6bb1d45b51d8fa41d0b7
@@ -258,6 +465,18 @@ cases:
     - 347
     severity: high
   must_not_flag: []
+  accepted:
+  - kind: rule
+    about: django/db/transaction.py
+    statement: A function registered with on_commit() runs only when the current transaction commits; if
+      it is rolled back, the function is not called.
+    source: django/db/transaction.py:144
+  - kind: decision
+    about: django/db/transaction.py
+    statement: After rolling back to a savepoint that won't be reused, release it to minimize overhead for
+      the database server.
+    source: django/db/transaction.py:263
+  must_propose: []
 - id: db-default-pk-treated-as-unset-on-save
   upstream: django/django
   base: 8c2d3dca633629effad17ccc98730234f740d03f
@@ -276,6 +495,13 @@ cases:
     - 717
     severity: medium
   must_not_flag: []
+  accepted:
+  - kind: decision
+    about: django/db/models/base.py
+    statement: If update_fields is empty, save() returns early; this bailout stays even though no-op saves
+      are checked later, so that signals are not sent.
+    source: django/db/models/base.py:862
+  must_propose: []
 - id: limit-read-before-connection-opened
   upstream: django/django
   base: 37f2a77c729ccb71059c8e66c49b07499d2edf60
@@ -293,6 +519,18 @@ cases:
     - 151
     severity: medium
   must_not_flag: []
+  accepted:
+  - kind: rule
+    about: django/db/backends/sqlite3/operations.py
+    statement: SQLite stores only 15 significant digits, so digits coming from float inaccuracy must be
+      removed when converting DecimalField values.
+    source: django/db/backends/sqlite3/operations.py:336
+  - kind: decision
+    about: django/db/backends/sqlite3/operations.py
+    statement: For consistency with SQLiteCursorWrapper.execute(), last_executed_query returns the raw sql
+      when there are no parameters (see
+    source: django/db/backends/sqlite3/operations.py:194
+  must_propose: []
 - id: hostname-regex-rejects-multi-label-domains
   upstream: django/django
   base: 05bac8c4202aba77dcb109aeedd35ff563331e1a
@@ -310,6 +548,17 @@ cases:
     - 300
     severity: high
   must_not_flag: []
+  accepted:
+  - kind: rule
+    about: django/utils/html.py
+    statement: escape() always escapes its input, even if already escaped and marked safe, which may double-escape;
+      use conditional_escape() if that is a concern.
+    source: django/utils/html.py:56
+  - kind: rule
+    about: django/utils/html.py
+    statement: escapejs escapes every ASCII character with a value less than 32.
+    source: django/utils/html.py:78
+  must_propose: []
 - id: deprecated-module-imported-eagerly
   upstream: pypa/setuptools
   base: c032a5b9a857d02509f8b2903079e64490fdf400
@@ -328,6 +577,18 @@ cases:
     - 10
     severity: medium
   must_not_flag: []
+  accepted:
+  - kind: decision
+    about: setuptools/installer.py
+    statement: Build-egg fetching takes easy_install options into account but does not override relevant
+      pip environment variables like PIP_INDEX_URL or PIP_QUIET; those take precedence.
+    source: setuptools/installer.py:55
+  - kind: decision
+    about: setuptools/installer.py
+    statement: If a requirement is a PEP 508 direct URL, pass the URL directly to pip, since `req @ url`
+      does not work on the command line.
+    source: setuptools/installer.py:98
+  must_propose: []
 - id: tar-filter-kwarg-needs-newer-python-patch
   upstream: scikit-learn/scikit-learn
   base: af41352a8c8ac7409d86860ab192742d709c6275
@@ -351,6 +612,32 @@ cases:
     - 87
     severity: medium
   must_not_flag: []
+  accepted:
+  - kind: decision
+    about: sklearn/datasets/_lfw.py
+    statement: LFW faces are shuffled with a deterministic RNG so faces of the same person are not in a
+      row, which would break CV and IID-assuming learners like SGD.
+    source: sklearn/datasets/_lfw.py:233
+  - kind: decision
+    about: sklearn/datasets/_twenty_newsgroups.py
+    statement: The vectorized 20 newsgroups loader shuffles the data but uses a fixed seed so the result
+      can be memoized.
+    source: sklearn/datasets/_twenty_newsgroups.py:537
+  must_propose:
+  - kind: decision
+    file: sklearn/datasets/_lfw.py
+    lines:
+    - 120
+    - 122
+    statement: Dataset tar archives are extracted with filter="data" to prevent the most dangerous tar extraction
+      security issues.
+  - kind: decision
+    file: sklearn/datasets/_twenty_newsgroups.py
+    lines:
+    - 84
+    - 86
+    statement: Dataset tar archives are extracted with filter="data" to prevent the most dangerous tar extraction
+      security issues.
 - id: clean-close-transport-on-base-exception
   upstream: aio-libs/aiohttp
   base: 5771a85fd865fc8fd69501345a00e6e58d469ba7
@@ -360,6 +647,18 @@ cases:
   source: https://github.com/aio-libs/aiohttp/pull/12798
   must_find: []
   must_not_flag: []
+  accepted:
+  - kind: rule
+    about: aiohttp/client_proto.py
+    statement: If someone is waiting for the closed future when the connection is lost, it must be resolved
+      with None or an exception.
+    source: aiohttp/client_proto.py:125
+  - kind: decision
+    about: aiohttp/client_proto.py
+    statement: data_received with no data means decompression is resuming, so the read timeout is not rescheduled
+      to avoid the overhead.
+    source: aiohttp/client_proto.py:300
+  must_propose: []
 - id: clean-default-thread-minimum-size
   upstream: Kludex/starlette
   base: 3d6d6c20e795d02d22b358758bfa987b436a3ec4
@@ -369,6 +668,17 @@ cases:
   source: https://github.com/Kludex/starlette/pull/3415
   must_find: []
   must_not_flag: []
+  accepted:
+  - kind: decision
+    about: starlette/middleware/gzip.py
+    statement: GZip compression in worker threads uses its own capacity limiter, isolated from AnyIO's default
+      worker-thread limiter but with the same default concurrency.
+    source: starlette/middleware/gzip.py:21
+  - kind: rule
+    about: starlette/middleware/gzip.py
+    statement: GZip is not applied to pathsend responses; they are passed through uncompressed.
+    source: starlette/middleware/gzip.py:134
+  must_propose: []
 - id: clean-indexable-keeps-native-frames
   upstream: scikit-learn/scikit-learn
   base: 63f2abff4003210103a0569664982ce384487dfa
@@ -378,6 +688,18 @@ cases:
   source: https://github.com/scikit-learn/scikit-learn/pull/34605
   must_find: []
   must_not_flag: []
+  accepted:
+  - kind: decision
+    about: sklearn/utils/validation.py
+    statement: _deprecate_positional_args is kept although unused, in case a new public function is merged
+      without keyword-only args, which would need a deprecation cycle to fix.
+    source: sklearn/utils/validation.py:48
+  - kind: decision
+    about: sklearn/utils/validation.py
+    statement: When copy=False, the input is read-only and a writeable output is requested, check_array
+      chooses to make a copy so as not to overwrite the user's data by surprise.
+    source: sklearn/utils/validation.py:1148
+  must_propose: []
 - id: clean-sqlite-ensure-connection
   upstream: django/django
   base: 0def695e3cbaa9ede9ae4040a24cfed7417f9065
@@ -387,6 +709,18 @@ cases:
   source: https://github.com/django/django/pull/20443
   must_find: []
   must_not_flag: []
+  accepted:
+  - kind: decision
+    about: django/db/backends/sqlite3/base.py
+    statement: Close requests on an in-memory SQLite database are ignored, because closing the connection
+      destroys the database and would lose data.
+    source: django/db/backends/sqlite3/base.py:224
+  - kind: decision
+    about: django/db/backends/sqlite3/base.py
+    statement: On SQLite, 'atomic' starts a transaction explicitly rather than disabling autocommit, to
+      work around sqlite3 committing before each savepoint.
+    source: django/db/backends/sqlite3/base.py:233
+  must_propose: []
 - id: clean-bytes-password-hashing
   upstream: django/django
   base: d058058976496cedf3f36fa303a0327af38cdeaa
@@ -396,6 +730,17 @@ cases:
   source: https://github.com/django/django/pull/21552
   must_find: []
   must_not_flag: []
+  accepted:
+  - kind: decision
+    about: django/contrib/auth/hashers.py
+    statement: When the encoded password is unusable or its hasher is missing, the default hasher is still
+      run once to reduce the timing difference that would reveal whether a user exists.
+    source: django/contrib/auth/hashers.py:55
+  - kind: decision
+    about: django/contrib/auth/hashers.py
+    statement: BCrypt-SHA256 hashes the password before bcrypt to prevent bcrypt's password truncation (#20138).
+    source: django/contrib/auth/hashers.py:512
+  must_propose: []
 - id: zulip-apns-token-case-on-cleanup
   upstream: zulip/zulip
   base: b93c6293f97d0b9fe010f49c60d11ee2e9281751
@@ -419,6 +764,22 @@ cases:
     - 78
     - 82
     severity: medium
+  must_propose:
+  - kind: rule
+    file: zerver/lib/push_registration.py
+    lines:
+    - 186
+    - 187
+    statement: When a client successfully registers a token for E2EE push notifications, any existing legacy
+      push registration on that account for the same token is removed.
+  - kind: decision
+    file: zerver/openapi/zulip.yaml
+    lines:
+    - 13418
+    - 13426
+    statement: On self-hosted servers, if removing the legacy registration from the bouncer fails, legacy
+      notifications to that token are allowed to continue until all of the user's legacy registrations are
+      removed locally.
 - id: indirect-parametrize-precedence-removed
   upstream: pytest-dev/pytest
   base: 9652bc714d0cae7f849d285aaa9f5a7e42e89ee3
@@ -442,6 +803,7 @@ cases:
     - 1690
     - 1700
     severity: medium
+  must_propose: []
 - id: initial-conftests-skip-test-subdirs
   upstream: pytest-dev/pytest
   base: ecac57287b679cc707fb4d22aa9d48426eaacac4
@@ -465,6 +827,7 @@ cases:
     - 611
     - 612
     severity: medium
+  must_propose: []
 - id: build-env-cert-disables-truststore
   upstream: pypa/pip
   base: 420435903ff2fc694d6950a47b896427ecaed78f
@@ -488,6 +851,14 @@ cases:
     - 249
     - 250
     severity: medium
+  must_propose:
+  - kind: rule
+    file: news/5502.bugfix.rst
+    lines:
+    - 1
+    - 2
+    statement: The configured TLS server and client certificates are used when pip installs build dependencies
+      in the isolated build environment.
 - id: failure-email-ignores-email-backend
   upstream: apache/airflow
   base: 8b358bd6c6ee98e2144a1b2d7d706ddee2213152
@@ -511,6 +882,7 @@ cases:
     - 1214
     - 1276
     severity: medium
+  must_propose: []
 - id: pod-resume-callback-no-longer-called
   upstream: apache/airflow
   base: a563fb0f39af8efb78ec93759f6271fc691358c7
@@ -533,3 +905,11 @@ cases:
     - 898
     - 902
     severity: medium
+  must_propose:
+  - kind: decision
+    file: providers/cncf/kubernetes/src/airflow/providers/cncf/kubernetes/utils/pod_manager.py
+    lines:
+    - 1063
+    - 1064
+    statement: Periodic async log reads skip log lines from the current second to avoid duplicates on the
+      next read, because the Kubernetes API only accepts since_seconds, not an exact timestamp.
