@@ -133,7 +133,8 @@ def build_accepted_section(accepted: list[AcceptedClaim]) -> str:
         "the whole repository or the files this diff touches. A change that breaks "
         "one of these rules, or reverses one of these decisions without saying why, "
         "is worth a finding that names the pull request it came from. Behavior a "
-        "decision says is intended is not a bug:\n\n" + "\n".join(rows)
+        "decision says is intended is not a bug. They're already known: don't report "
+        "them again as new knowledge:\n\n" + "\n".join(rows)
     )
 
 

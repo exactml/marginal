@@ -186,6 +186,7 @@ def test_prompt_lists_accepted_claims_before_the_diff():
     prompt = build_finding_prompt(files, [], [], ".", accepted=[_claim("a.py", pr=462)])
 
     assert "- rule (PR #462, a.py): levels stay ordered" in prompt
+    assert "don't report them again as new knowledge" in prompt
     assert prompt.index("levels stay ordered") < prompt.index("+x = 1")
 
 
