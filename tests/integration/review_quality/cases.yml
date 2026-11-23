@@ -396,3 +396,140 @@ cases:
   source: https://github.com/django/django/pull/21552
   must_find: []
   must_not_flag: []
+- id: zulip-apns-token-case-on-cleanup
+  upstream: zulip/zulip
+  base: b93c6293f97d0b9fe010f49c60d11ee2e9281751
+  head: eddaedacb9c39389ad63ec4af24467559aa56dcf
+  kind: reversal
+  merged: '2026-04-05'
+  source: https://github.com/zulip/zulip/pull/38490
+  evidence: https://github.com/zulip/zulip/pull/39091
+  why: The new legacy-token cleanup hashes and compares APNs tokens case-sensitively, so a legacy row stored in another
+    case is skipped and the device gets every notification twice.
+  accepted:
+  - kind: rule
+    about: zerver/lib/push_notifications.py
+    statement: APNs tokens are case-insensitive, so look them up and compare them case-insensitively; FCM tokens stay
+      case-sensitive.
+    pr: 35289
+    source: zilencer/views.py:1107
+  must_find:
+  - file: zerver/lib/push_registration.py
+    lines:
+    - 78
+    - 82
+    severity: medium
+- id: indirect-parametrize-precedence-removed
+  upstream: pytest-dev/pytest
+  base: 9652bc714d0cae7f849d285aaa9f5a7e42e89ee3
+  head: 088718a43779d36bc43c7daa0bdf253803bf41e4
+  kind: reversal
+  merged: '2025-11-14'
+  source: https://github.com/pytest-dev/pytest/pull/13966
+  evidence: https://github.com/pytest-dev/pytest/pull/14597
+  why: Deletes the check that lets a test's own parametrize win over the fixture's params, which is still needed with
+    indirect=True, so those tests get a duplicate parametrization.
+  accepted:
+  - kind: rule
+    about: src/_pytest/fixtures.py
+    statement: When a test parametrizes an argname itself, including with indirect=True, that parametrization wins over
+      the fixture's own params.
+    pr: 7736
+    source: src/_pytest/fixtures.py:1711
+  must_find:
+  - file: src/_pytest/fixtures.py
+    lines:
+    - 1690
+    - 1700
+    severity: medium
+- id: initial-conftests-skip-test-subdirs
+  upstream: pytest-dev/pytest
+  base: ecac57287b679cc707fb4d22aa9d48426eaacac4
+  head: 76667b24b86e5fa3c976640b1120dda6855fa8a8
+  kind: reversal
+  merged: '2026-03-22'
+  source: https://github.com/pytest-dev/pytest/pull/14307
+  evidence: https://github.com/pytest-dev/pytest/pull/14622
+  why: With no test paths given, the rewrite anchors initial conftests on the invocation dir only, so conftest.py files
+    in its test*/ subdirs are no longer loaded.
+  accepted:
+  - kind: rule
+    about: src/_pytest/config/__init__.py
+    statement: For each test path, or the invocation dir when none is given, pytest loads conftest.py and
+      test*/conftest.py relative to it.
+    pr: 11843
+    source: doc/en/how-to/writing_plugins.rst:56
+  must_find:
+  - file: src/_pytest/config/__init__.py
+    lines:
+    - 611
+    - 612
+    severity: medium
+- id: build-env-cert-disables-truststore
+  upstream: pypa/pip
+  base: 420435903ff2fc694d6950a47b896427ecaed78f
+  head: 511000d738e6ee3230ad53e79762b68cc9bcc816
+  kind: reversal
+  merged: '2024-12-14'
+  source: https://github.com/pypa/pip/pull/13063
+  evidence: https://github.com/pypa/pip/pull/13195
+  why: Always passes --cert to the nested pip that installs build dependencies, which turns truststore off there, so
+    system certificates are never used for them.
+  accepted:
+  - kind: decision
+    about: src/pip/_internal/
+    statement: On Python 3.10 or later, HTTPS is verified with system certificates (truststore) as well as certifi by
+      default; passing --cert turns truststore off.
+    pr: 11647
+    source: docs/html/topics/https-certificates.md:31
+  must_find:
+  - file: src/pip/_internal/build_env.py
+    lines:
+    - 249
+    - 250
+    severity: medium
+- id: failure-email-ignores-email-backend
+  upstream: apache/airflow
+  base: 8b358bd6c6ee98e2144a1b2d7d706ddee2213152
+  head: 2f3a43c6a9fadf5a9acf28f4218202cca7b89f13
+  kind: reversal
+  merged: '2025-11-11'
+  source: https://github.com/apache/airflow/pull/57354
+  evidence: https://github.com/apache/airflow/pull/69877
+  why: Task failure and retry emails now always go through SmtpNotifier, ignoring the configured [email] email_backend
+    (SES, SendGrid), so those alerts silently stop arriving.
+  accepted:
+  - kind: decision
+    about: task-sdk/src/airflow/sdk/execution_time/task_runner.py
+    statement: Task success, failure and retry emails use the [email] configuration, including email_backend (SES,
+      SendGrid), never SMTP directly.
+    pr: 21958
+    source: airflow-core/docs/howto/email-config.rst:160
+  must_find:
+  - file: task-sdk/src/airflow/sdk/execution_time/task_runner.py
+    lines:
+    - 1214
+    - 1276
+    severity: medium
+- id: pod-resume-callback-no-longer-called
+  upstream: apache/airflow
+  base: a563fb0f39af8efb78ec93759f6271fc691358c7
+  head: 6c22657c9913b56b6bed9d9dcc0696a76b82a1fb
+  kind: reversal
+  merged: '2025-11-06'
+  source: https://github.com/apache/airflow/pull/57531
+  evidence: https://github.com/apache/airflow/pull/76035
+  why: Removes the only call to on_operator_resuming, so a documented callback silently stops firing when the pod
+    operator resumes from deferral.
+  accepted:
+  - kind: rule
+    about: providers/cncf/kubernetes/src/airflow/providers/cncf/kubernetes/operators/pod.py
+    statement: Every callback's on_operator_resuming is called when KubernetesPodOperator resumes from deferred state.
+    pr: 35714
+    source: providers/cncf/kubernetes/src/airflow/providers/cncf/kubernetes/callbacks.py:182
+  must_find:
+  - file: providers/cncf/kubernetes/src/airflow/providers/cncf/kubernetes/operators/pod.py
+    lines:
+    - 898
+    - 902
+    severity: medium
