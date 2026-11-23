@@ -328,7 +328,8 @@ def test_a_merged_decision_opens_the_knowledge_pr(pushing):
     pushing.set_branch.assert_called_once_with("marginal/knowledge", "base-head")
     [(path, text, branch, message)] = [c.args for c in pushing.create_file.call_args_list]
     assert path.startswith(".marginal/knowledge/paths/") and path.endswith(".yaml")
-    assert "kind: decision" in text and "pr: 42" in text and "author: bob" in text
+    # alice replied with the decision; bob only wrote the PR.
+    assert "kind: decision" in text and "pr: 42" in text and "author: alice" in text
     assert (branch, message) == ("marginal/knowledge", "Propose knowledge from #42")
     head, base, title, _ = pushing.create_pull_request.call_args.args
     assert (head, base, title) == ("marginal/knowledge", "master", "marginal: knowledge to review")

@@ -81,11 +81,15 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
         trusted = _trusted_author(client)
         # A maintainer explaining a marginal finding away is a recorded decision;
         # a reply from someone without write access isn't a maintainer's.
-        threads = maintainer_replies(
-            c for c in client.list_review_comments(pr_number) if trusted(c)
-        )
+        review_comments = [c for c in client.list_review_comments(pr_number) if trusted(c)]
+        threads = maintainer_replies(review_comments)
+        # The person who replied made the decision, not necessarily the PR's author.
+        repliers = {
+            str(c.get("body") or "").strip(): str((c.get("user") or {}).get("login", ""))
+            for c in review_comments
+        }
         claims += decisions_from_replies(
-            (t.path, t.line, reply) for t in threads for reply in t.replies
+            (t.path, t.line, reply, repliers.get(reply, "")) for t in threads for reply in t.replies
         )
         # Rules and decisions marginal's reviews found in the same model call.
         reviews = [
@@ -140,6 +144,7 @@ def _add_to_knowledge_pr(
     and open the knowledge PR if none is open. Returns its URL, or `None`
     with no rule or decision to add."""
     kinds = {Relation.CONSTRAINS: "rule", Relation.DECISION_ABOUT: "decision"}
+    pr_author = str((pull_request.get("user") or {}).get("login") or "")
     files = [
         claim_file(
             AcceptedClaim(
@@ -149,7 +154,8 @@ def _add_to_knowledge_pr(
                 statement=claim.subject.split(": ", 1)[-1],
                 about=claim.object,
                 pr=pr_number,
-                author=str((pull_request.get("user") or {}).get("login") or "") or None,
+                # The replier for a decision from a reply; else the PR's author.
+                author=claim.author or pr_author or None,
             )
         )
         for claim in claims
