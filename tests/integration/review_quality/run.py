@@ -90,7 +90,9 @@ def _accepted(case: Case, seed: Seed) -> AcceptedClaim:
 
 
 def _commit(root: Path, message: str) -> None:
-    subprocess.run(_GIT + ["add", "-A"], cwd=root, check=True)
+    # --force: a snapshot holds only tracked files, and one its .gitignore matches
+    # (generated or vendored) must still be in the diff.
+    subprocess.run(_GIT + ["add", "-A", "--force"], cwd=root, check=True)
     subprocess.run(
         _GIT + ["commit", "-q", "--no-verify", "--allow-empty", "-m", message],
         cwd=root,

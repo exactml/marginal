@@ -124,8 +124,19 @@ def test_build_checkout_seeds_accepted_knowledge_at_the_base_and_diffs_to_the_he
     from marginal.context.local import LocalCheckout
 
     trees = {
-        "b" * 40: {"shop/cart.py": "TOTAL = 1\n", "shop/gone.py": "x = 1\n"},
-        "h" * 40: {"shop/cart.py": "TOTAL = 2\n", "shop/new.py": "y = 1\n"},
+        # A tracked file the repo's own .gitignore matches is still diffed.
+        "b" * 40: {
+            "shop/cart.py": "TOTAL = 1\n",
+            "shop/gone.py": "x = 1\n",
+            ".gitignore": "*_gen.py\n",
+            "shop/api_gen.py": "v = 1\n",
+        },
+        "h" * 40: {
+            "shop/cart.py": "TOTAL = 2\n",
+            "shop/new.py": "y = 1\n",
+            ".gitignore": "*_gen.py\n",
+            "shop/api_gen.py": "v = 2\n",
+        },
     }
 
     def fake_download(upstream, sha, dest):
@@ -161,4 +172,4 @@ def test_build_checkout_seeds_accepted_knowledge_at_the_base_and_diffs_to_the_he
     assert (claim.statement, claim.pr) == ("Totals stay 1.", 1)
     changed = sorted(f["filename"] for f in checkout.get_compare_files(base, "HEAD"))
     # The knowledge and the per-attempt config are never part of the diff.
-    assert changed == ["shop/cart.py", "shop/gone.py", "shop/new.py"]
+    assert changed == ["shop/api_gen.py", "shop/cart.py", "shop/gone.py", "shop/new.py"]
