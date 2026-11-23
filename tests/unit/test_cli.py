@@ -18,6 +18,7 @@ from marginal.context import build_graph_context
 from marginal.github.errors import (
     GitHubAPIError,
     GitHubAuthenticationError,
+    GitHubError,
     GitHubNotFoundError,
     PermissionDeniedError,
 )
@@ -2481,6 +2482,24 @@ def test_review_ignores_knowledge_the_pr_adds_or_about_other_files(
     assert "The team accepted" not in added
     assert "The team accepted" not in elsewhere
     assert "loaded" not in capsys.readouterr().err
+
+
+def test_review_goes_on_without_knowledge_it_cannot_read(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    mock_github_client.return_value.list_files.side_effect = GitHubError("rate limited")
+    client = mock_github_client.return_value
+    client.get_file.side_effect = _base_commit({".marginal/config.yaml": _BASE_CONFIG})
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [{"filename": "a.py", "patch": "+x = 1"}]
+    client.list_review_comments.return_value = []
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(return_value=FindingsResponse(findings=[]))
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42"]) == 0
+    assert provider.generate_structured.called
+    assert "couldn't read .marginal/knowledge, reviewing without it" in capsys.readouterr().err
 
 
 def test_review_uses_the_working_tree_config_when_the_base_has_none(

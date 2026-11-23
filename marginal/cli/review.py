@@ -453,12 +453,19 @@ def _review_files(
     redacted = redact_patches(files)
     redacted_files = redacted_filenames(files, redacted)
     graph_context = build_graph_context(path, files, enabled=config.context.code_graph)
-    accepted = load_accepted(
-        client,
-        str(pull_request["base"]["sha"]),
-        repo,
-        [str(file["filename"]) for file in files],
-    )
+    try:
+        accepted = load_accepted(
+            client,
+            str(pull_request["base"]["sha"]),
+            repo,
+            [str(file["filename"]) for file in files],
+        )
+    except GitHubError as exc:  # optional context: review without it
+        print(
+            f"marginal review: warning: couldn't read {KNOWLEDGE_DIR}, reviewing without it: {exc}",
+            file=sys.stderr,
+        )
+        accepted = []
     if accepted:
         print(
             f"marginal review: loaded {len(accepted)} accepted rule(s) and decision(s) "
