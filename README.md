@@ -288,6 +288,23 @@ A policy is plain Markdown: the rule, why it exists, and where it applies. List 
 
 A finding that breaks a policy says so, e.g. *"Changing rounding from ROUND_HALF_UP to ROUND_DOWN violates the money policy."* Anti-policies work the same way for things marginal must never flag, such as a tradeoff your team made on purpose.
 
+### Accepted knowledge
+
+`.marginal/knowledge.yaml` holds the rules and decisions your team accepted from earlier pull requests. A review loads the ones about the files it changes: the same file, a file in the same folder, or a folder ending in `/` that holds one. It loads at most 15, newest first, so a PR that breaks a rule or quietly reverses a decision gets a finding that names where it came from.
+
+```yaml
+- id: a3f91c
+  repo: widgets                 # where it was decided
+  applies_to: [widgets]         # repo names or globs; defaults to repo
+  kind: decision                # or: rule
+  statement: Discounts apply before tax, because invoices must match the POS.
+  about: shop/pricing.py        # or a folder: shop/
+  pr: 142
+  author: some-login
+```
+
+The file is read from the PR's base commit, so a PR can't change what it's reviewed against. Without the file, a review is unchanged. A full 15 adds about 1.3k prompt tokens; there's no extra model call.
+
 ### Local models (Ollama)
 
 To keep every model call on your own machines, run the model with [Ollama](https://ollama.com) and point a role at it. No API key is needed:
