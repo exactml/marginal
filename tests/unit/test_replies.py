@@ -31,6 +31,7 @@ def test_a_maintainer_reply_to_a_marginal_finding_is_returned():
             comment="🟡 **Medium** · 60% confidence\n\nThe ±1-line window can suppress a "
             "real neighbour.",
             replies=("Intentional trade-off.",),
+            authors=(HUMAN["login"],),
         )
     ]
 
@@ -99,3 +100,16 @@ def test_is_marginal_comment_needs_the_marker_or_a_leading_badge():
     assert not is_marginal_comment("I think 🟡 **Medium** · 60% confidence was too low.")
     assert not is_marginal_comment("Looks good")
     assert not is_marginal_comment(None)
+
+
+def test_each_reply_keeps_its_own_author_even_with_the_same_text():
+    other = {**HUMAN, "login": "someone-else"}
+    threads = maintainer_replies(
+        [
+            comment(1, FINDING),
+            comment(2, "Intentional.", HUMAN, reply_to=1),
+            comment(3, "Intentional.", other, reply_to=1),
+        ]
+    )
+
+    assert threads[0].authors == (HUMAN["login"], "someone-else")

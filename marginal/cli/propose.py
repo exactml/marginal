@@ -81,15 +81,14 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
         trusted = _trusted_author(client)
         # A maintainer explaining a marginal finding away is a recorded decision;
         # a reply from someone without write access isn't a maintainer's.
-        review_comments = [c for c in client.list_review_comments(pr_number) if trusted(c)]
-        threads = maintainer_replies(review_comments)
+        threads = maintainer_replies(
+            c for c in client.list_review_comments(pr_number) if trusted(c)
+        )
         # The person who replied made the decision, not necessarily the PR's author.
-        repliers = {
-            str(c.get("body") or "").strip(): str((c.get("user") or {}).get("login", ""))
-            for c in review_comments
-        }
         claims += decisions_from_replies(
-            (t.path, t.line, reply, repliers.get(reply, "")) for t in threads for reply in t.replies
+            (t.path, t.line, reply, author)
+            for t in threads
+            for reply, author in zip(t.replies, t.authors, strict=True)
         )
         # Rules and decisions marginal's reviews found in the same model call.
         reviews = [
