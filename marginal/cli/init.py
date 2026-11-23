@@ -54,6 +54,8 @@ concurrency:
 
 jobs:
   review:
+    # A PR closed without merging has nothing to review or propose.
+    if: github.event.action != 'closed' || github.event.pull_request.merged
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
