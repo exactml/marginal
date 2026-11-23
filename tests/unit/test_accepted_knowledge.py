@@ -2,6 +2,7 @@ from marginal.context.knowledge import (
     MAX_ACCEPTED_PER_REVIEW,
     MAX_REPO_WIDE_PER_REVIEW,
     AcceptedClaim,
+    claim_file,
     load_accepted,
     parse_accepted,
 )
@@ -222,3 +223,25 @@ def test_prompt_without_accepted_claims_is_unchanged():
     assert build_finding_prompt(files, [], [], ".", accepted=[]) == build_finding_prompt(
         files, [], [], "."
     )
+
+
+def test_a_claim_file_sits_in_its_about_folder_and_reads_back_the_same():
+    claims = [
+        AcceptedClaim(
+            id="a1",
+            repo="w",
+            kind="rule",
+            statement="levels: ordered #1",
+            about="rocks/noob/helpers.py",
+            pr=462,
+            author="bob",
+        ),
+        AcceptedClaim(id="a2", repo="w", kind="decision", statement="s", about="setup.py"),
+        AcceptedClaim(id="a3", repo="w", kind="rule", statement="s", about="rocks/"),
+    ]
+
+    paths = [claim_file(claim)[0] for claim in claims]
+
+    assert paths == [f"{PATHS}/rocks/noob/a1.yaml", f"{PATHS}/a2.yaml", f"{PATHS}/rocks/a3.yaml"]
+    for claim in claims:
+        assert parse_accepted(*claim_file(claim)) == claim
