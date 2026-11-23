@@ -540,3 +540,17 @@ def test_a_rejection_already_recorded_on_the_base_is_not_written_again(pushing):
     _propose("--comment")
 
     assert _recorded(pushing) == {}
+
+
+def test_a_knowledge_pr_past_githubs_commit_listing_cap_warns(pushing, capsys):
+    _previous_pr(pushing, merged=True, on_base=[KEPT])
+    commits = pushing.list_pull_request_commits.return_value
+    pushing.list_pull_request_commits.return_value = commits + [
+        {"sha": f"x{i}", "commit": {"message": "Edit"}} for i in range(250 - len(commits))
+    ]
+
+    _propose("--comment")
+
+    assert "knowledge PR #7 has 250 or more commits" in capsys.readouterr().err
+    # What the listing shows is still recorded.
+    assert ".marginal/knowledge/rejected/7be210.yaml" in _recorded(pushing)
