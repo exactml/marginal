@@ -290,20 +290,31 @@ A finding that breaks a policy says so, e.g. *"Changing rounding from ROUND_HALF
 
 ### Accepted knowledge
 
-`.marginal/knowledge.yaml` holds the rules and decisions your team accepted from earlier pull requests. A review loads the ones about the files it changes: the same file, a file in the same folder, or a folder ending in `/` that holds one. It loads at most 15, newest first, so a PR that breaks a rule or quietly reverses a decision gets a finding that names where it came from.
+`.marginal/knowledge/` holds the rules and decisions your team accepted from earlier pull requests, one small YAML file per claim, named by its id. Adding or removing one never conflicts with another.
 
-```yaml
-- id: a3f91c
-  repo: widgets                 # where it was decided
-  applies_to: [widgets]         # repo names or globs; defaults to repo
-  kind: decision                # or: rule
-  statement: Discounts apply before tax, because invoices must match the POS.
-  about: shop/pricing.py        # or a folder: shop/
-  pr: 142
-  author: some-login
+```
+.marginal/knowledge/
+  repo/                 # repo-wide: loaded on every review
+    d2e8a1.yaml
+  paths/                # mirrors your code: loaded when a PR touches that area
+    shop/
+      c41d07.yaml
 ```
 
-The file is read from the PR's base commit, so a PR can't change what it's reviewed against. Without the file, a review is unchanged. A full 15 adds about 1.3k prompt tokens; there's no extra model call.
+```yaml
+# .marginal/knowledge/paths/shop/c41d07.yaml
+repo: widgets                 # where it was decided
+applies_to: [widgets]         # repo names or globs; defaults to repo
+kind: decision                # or: rule
+statement: Discounts apply before tax, because invoices must match the POS.
+about: shop/pricing.py        # or a folder: shop/ (not needed under repo/)
+pr: 142
+author: some-login
+```
+
+A review loads the newest 5 repo-wide claims, then the newest claims about the files it changes (the same file, a file in the same folder, or a folder that holds one), 15 in all. A PR that breaks a rule or quietly reverses a decision gets a finding that names where it came from. Only the folders a changed file sits in are read.
+
+The folder is read from the PR's base commit, so a PR can't change what it's reviewed against. Without it, a review is unchanged. A full 15 adds about 1.3k prompt tokens; there's no extra model call.
 
 ### Local models (Ollama)
 
