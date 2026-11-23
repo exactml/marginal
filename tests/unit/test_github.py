@@ -696,3 +696,16 @@ def test_create_file_commits_base64_text_to_a_branch(monkeypatch):
     )
     assert kwargs["json"]["content"] == base64.b64encode(b"kind: rule\n").decode()
     assert kwargs["json"]["branch"] == "marginal/knowledge"
+
+
+def test_file_paths_are_percent_encoded_in_the_url(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = _response(201, {})
+    client = _client(PermissionsConfig(write=PermissionsWrite(push=True)), session)
+
+    client.create_file("docs/c#/a?.yaml", "x", "b", "m")
+    client.get_file("docs/c#/a?.yaml", "abc123")
+
+    for call in session.request.call_args_list:
+        assert call.args[1].endswith("/contents/docs/c%23/a%3F.yaml")

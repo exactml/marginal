@@ -80,7 +80,9 @@ class GitHubClient:
         a file there."""
         self._require_read("repository")
         try:
-            data = self._request("GET", f"/repos/{self._repo}/contents/{path}", params={"ref": ref})
+            data = self._request(
+                "GET", f"/repos/{self._repo}/contents/{quote(path)}", params={"ref": ref}
+            )
         except GitHubNotFoundError:
             return None
         if not isinstance(data, dict) or "content" not in data:
@@ -324,7 +326,8 @@ class GitHubClient:
         self._require_write("push")
         self._request(
             "PUT",
-            f"/repos/{self._repo}/contents/{path}",
+            # `#` or `?` in a file name would otherwise end the URL's path.
+            f"/repos/{self._repo}/contents/{quote(path)}",
             json={
                 "message": message,
                 "content": base64.b64encode(text.encode()).decode(),
