@@ -528,7 +528,7 @@ cases:
   - kind: decision
     about: django/db/backends/sqlite3/operations.py
     statement: For consistency with SQLiteCursorWrapper.execute(), last_executed_query returns the raw sql
-      when there are no parameters (see
+      when there are no parameters.
     source: django/db/backends/sqlite3/operations.py:194
   must_propose: []
 - id: hostname-regex-rejects-multi-label-domains
