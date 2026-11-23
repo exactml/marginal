@@ -173,10 +173,10 @@ def test_an_edited_line_proposes_only_what_it_adds():
 
 def test_replies_that_explain_a_choice_become_decisions():
     replies = [
-        ("shop/stock.py", 12, "Intentional: zero-stock items stay listed. They ship on restock."),
-        ("shop/stock.py", 30, "Good catch, fixed in abc123."),
-        ("shop/stock.py", 40, "Fixed, because the old check was wrong. Not expected."),
-        ("shop/pricing.py", None, "We chose to round down: finance reconciles to the cent."),
+        ("shop/stock.py", 12, "Intentional: zero-stock items stay listed. They ship.", "ann"),
+        ("shop/stock.py", 30, "Good catch, fixed in abc123.", "ann"),
+        ("shop/stock.py", 40, "Fixed, because the old check was wrong. Not expected.", "ann"),
+        ("shop/pricing.py", None, "We chose to round down: finance reconciles to the cent.", "bo"),
     ]
 
     claims = decisions_from_replies(replies)
@@ -194,6 +194,7 @@ def test_replies_that_explain_a_choice_become_decisions():
         ),
     ]
     assert [c.source for c in claims] == ["shop/stock.py:12", "shop/pricing.py"]
+    assert [c.author for c in claims] == ["ann", "bo"]
 
 
 def test_review_knowledge_is_kept_only_while_its_quote_is_in_the_merged_diff():

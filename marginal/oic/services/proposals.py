@@ -47,6 +47,8 @@ class ProposedClaim:
     source: str = ""
     # Why, when the evidence says so (a dependency line's comment); not part of the id.
     reason: str = ""
+    # Who stated it, when known (a maintainer's reply); not part of the id.
+    author: str = ""
 
     @property
     def id(self) -> str:
@@ -142,20 +144,24 @@ def render_proposal(claims: list[ProposedClaim], state: PullRequestState) -> str
 
 
 def decisions_from_replies(
-    replies: Iterable[tuple[str, int | None, str]],
+    replies: Iterable[tuple[str, int | None, str, str]],
 ) -> list[ProposedClaim]:
-    """A decision for each `(path, line, reply)` that answers a review finding
-    by explaining a choice ("intentional: zero-stock items stay listed"),
-    about the file the finding was on."""
+    """A decision for each `(path, line, reply, author)` that answers a review
+    finding by explaining a choice ("intentional: zero-stock items stay
+    listed"), about the file the finding was on, by the reply's author."""
     claims = []
-    for path, line, reply in replies:
+    for path, line, reply, author in replies:
         text = " ".join(reply.split())
         if not _DECISION_WORDS.search(text):
             continue
         # The first sentence carries the decision; the rest is usually detail.
         sentence = _SENTENCE_END.split(text, 1)[0][:200]
         source = f"{path}:{line}" if line else path
-        claims.append(ProposedClaim(f"decision: {sentence}", Relation.DECISION_ABOUT, path, source))
+        claims.append(
+            ProposedClaim(
+                f"decision: {sentence}", Relation.DECISION_ABOUT, path, source, author=author
+            )
+        )
     return list({claim.id: claim for claim in claims}.values())
 
 

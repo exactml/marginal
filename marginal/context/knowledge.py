@@ -77,6 +77,16 @@ def load_accepted(
     return repo_wide + about[: MAX_ACCEPTED_PER_REVIEW - len(repo_wide)]
 
 
+def claim_file(claim: AcceptedClaim) -> tuple[str, str]:
+    """The path under `paths/` and the YAML text that hold `claim`: the
+    folder its `about` sits in, or the folder itself for a folder claim."""
+    about = PurePosixPath(claim.about)
+    folder = about if claim.about.endswith("/") else about.parent
+    path = PurePosixPath(PATHS_DIR, folder, f"{claim.id}.yaml")
+    fields = claim.model_dump(exclude={"id"}, exclude_defaults=True)
+    return str(path), yaml.safe_dump(fields, sort_keys=False, allow_unicode=True)
+
+
 def parse_accepted(path: str, text: str) -> AcceptedClaim | None:
     """The claim in file `path`. People edit these files, so a bad one is
     skipped with a warning instead of failing the review."""

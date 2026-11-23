@@ -9,8 +9,10 @@ from pathlib import PurePosixPath
 from marginal.config.errors import ConfigError
 from marginal.config.schema import PermissionsConfig
 from marginal.context import load_base_config
+from marginal.context.knowledge import KNOWLEDGE_DIR, AcceptedClaim, claim_file
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubError
+from marginal.oic.domain.schema import Relation
 from marginal.oic.services.proposals import (
     PROPOSAL_MARKER,
     ProposedClaim,
@@ -28,6 +30,20 @@ from marginal.review.replies import maintainer_replies
 _WRITERS = {"admin", "write"}
 # The account a workflow's GITHUB_TOKEN posts as, which is how marginal posts in CI.
 _WORKFLOW_BOT = "github-actions[bot]"
+# The branch of the one open knowledge PR, which each merged PR adds files to.
+KNOWLEDGE_BRANCH = "marginal/knowledge"
+_KNOWLEDGE_PR_TITLE = "marginal: knowledge to review"
+_KNOWLEDGE_PR_BODY = """Rules and decisions marginal found in merged pull requests, one file each \
+under `.marginal/knowledge/paths/`. Once merged, a review loads the ones about the files \
+it changes.
+
+- **Accept** a claim: keep its file.
+- **Reject** it: delete the file.
+- **Fix** it: edit the file.
+- **Make it repo-wide**, so every review loads it: move the file to `.marginal/knowledge/repo/`.
+
+Merging accepts what's left. Each merged PR adds to this one until it's merged; \
+closing it rejects everything in it."""
 
 
 def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = False) -> int:
@@ -68,8 +84,11 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
         threads = maintainer_replies(
             c for c in client.list_review_comments(pr_number) if trusted(c)
         )
+        # The person who replied made the decision, not necessarily the PR's author.
         claims += decisions_from_replies(
-            (t.path, t.line, reply) for t in threads for reply in t.replies
+            (t.path, t.line, reply, author)
+            for t in threads
+            for reply, author in zip(t.replies, t.authors, strict=True)
         )
         # Rules and decisions marginal's reviews found in the same model call.
         reviews = [
@@ -92,11 +111,89 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
         body = render_proposal(claims, state)
         print(body)
         if comment and state == "merged":
+            # Pushing is off by default: marginal otherwise never pushes.
+            if config.permissions.write.push:
+                try:
+                    knowledge_pr = _add_to_knowledge_pr(
+                        client, repo, pr_number, pull_request, claims
+                    )
+                except GitHubError as exc:  # the comment is the main output: still post it
+                    print(
+                        f"marginal propose: warning: couldn't add to the knowledge PR: {exc}",
+                        file=sys.stderr,
+                    )
+                    knowledge_pr = None
+                if knowledge_pr:
+                    body += f"\n\nAdded to {knowledge_pr} for the team to review."
             _post(client, pr_number, comments, body, claims, trusted)
     except (ConfigError, GitHubError) as exc:
         print(f"marginal propose: {exc}", file=sys.stderr)
         return 1
     return 0
+
+
+def _add_to_knowledge_pr(
+    client: GitHubClient,
+    repo: str,
+    pr_number: int,
+    pull_request: dict[str, object],
+    claims: list[ProposedClaim],
+) -> str | None:
+    """Add one file per rule or decision in `claims` to the knowledge branch,
+    and open the knowledge PR if none is open. Returns its URL, or `None`
+    with no rule or decision to add, or for a PR merged into a branch other
+    than the default one: reviews read knowledge from the default branch."""
+    base = str(pull_request["base"]["ref"])
+    if base != (pull_request["base"].get("repo") or {}).get("default_branch"):
+        return None
+    kinds = {Relation.CONSTRAINS: "rule", Relation.DECISION_ABOUT: "decision"}
+    pr_author = str((pull_request.get("user") or {}).get("login") or "")
+    files = [
+        claim_file(
+            AcceptedClaim(
+                id=claim.id,
+                repo=repo.split("/")[-1],
+                kind=kinds[claim.relation],
+                statement=claim.subject.split(": ", 1)[-1],
+                about=claim.object,
+                pr=pr_number,
+                # The replier for a decision from a reply; else the PR's author.
+                author=claim.author or pr_author or None,
+            )
+        )
+        for claim in claims
+        if claim.relation in kinds
+    ]
+    if not files:
+        return None
+    pulls = client.list_pull_requests(KNOWLEDGE_BRANCH)
+    knowledge_pr = next((p for p in pulls if p["state"] == "open"), None)
+    branch_sha = client.get_branch_sha(KNOWLEDGE_BRANCH)
+    # A merged or closed PR's files are done with (a closed one was rejected), so
+    # start over from the base branch. Files no PR carried yet, because opening
+    # one failed, stay: the PR is opened below.
+    restart = knowledge_pr is None and (
+        branch_sha is None or any(p["head"]["sha"] == branch_sha for p in pulls)
+    )
+    if restart:
+        base_sha = client.get_branch_sha(base)
+        if base_sha is None:
+            raise GitHubError(f"base branch {base} not found")
+        client.set_branch(KNOWLEDGE_BRANCH, base_sha)
+    # By id anywhere in the folder: the team may have moved a claim to `repo/`.
+    # shortcut: a claim the team deleted can come back when proposed again; that
+    # needs a record of rejections, which the knowledge store will hold.
+    known = {PurePosixPath(f).stem for f in client.list_files(KNOWLEDGE_DIR, KNOWLEDGE_BRANCH)}
+    new = [(path, text) for path, text in files if PurePosixPath(path).stem not in known]
+    for path, text in new:
+        client.create_file(path, text, KNOWLEDGE_BRANCH, f"Propose knowledge from #{pr_number}")
+    if knowledge_pr is None and restart and not new:
+        return None  # all accepted already: a PR with no commits can't be opened
+    if knowledge_pr is None:
+        knowledge_pr = client.create_pull_request(
+            KNOWLEDGE_BRANCH, base, _KNOWLEDGE_PR_TITLE, _KNOWLEDGE_PR_BODY
+        )
+    return str(knowledge_pr["html_url"])
 
 
 def _trusted_author(client: GitHubClient) -> Callable[[dict[str, object]], bool]:

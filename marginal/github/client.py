@@ -80,7 +80,9 @@ class GitHubClient:
         a file there."""
         self._require_read("repository")
         try:
-            data = self._request("GET", f"/repos/{self._repo}/contents/{path}", params={"ref": ref})
+            data = self._request(
+                "GET", f"/repos/{self._repo}/contents/{quote(path)}", params={"ref": ref}
+            )
         except GitHubNotFoundError:
             return None
         if not isinstance(data, dict) or "content" not in data:
@@ -286,6 +288,74 @@ class GitHubClient:
         self._require_write("comments")
         return self._request(
             "PATCH", f"/repos/{self._repo}/issues/comments/{comment_id}", json={"body": body}
+        )
+
+    def get_branch_sha(self, branch: str) -> str | None:
+        """The commit `branch` points at, or `None` if there's no such branch."""
+        self._require_read("repository")
+        try:
+            ref = self._request("GET", f"/repos/{self._repo}/git/ref/heads/{branch}")
+        except GitHubNotFoundError:
+            return None
+        return str(ref["object"]["sha"])
+
+    def set_branch(self, branch: str, sha: str) -> None:
+        """Point `branch` at commit `sha`, creating it or moving it (by force).
+
+        Requires `permissions.write.push`.
+        """
+        self._require_write("push")
+        if self.get_branch_sha(branch) is None:
+            self._request(
+                "POST",
+                f"/repos/{self._repo}/git/refs",
+                json={"ref": f"refs/heads/{branch}", "sha": sha},
+            )
+        else:
+            self._request(
+                "PATCH",
+                f"/repos/{self._repo}/git/refs/heads/{branch}",
+                json={"sha": sha, "force": True},
+            )
+
+    def create_file(self, path: str, text: str, branch: str, message: str) -> None:
+        """Commit a new file `path` holding `text` to `branch`.
+
+        Requires `permissions.write.push`.
+        """
+        self._require_write("push")
+        self._request(
+            "PUT",
+            # `#` or `?` in a file name would otherwise end the URL's path.
+            f"/repos/{self._repo}/contents/{quote(path)}",
+            json={
+                "message": message,
+                "content": base64.b64encode(text.encode()).decode(),
+                "branch": branch,
+            },
+        )
+
+    def list_pull_requests(self, head: str) -> list[dict[str, object]]:
+        """The newest 100 pull requests from this repo's branch `head`, open
+        or closed, newest first."""
+        self._require_read("pull_requests")
+        owner = self._repo.split("/", 1)[0]
+        return self._request(
+            "GET",
+            f"/repos/{self._repo}/pulls",
+            params={"head": f"{owner}:{head}", "state": "all", "per_page": 100},
+        )
+
+    def create_pull_request(self, head: str, base: str, title: str, body: str) -> dict[str, object]:
+        """Open a pull request from branch `head` into `base`.
+
+        Requires `permissions.write.push`: it only ever carries what marginal pushed.
+        """
+        self._require_write("push")
+        return self._request(
+            "POST",
+            f"/repos/{self._repo}/pulls",
+            json={"head": head, "base": base, "title": title, "body": body},
         )
 
     def add_labels(self, number: int, labels: list[str]) -> list[dict[str, object]]:
