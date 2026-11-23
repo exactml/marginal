@@ -189,6 +189,16 @@ def test_prompt_names_a_repo_wide_claim_as_such():
     assert "- rule (repo-wide): levels stay ordered" in prompt
 
 
+def test_prompt_redacts_a_secret_in_a_statement():
+    files = [{"filename": "a.py", "patch": "+x = 1"}]
+    claim = _claim("a.py").model_copy(update={"statement": "use key AKIAIOSFODNN7EXAMPLE"})
+
+    prompt = build_finding_prompt(files, [], [], ".", accepted=[claim])
+
+    assert "AKIAIOSFODNN7EXAMPLE" not in prompt
+    assert "use key [REDACTED" in prompt
+
+
 def test_prompt_without_accepted_claims_is_unchanged():
     files = [{"filename": "a.py", "patch": "+x = 1"}]
 

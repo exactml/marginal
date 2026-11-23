@@ -122,7 +122,8 @@ def build_accepted_section(accepted: list[AcceptedClaim]) -> str:
     for claim in accepted:
         source = f"PR #{claim.pr}, " if claim.pr else ""
         rows.append(f"- {claim.kind} ({source}{claim.about or 'repo-wide'}): {claim.statement}")
-    return (
+    # Redacted like the replies and caller snippets: it's repo text the team wrote.
+    return redact_secrets(
         "The team accepted these rules and decisions in earlier pull requests, for "
         "the whole repository or the files this diff touches. A change that breaks "
         "one of these rules, or reverses one of these decisions without saying why, "
