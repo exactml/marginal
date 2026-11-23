@@ -110,7 +110,16 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
         if comment and state == "merged":
             # Pushing is off by default: marginal otherwise never pushes.
             if config.permissions.write.push:
-                knowledge_pr = _add_to_knowledge_pr(client, repo, pr_number, pull_request, claims)
+                try:
+                    knowledge_pr = _add_to_knowledge_pr(
+                        client, repo, pr_number, pull_request, claims
+                    )
+                except GitHubError as exc:  # the comment is the main output: still post it
+                    print(
+                        f"marginal propose: warning: couldn't add to the knowledge PR: {exc}",
+                        file=sys.stderr,
+                    )
+                    knowledge_pr = None
                 if knowledge_pr:
                     body += f"\n\nAdded to {knowledge_pr} for the team to review."
             _post(client, pr_number, comments, body, claims, trusted)
@@ -152,7 +161,10 @@ def _add_to_knowledge_pr(
     knowledge_pr = client.find_open_pull_request(KNOWLEDGE_BRANCH)
     if knowledge_pr is None:
         # Start over from the base branch: a knowledge PR closed unmerged was a rejection.
-        client.set_branch(KNOWLEDGE_BRANCH, str(client.get_branch_sha(base)))
+        base_sha = client.get_branch_sha(base)
+        if base_sha is None:
+            raise GitHubError(f"base branch {base} not found")
+        client.set_branch(KNOWLEDGE_BRANCH, base_sha)
     for path, text in files:
         if client.get_file(path, KNOWLEDGE_BRANCH) is None:  # proposed again: keep the first
             client.create_file(path, text, KNOWLEDGE_BRANCH, f"Propose knowledge from #{pr_number}")

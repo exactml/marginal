@@ -375,3 +375,22 @@ def test_only_structural_claims_open_no_knowledge_pr(pushing):
 
     pushing.find_open_pull_request.assert_not_called()
     pushing.create_file.assert_not_called()
+
+
+def test_a_failed_push_still_posts_the_proposal(pushing, capsys):
+    pushing.create_file.side_effect = GitHubAPIError(403, "Resource not accessible by integration")
+
+    assert _propose("--comment") == 0
+
+    assert "couldn't add to the knowledge PR" in capsys.readouterr().err
+    assert "Added to" not in pushing.create_issue_comment.call_args.args[1]
+
+
+def test_a_missing_base_branch_is_named_and_the_proposal_still_posted(pushing, capsys):
+    pushing.get_branch_sha.return_value = None
+
+    assert _propose("--comment") == 0
+
+    assert "base branch master not found" in capsys.readouterr().err
+    pushing.set_branch.assert_not_called()
+    pushing.create_issue_comment.assert_called_once()
