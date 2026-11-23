@@ -18,6 +18,7 @@ from marginal.context import build_graph_context
 from marginal.github.errors import (
     GitHubAPIError,
     GitHubAuthenticationError,
+    GitHubError,
     GitHubNotFoundError,
     PermissionDeniedError,
 )
@@ -2357,6 +2358,10 @@ def _base_commit(files):
 def _review_prompt(mock_github_client, mock_provider, base_files, pr_files):
     client = mock_github_client.return_value
     client.get_file.side_effect = _base_commit(base_files)
+    client.list_files.side_effect = lambda path, ref: [f for f in base_files if f.startswith(path)]
+    client.get_files.side_effect = lambda paths, ref: {
+        p: base_files[p] for p in paths if p in base_files
+    }
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = pr_files
     client.list_review_comments.return_value = []
@@ -2430,6 +2435,74 @@ def test_review_reads_policy_content_from_the_base_commit(
 
     assert "Never log passwords." in prompt
     assert "Anything goes." not in prompt
+
+
+_KNOWLEDGE_FILE = ".marginal/knowledge/paths/shop/a3f91c.yaml"
+_KNOWLEDGE = """repo: widgets
+kind: rule
+statement: agg levels stay ordered from coarse to fine
+about: shop/helpers.py
+pr: 462
+"""
+
+
+def test_review_loads_accepted_knowledge_from_the_base_commit(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+
+    prompt = _review_prompt(
+        mock_github_client,
+        mock_provider,
+        {".marginal/config.yaml": _BASE_CONFIG, _KNOWLEDGE_FILE: _KNOWLEDGE},
+        # A sibling of the file the rule is about.
+        [{"filename": "shop/selection.py", "patch": "+levels.reverse()"}],
+    )
+
+    assert "- rule (PR #462, shop/helpers.py): agg levels stay ordered" in prompt
+    assert "loaded 1 accepted rule(s) and decision(s)" in capsys.readouterr().err
+
+
+def test_review_ignores_knowledge_the_pr_adds_or_about_other_files(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    base = {".marginal/config.yaml": _BASE_CONFIG}
+    # The PR adds the file, and touches the file it's about: still not loaded.
+    pr_files = [
+        {"filename": _KNOWLEDGE_FILE, "patch": "+" + _KNOWLEDGE},
+        {"filename": "shop/helpers.py", "patch": "+levels.reverse()"},
+    ]
+
+    added = _review_prompt(mock_github_client, mock_provider, base, pr_files)
+    elsewhere = _review_prompt(
+        mock_github_client,
+        mock_provider,
+        {**base, _KNOWLEDGE_FILE: _KNOWLEDGE},
+        [{"filename": "api/handler.py", "patch": "+return 1"}],
+    )
+
+    assert "The team accepted" not in added
+    assert "The team accepted" not in elsewhere
+    assert "loaded" not in capsys.readouterr().err
+
+
+def test_review_goes_on_without_knowledge_it_cannot_read(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    monkeypatch.chdir(tmp_path)
+    mock_github_client.return_value.list_files.side_effect = GitHubError("rate limited")
+    client = mock_github_client.return_value
+    client.get_file.side_effect = _base_commit({".marginal/config.yaml": _BASE_CONFIG})
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [{"filename": "a.py", "patch": "+x = 1"}]
+    client.list_review_comments.return_value = []
+    provider = mock_provider.return_value
+    provider.generate_structured = AsyncMock(return_value=FindingsResponse(findings=[]))
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42"]) == 0
+    assert provider.generate_structured.called
+    assert "couldn't read .marginal/knowledge, reviewing without it" in capsys.readouterr().err
 
 
 def test_review_uses_the_working_tree_config_when_the_base_has_none(

@@ -29,6 +29,8 @@ class ReplyThread:
     line: int | None
     comment: str
     replies: tuple[str, ...]
+    # Each reply's author's login, in the same order as `replies`.
+    authors: tuple[str, ...] = ()
 
 
 # Ends every reply `marginal compact` posts to close a stale finding.
@@ -59,12 +61,14 @@ def maintainer_replies(comments: Iterable[dict[str, object]]) -> list[ReplyThrea
         if c.get("id") is not None and not c.get("in_reply_to_id") and is_marginal_comment(_body(c))
     }
     replies: dict[object, list[str]] = {}
+    authors: dict[object, list[str]] = {}
     for c in comments:
         parent = c.get("in_reply_to_id")
         body = _body(c).strip()
         user = c.get("user") or {}
         if parent in roots and body and not is_marginal_comment(body) and user.get("type") != "Bot":
             replies.setdefault(parent, []).append(body)
+            authors.setdefault(parent, []).append(str(user.get("login", "")))
     return [
         ReplyThread(
             path=str(root.get("path", "")),
@@ -73,6 +77,7 @@ def maintainer_replies(comments: Iterable[dict[str, object]]) -> list[ReplyThrea
             line=root.get("line") or root.get("original_line"),
             comment=_MARKER.sub("", _body(root)).strip(),
             replies=tuple(replies[root_id]),
+            authors=tuple(authors[root_id]),
         )
         for root_id, root in roots.items()
         if root_id in replies

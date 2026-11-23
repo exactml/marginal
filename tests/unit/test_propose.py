@@ -285,3 +285,179 @@ def test_another_bot_cannot_supply_rules_or_take_over_the_proposal(client, capsy
 
     assert "Forged" not in client.create_issue_comment.call_args.args[1]
     client.update_issue_comment.assert_not_called()
+
+
+# -- the rolling knowledge PR ------------------------------------------------
+
+
+@pytest.fixture
+def pushing(client, tmp_path):
+    """`client` with `permissions.write.push` on and a maintainer decision to propose."""
+    (tmp_path / ".marginal" / "config.yaml").write_text(
+        "version: 1\nproposals:\n  enabled: true\npermissions:\n  write:\n    push: true\n"
+    )
+    client.get_pull_request.return_value = {
+        **MERGED,
+        "base": {"sha": "abc", "ref": "master", "repo": {"default_branch": "master"}},
+        "user": {"login": "bob"},
+    }
+    finding = {
+        "id": 1,
+        "path": "requirements.txt",
+        "line": 2,
+        "body": "🟡 **Medium**\n\nUnpinned.\n\n<!-- marginal:finding:0000000000000000 -->",
+        "user": {"login": "github-actions[bot]", "type": "Bot"},
+    }
+    reply = {
+        "id": 2,
+        "in_reply_to_id": 1,
+        "body": "Intentional: we pin requests because 2.32 broke retries.",
+        "user": {"login": "alice", "type": "User"},
+    }
+    client.list_review_comments.return_value = [finding, reply]
+    client.get_file.side_effect = lambda path, ref: None
+    client.list_files.return_value = []  # nothing on the knowledge branch yet
+    # No knowledge branch yet; the base branch is at `base-head`.
+    client.get_branch_sha.side_effect = {"marginal/knowledge": None, "master": "base-head"}.get
+    client.list_pull_requests.return_value = []
+    client.create_pull_request.return_value = {"html_url": "https://github.com/acme/widgets/pull/7"}
+    return client
+
+
+def test_a_merged_decision_opens_the_knowledge_pr(pushing):
+    assert _propose("--comment") == 0
+
+    pushing.set_branch.assert_called_once_with("marginal/knowledge", "base-head")
+    [(path, text, branch, message)] = [c.args for c in pushing.create_file.call_args_list]
+    assert path.startswith(".marginal/knowledge/paths/") and path.endswith(".yaml")
+    # alice replied with the decision; bob only wrote the PR.
+    assert "kind: decision" in text and "pr: 42" in text and "author: alice" in text
+    assert (branch, message) == ("marginal/knowledge", "Propose knowledge from #42")
+    head, base, title, _ = pushing.create_pull_request.call_args.args
+    assert (head, base, title) == ("marginal/knowledge", "master", "marginal: knowledge to review")
+    comment = pushing.create_issue_comment.call_args.args[1]
+    assert "Added to https://github.com/acme/widgets/pull/7 for the team to review." in comment
+
+
+def test_an_open_knowledge_pr_gets_the_new_files_and_is_not_reopened(pushing):
+    pushing.list_pull_requests.return_value = [
+        {
+            "state": "open",
+            "head": {"sha": "k1"},
+            "html_url": "https://github.com/acme/widgets/pull/7",
+        }
+    ]
+    pushing.get_branch_sha.side_effect = {"marginal/knowledge": "k1", "master": "base-head"}.get
+
+    _propose("--comment")
+
+    pushing.set_branch.assert_not_called()
+    pushing.create_pull_request.assert_not_called()
+    assert pushing.create_file.call_count == 1
+
+
+def _already_on_the_branch(pushing, folder):
+    """Make the claim `propose` writes already sit on the branch under `folder`."""
+    _propose("--comment")
+    written = pushing.create_file.call_args.args[0]
+    pushing.reset_mock()
+    pushing.list_files.return_value = [f"{folder}/{written.rsplit('/', 1)[-1]}"]
+
+
+@pytest.mark.parametrize(
+    # Where the team left it: where marginal put it, or moved to repo-wide.
+    "folder",
+    [".marginal/knowledge/paths", ".marginal/knowledge/repo"],
+)
+def test_a_claim_already_on_the_knowledge_branch_is_not_written_again(pushing, folder):
+    _already_on_the_branch(pushing, folder)
+
+    _propose("--comment")
+
+    pushing.create_file.assert_not_called()
+
+
+def test_without_push_permission_nothing_is_pushed(pushing, tmp_path):
+    (tmp_path / ".marginal" / "config.yaml").write_text("version: 1\nproposals:\n  enabled: true\n")
+
+    _propose("--comment")
+
+    pushing.set_branch.assert_not_called()
+    pushing.create_file.assert_not_called()
+    assert "Added to" not in pushing.create_issue_comment.call_args.args[1]
+
+
+def test_only_structural_claims_open_no_knowledge_pr(pushing):
+    pushing.list_review_comments.return_value = []
+
+    _propose("--comment")
+
+    pushing.list_pull_requests.assert_not_called()
+    pushing.create_file.assert_not_called()
+
+
+def test_a_failed_push_still_posts_the_proposal(pushing, capsys):
+    pushing.create_file.side_effect = GitHubAPIError(403, "Resource not accessible by integration")
+
+    assert _propose("--comment") == 0
+
+    assert "couldn't add to the knowledge PR" in capsys.readouterr().err
+    assert "Added to" not in pushing.create_issue_comment.call_args.args[1]
+
+
+def test_a_missing_base_branch_is_named_and_the_proposal_still_posted(pushing, capsys):
+    pushing.get_branch_sha.side_effect = None
+    pushing.get_branch_sha.return_value = None
+
+    assert _propose("--comment") == 0
+
+    assert "base branch master not found" in capsys.readouterr().err
+    pushing.set_branch.assert_not_called()
+    pushing.create_issue_comment.assert_called_once()
+
+
+def test_after_a_knowledge_pr_is_merged_the_next_one_starts_from_the_base(pushing):
+    pushing.list_pull_requests.return_value = [{"state": "closed", "head": {"sha": "k1"}}]
+    pushing.get_branch_sha.side_effect = {"marginal/knowledge": "k1", "master": "base-head"}.get
+
+    _propose("--comment")
+
+    pushing.set_branch.assert_called_once_with("marginal/knowledge", "base-head")
+    pushing.create_pull_request.assert_called_once()
+
+
+def test_files_no_pr_carried_yet_are_kept_and_get_their_pr(pushing):
+    """Opening the PR failed last time (e.g. Actions may not create PRs):
+    the branch moved past every PR, so its files aren't thrown away."""
+    pushing.list_pull_requests.return_value = [{"state": "closed", "head": {"sha": "k1"}}]
+    pushing.get_branch_sha.side_effect = {"marginal/knowledge": "k2", "master": "base-head"}.get
+
+    _propose("--comment")
+
+    pushing.set_branch.assert_not_called()
+    pushing.create_file.assert_called_once()
+    pushing.create_pull_request.assert_called_once()
+
+
+def test_a_pr_merged_into_another_branch_adds_nothing_to_the_knowledge_pr(pushing):
+    pushing.get_pull_request.return_value = {
+        **pushing.get_pull_request.return_value,
+        "base": {"sha": "abc", "ref": "release/1.x", "repo": {"default_branch": "master"}},
+    }
+
+    _propose("--comment")
+
+    pushing.set_branch.assert_not_called()
+    pushing.create_file.assert_not_called()
+    assert "Added to" not in pushing.create_issue_comment.call_args.args[1]
+
+
+def test_claims_all_accepted_already_open_no_empty_knowledge_pr(pushing):
+    _already_on_the_branch(pushing, ".marginal/knowledge/paths")
+
+    _propose("--comment")
+
+    pushing.set_branch.assert_called_once()
+    pushing.create_file.assert_not_called()
+    pushing.create_pull_request.assert_not_called()
+    assert "Added to" not in pushing.create_issue_comment.call_args.args[1]

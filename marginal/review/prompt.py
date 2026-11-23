@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from importlib import resources
 from pathlib import Path, PurePosixPath
 
+from marginal.context.knowledge import AcceptedClaim
 from marginal.graph import CallSite, ChangedDefinition
 from marginal.review.redact import redact_secrets
 from marginal.review.replies import ReplyThread
@@ -30,6 +31,10 @@ _GRAPH_CONTEXT_SNIPPET_RADIUS = 2
 MAX_REPLY_THREADS = 10
 _REPLY_COMMENT_CHARS = 600
 _REPLY_TEXT_CHARS = 1500
+
+# Characters kept from each accepted claim's statement: people write them by
+# hand, and one long one would cost tokens on every review that loads it.
+_ACCEPTED_STATEMENT_CHARS = 300
 
 # Rough characters-per-token ratio for estimating a prompt's size without a
 # provider-specific tokenizer. Code and diffs tokenize denser than English
@@ -71,10 +76,11 @@ def build_finding_prompt(
     anti_policies: list[tuple[str, str]] | None = None,
     ci_conclusion: str | None = None,
     knowledge: bool = False,
+    accepted: list[AcceptedClaim] | None = None,
 ) -> str:
     """The reviewer prompt. `files` must already be `redact_patches` output.
     With `knowledge`, it also asks for the business rules and decisions the
-    diff states."""
+    diff states; `accepted` are the ones the team already accepted."""
     diff = "\n\n".join(f"--- {file['filename']} ---\n{file['patch']}" for file in files)
     sections = [FINDING_PROMPT_INSTRUCTIONS]
     if knowledge:
@@ -96,6 +102,8 @@ def build_finding_prompt(
             "raised in review. Leave such issues out of your findings entirely, even "
             f"if they would otherwise look like a problem:\n\n{anti_policy_text}"
         )
+    if accepted:
+        sections.append(build_accepted_section(accepted))
     if ci_conclusion:
         sections.append(
             f"CI status: {ci_conclusion} (the GitHub Actions run that triggered this "
@@ -109,6 +117,26 @@ def build_finding_prompt(
         sections.append(build_replies_section(replies))
     sections.append(diff)
     return "\n\n".join(sections)
+
+
+def build_accepted_section(accepted: list[AcceptedClaim]) -> str:
+    """A prompt section listing the rules and decisions the team accepted,
+    repo-wide or about the files this diff touches."""
+    rows = []
+    for claim in accepted:
+        source = f"PR #{claim.pr}, " if claim.pr else ""
+        # Redacted like the replies and caller snippets, before the cut, which
+        # could split a key so it no longer looks like one.
+        statement = redact_secrets(" ".join(claim.statement.split()))[:_ACCEPTED_STATEMENT_CHARS]
+        rows.append(f"- {claim.kind} ({source}{claim.about or 'repo-wide'}): {statement}")
+    return (
+        "The team accepted these rules and decisions in earlier pull requests, for "
+        "the whole repository or the files this diff touches. A change that breaks "
+        "one of these rules, or reverses one of these decisions without saying why, "
+        "is worth a finding that names the pull request it came from. Behavior a "
+        "decision says is intended is not a bug. They're already known: don't report "
+        "them again as new knowledge:\n\n" + "\n".join(rows)
+    )
 
 
 def build_graph_context_section(

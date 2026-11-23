@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import sys
 from typing import Literal
 from urllib.parse import quote
 
@@ -40,6 +41,10 @@ mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id }
 """
 
 
+# Files `get_files` reads per GraphQL call, well under GitHub's per-query node limit.
+_FILES_PER_QUERY = 100
+
+
 class GitHubClient:
     """Thin wrapper around the GitHub REST API for one `"owner/name"` repo.
 
@@ -75,12 +80,75 @@ class GitHubClient:
         a file there."""
         self._require_read("repository")
         try:
-            data = self._request("GET", f"/repos/{self._repo}/contents/{path}", params={"ref": ref})
+            data = self._request(
+                "GET", f"/repos/{self._repo}/contents/{quote(path)}", params={"ref": ref}
+            )
         except GitHubNotFoundError:
             return None
         if not isinstance(data, dict) or "content" not in data:
             return None
         return base64.b64decode(str(data["content"])).decode()
+
+    def get_files(self, paths: list[str], ref: str) -> dict[str, str]:
+        """The text of each of `paths` that is a text file at commit `ref`,
+        read in one GraphQL call per `_FILES_PER_QUERY` files, not one each."""
+        self._require_read("repository")
+        owner, name = self._repo.split("/", 1)
+        texts = {}
+        for start in range(0, len(paths), _FILES_PER_QUERY):
+            batch = paths[start : start + _FILES_PER_QUERY]
+            args = "".join(f", $e{i}: String!" for i in range(len(batch)))
+            fields = " ".join(
+                f"f{i}: object(expression: $e{i}) {{ ... on Blob {{ text }} }}"
+                for i in range(len(batch))
+            )
+            data = self._graphql(
+                f"query($owner: String!, $name: String!{args}) "
+                f"{{ repository(owner: $owner, name: $name) {{ {fields} }} }}",
+                {"owner": owner, "name": name}
+                | {f"e{i}": f"{ref}:{path}" for i, path in enumerate(batch)},
+            )
+            for i, path in enumerate(batch):
+                blob = data["repository"][f"f{i}"]  # null when missing
+                if blob and blob.get("text") is not None:  # text is null for binary
+                    texts[path] = blob["text"]
+        return texts
+
+    def list_files(self, path: str, ref: str) -> list[str]:
+        """Every file under folder `path` as of commit `ref`, at any depth, or
+        `[]` if it isn't a folder there. One call for `path`, plus one per
+        folder directly in it, however many files they hold."""
+        self._require_read("repository")
+        try:
+            entries = self._request(
+                "GET", f"/repos/{self._repo}/contents/{path}", params={"ref": ref}
+            )
+        except GitHubNotFoundError:
+            return []
+        if not isinstance(entries, list):  # a file, not a folder
+            return []
+        files = []
+        for entry in entries:
+            if entry["type"] == "file":
+                files.append(str(entry["path"]))
+            elif entry["type"] == "dir":
+                tree = self._request(
+                    "GET",
+                    f"/repos/{self._repo}/git/trees/{entry['sha']}",
+                    params={"recursive": "1"},
+                )
+                files += [
+                    f"{entry['path']}/{item['path']}"
+                    for item in tree["tree"]
+                    if item["type"] == "blob"
+                ]
+                if tree.get("truncated"):  # over GitHub's 100,000 entries per tree
+                    print(
+                        f"marginal: warning: {entry['path']} has more files than GitHub "
+                        "lists at once, so some were left out",
+                        file=sys.stderr,
+                    )
+        return files
 
     def get_workflow_run(self, run_id: int) -> dict[str, object]:
         """Return GitHub Actions workflow run `run_id`, including its
@@ -220,6 +288,74 @@ class GitHubClient:
         self._require_write("comments")
         return self._request(
             "PATCH", f"/repos/{self._repo}/issues/comments/{comment_id}", json={"body": body}
+        )
+
+    def get_branch_sha(self, branch: str) -> str | None:
+        """The commit `branch` points at, or `None` if there's no such branch."""
+        self._require_read("repository")
+        try:
+            ref = self._request("GET", f"/repos/{self._repo}/git/ref/heads/{branch}")
+        except GitHubNotFoundError:
+            return None
+        return str(ref["object"]["sha"])
+
+    def set_branch(self, branch: str, sha: str) -> None:
+        """Point `branch` at commit `sha`, creating it or moving it (by force).
+
+        Requires `permissions.write.push`.
+        """
+        self._require_write("push")
+        if self.get_branch_sha(branch) is None:
+            self._request(
+                "POST",
+                f"/repos/{self._repo}/git/refs",
+                json={"ref": f"refs/heads/{branch}", "sha": sha},
+            )
+        else:
+            self._request(
+                "PATCH",
+                f"/repos/{self._repo}/git/refs/heads/{branch}",
+                json={"sha": sha, "force": True},
+            )
+
+    def create_file(self, path: str, text: str, branch: str, message: str) -> None:
+        """Commit a new file `path` holding `text` to `branch`.
+
+        Requires `permissions.write.push`.
+        """
+        self._require_write("push")
+        self._request(
+            "PUT",
+            # `#` or `?` in a file name would otherwise end the URL's path.
+            f"/repos/{self._repo}/contents/{quote(path)}",
+            json={
+                "message": message,
+                "content": base64.b64encode(text.encode()).decode(),
+                "branch": branch,
+            },
+        )
+
+    def list_pull_requests(self, head: str) -> list[dict[str, object]]:
+        """The newest 100 pull requests from this repo's branch `head`, open
+        or closed, newest first."""
+        self._require_read("pull_requests")
+        owner = self._repo.split("/", 1)[0]
+        return self._request(
+            "GET",
+            f"/repos/{self._repo}/pulls",
+            params={"head": f"{owner}:{head}", "state": "all", "per_page": 100},
+        )
+
+    def create_pull_request(self, head: str, base: str, title: str, body: str) -> dict[str, object]:
+        """Open a pull request from branch `head` into `base`.
+
+        Requires `permissions.write.push`: it only ever carries what marginal pushed.
+        """
+        self._require_write("push")
+        return self._request(
+            "POST",
+            f"/repos/{self._repo}/pulls",
+            json={"head": head, "base": base, "title": title, "body": body},
         )
 
     def add_labels(self, number: int, labels: list[str]) -> list[dict[str, object]]:

@@ -60,6 +60,15 @@ class LocalCheckout:
         except LocalGitError:
             return None
 
+    def get_files(self, paths: list[str], ref: str) -> dict[str, str]:
+        """The text of each of `paths` that is a file at commit `ref`."""
+        texts = {path: self.get_file(path, ref) for path in paths}
+        return {path: text for path, text in texts.items() if text is not None}
+
+    def list_files(self, path: str, ref: str) -> list[str]:
+        """Every file under folder `path` as of commit `ref`, at any depth."""
+        return self._git("ls-tree", "-r", "--name-only", ref, "--", path).splitlines()
+
     def get_workflow_run(self, run_id: int) -> dict[str, object]:
         raise LocalGitError("a local review has no CI run")
 

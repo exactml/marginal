@@ -214,6 +214,75 @@ def test_get_file_is_none_for_a_missing_path_or_a_directory(monkeypatch, respons
     assert _client(session=session).get_file(".marginal/policies", "abc123") is None
 
 
+def test_list_files_reads_each_subfolder_as_one_tree(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.side_effect = [
+        _response(
+            200,
+            [
+                {"type": "file", "path": ".marginal/knowledge/README.md"},
+                {"type": "dir", "path": ".marginal/knowledge/paths", "sha": "t1"},
+            ],
+        ),
+        _response(
+            200,
+            {
+                "tree": [
+                    {"type": "tree", "path": "shop"},
+                    {"type": "blob", "path": "shop/c41d07.yaml"},
+                ]
+            },
+        ),
+    ]
+
+    files = _client(session=session).list_files(".marginal/knowledge", "abc123")
+
+    assert files == [".marginal/knowledge/README.md", ".marginal/knowledge/paths/shop/c41d07.yaml"]
+    args, kwargs = session.request.call_args
+    assert args[1] == "https://api.github.com/repos/acme/widgets/git/trees/t1"
+    assert kwargs["params"] == {"recursive": "1"}
+
+
+def test_get_files_reads_many_files_in_one_graphql_call(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    data = {"repository": {"f0": {"text": "kind: rule\n"}, "f1": None, "f2": {"text": None}}}
+    session.request.return_value = _response(200, {"data": data})
+
+    texts = _client(session=session).get_files(["a.yaml", "gone.yaml", "image.png"], "abc123")
+
+    assert texts == {"a.yaml": "kind: rule\n"}
+    assert session.request.call_count == 1
+    variables = session.request.call_args.kwargs["json"]["variables"]
+    assert variables["e0"] == "abc123:a.yaml"
+    assert variables["owner"] == "acme"
+
+
+def test_list_files_warns_when_github_truncates_a_tree(monkeypatch, capsys):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.side_effect = [
+        _response(200, [{"type": "dir", "path": "k/paths", "sha": "t1"}]),
+        _response(200, {"tree": [{"type": "blob", "path": "a.yaml"}], "truncated": True}),
+    ]
+
+    assert _client(session=session).list_files("k", "abc123") == ["k/paths/a.yaml"]
+    assert "k/paths has more files than GitHub lists at once" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "response",
+    [_response(404, {"message": "Not Found"}), _response(200, {"content": "eA=="})],
+)
+def test_list_files_is_empty_for_a_missing_folder_or_a_file(monkeypatch, response):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = response
+
+    assert _client(session=session).list_files(".marginal/knowledge", "abc123") == []
+
+
 def test_get_pull_request_files_returns_json_list(monkeypatch):
     monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
     session = MagicMock()
@@ -577,3 +646,66 @@ def test_get_permission_of_an_unknown_user_is_none(monkeypatch):
     session.request.return_value = _response(404, {"message": "Not Found"})
 
     assert _client(session=session).get_permission("ghost") == "none"
+
+
+def test_set_branch_creates_a_missing_branch_and_moves_an_existing_one(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.side_effect = [
+        _response(404, {"message": "Not Found"}),
+        _response(201, {}),
+        _response(200, {"object": {"sha": "old"}}),
+        _response(200, {}),
+    ]
+    client = _client(PermissionsConfig(write=PermissionsWrite(push=True)), session)
+
+    client.set_branch("marginal/knowledge", "s1")
+    client.set_branch("marginal/knowledge", "s2")
+
+    created, moved = session.request.call_args_list[1], session.request.call_args_list[3]
+    assert created.args[0] == "POST"
+    assert created.kwargs["json"] == {"ref": "refs/heads/marginal/knowledge", "sha": "s1"}
+    assert moved.args[0] == "PATCH"
+    assert moved.kwargs["json"] == {"sha": "s2", "force": True}
+
+
+def test_pushing_writes_need_permissions_write_push(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    client = _client()
+
+    with pytest.raises(PermissionDeniedError, match="permissions.write.push"):
+        client.set_branch("b", "s")
+    with pytest.raises(PermissionDeniedError, match="permissions.write.push"):
+        client.create_file("a.yaml", "x", "b", "m")
+    with pytest.raises(PermissionDeniedError, match="permissions.write.push"):
+        client.create_pull_request("b", "master", "t", "body")
+
+
+def test_create_file_commits_base64_text_to_a_branch(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = _response(201, {})
+    client = _client(PermissionsConfig(write=PermissionsWrite(push=True)), session)
+
+    client.create_file("k/a.yaml", "kind: rule\n", "marginal/knowledge", "Propose")
+
+    args, kwargs = session.request.call_args
+    assert (args[0], args[1]) == (
+        "PUT",
+        "https://api.github.com/repos/acme/widgets/contents/k/a.yaml",
+    )
+    assert kwargs["json"]["content"] == base64.b64encode(b"kind: rule\n").decode()
+    assert kwargs["json"]["branch"] == "marginal/knowledge"
+
+
+def test_file_paths_are_percent_encoded_in_the_url(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = _response(201, {})
+    client = _client(PermissionsConfig(write=PermissionsWrite(push=True)), session)
+
+    client.create_file("docs/c#/a?.yaml", "x", "b", "m")
+    client.get_file("docs/c#/a?.yaml", "abc123")
+
+    for call in session.request.call_args_list:
+        assert call.args[1].endswith("/contents/docs/c%23/a%3F.yaml")
