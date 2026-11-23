@@ -9,7 +9,7 @@ from pathlib import PurePosixPath
 from marginal.config.errors import ConfigError
 from marginal.config.schema import PermissionsConfig
 from marginal.context import load_base_config
-from marginal.context.knowledge import AcceptedClaim, claim_file
+from marginal.context.knowledge import KNOWLEDGE_DIR, AcceptedClaim, claim_file
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubError
 from marginal.oic.domain.schema import Relation
@@ -180,8 +180,12 @@ def _add_to_knowledge_pr(
         if base_sha is None:
             raise GitHubError(f"base branch {base} not found")
         client.set_branch(KNOWLEDGE_BRANCH, base_sha)
-    new = [(path, text) for path, text in files if client.get_file(path, KNOWLEDGE_BRANCH) is None]
-    for path, text in new:  # one already there was proposed or accepted before: keep it
+    # By id anywhere in the folder: the team may have moved a claim to `repo/`.
+    # shortcut: a claim the team deleted can come back when proposed again; that
+    # needs a record of rejections, which the knowledge store will hold.
+    known = {PurePosixPath(f).stem for f in client.list_files(KNOWLEDGE_DIR, KNOWLEDGE_BRANCH)}
+    new = [(path, text) for path, text in files if PurePosixPath(path).stem not in known]
+    for path, text in new:
         client.create_file(path, text, KNOWLEDGE_BRANCH, f"Propose knowledge from #{pr_number}")
     if knowledge_pr is None and restart and not new:
         return None  # all accepted already: a PR with no commits can't be opened

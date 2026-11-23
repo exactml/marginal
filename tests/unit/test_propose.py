@@ -315,7 +315,8 @@ def pushing(client, tmp_path):
         "user": {"login": "alice", "type": "User"},
     }
     client.list_review_comments.return_value = [finding, reply]
-    client.get_file.side_effect = lambda path, ref: None  # nothing on the knowledge branch yet
+    client.get_file.side_effect = lambda path, ref: None
+    client.list_files.return_value = []  # nothing on the knowledge branch yet
     # No knowledge branch yet; the base branch is at `base-head`.
     client.get_branch_sha.side_effect = {"marginal/knowledge": None, "master": "base-head"}.get
     client.list_pull_requests.return_value = []
@@ -355,10 +356,21 @@ def test_an_open_knowledge_pr_gets_the_new_files_and_is_not_reopened(pushing):
     assert pushing.create_file.call_count == 1
 
 
-def test_a_claim_already_on_the_knowledge_branch_is_not_written_again(pushing):
-    pushing.get_file.side_effect = lambda path, ref: (
-        "kind: decision\n" if ref == "marginal/knowledge" else None
-    )
+def _already_on_the_branch(pushing, folder):
+    """Make the claim `propose` writes already sit on the branch under `folder`."""
+    _propose("--comment")
+    written = pushing.create_file.call_args.args[0]
+    pushing.reset_mock()
+    pushing.list_files.return_value = [f"{folder}/{written.rsplit('/', 1)[-1]}"]
+
+
+@pytest.mark.parametrize(
+    # Where the team left it: where marginal put it, or moved to repo-wide.
+    "folder",
+    [".marginal/knowledge/paths", ".marginal/knowledge/repo"],
+)
+def test_a_claim_already_on_the_knowledge_branch_is_not_written_again(pushing, folder):
+    _already_on_the_branch(pushing, folder)
 
     _propose("--comment")
 
@@ -441,9 +453,7 @@ def test_a_pr_merged_into_another_branch_adds_nothing_to_the_knowledge_pr(pushin
 
 
 def test_claims_all_accepted_already_open_no_empty_knowledge_pr(pushing):
-    pushing.get_file.side_effect = lambda path, ref: (
-        "kind: decision\n" if ref == "marginal/knowledge" else None
-    )
+    _already_on_the_branch(pushing, ".marginal/knowledge/paths")
 
     _propose("--comment")
 
