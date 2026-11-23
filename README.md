@@ -304,7 +304,7 @@ A finding that breaks a policy says so, e.g. *"Changing rounding from ROUND_HALF
 ```yaml
 # .marginal/knowledge/paths/shop/c41d07.yaml
 repo: widgets                 # where it was decided
-applies_to: [widgets]         # repo names or globs; defaults to repo
+applies_to: [widgets]         # optional: repo names or globs; omitted, it applies here
 kind: decision                # or: rule
 statement: Discounts apply before tax, because invoices must match the POS.
 about: shop/pricing.py        # or a folder: shop/ (not needed under repo/)
