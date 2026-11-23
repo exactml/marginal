@@ -320,6 +320,7 @@ def pushing(client, tmp_path):
     # No knowledge branch yet; the base branch is at `base-head`.
     client.get_branch_sha.side_effect = {"marginal/knowledge": None, "master": "base-head"}.get
     client.list_pull_requests.return_value = []
+    client.list_pull_request_commits.return_value = []
     client.create_pull_request.return_value = {"html_url": "https://github.com/acme/widgets/pull/7"}
     return client
 
@@ -332,7 +333,7 @@ def test_a_merged_decision_opens_the_knowledge_pr(pushing):
     assert path.startswith(".marginal/knowledge/paths/") and path.endswith(".yaml")
     # alice replied with the decision; bob only wrote the PR.
     assert "kind: decision" in text and "pr: 42" in text and "author: alice" in text
-    assert (branch, message) == ("marginal/knowledge", "Propose knowledge from #42")
+    assert (branch, message) == ("marginal/knowledge", f"Propose knowledge from #42: {path}")
     head, base, title, _ = pushing.create_pull_request.call_args.args
     assert (head, base, title) == ("marginal/knowledge", "master", "marginal: knowledge to review")
     comment = pushing.create_issue_comment.call_args.args[1]
@@ -365,9 +366,9 @@ def _already_on_the_branch(pushing, folder):
 
 
 @pytest.mark.parametrize(
-    # Where the team left it: where marginal put it, or moved to repo-wide.
+    # Where the team left it: where marginal put it, moved to repo-wide, or rejected.
     "folder",
-    [".marginal/knowledge/paths", ".marginal/knowledge/repo"],
+    [".marginal/knowledge/paths", ".marginal/knowledge/repo", ".marginal/knowledge/rejected"],
 )
 def test_a_claim_already_on_the_knowledge_branch_is_not_written_again(pushing, folder):
     _already_on_the_branch(pushing, folder)
@@ -417,7 +418,9 @@ def test_a_missing_base_branch_is_named_and_the_proposal_still_posted(pushing, c
 
 
 def test_after_a_knowledge_pr_is_merged_the_next_one_starts_from_the_base(pushing):
-    pushing.list_pull_requests.return_value = [{"state": "closed", "head": {"sha": "k1"}}]
+    pushing.list_pull_requests.return_value = [
+        {"number": 7, "state": "closed", "merged_at": "2026-11-20", "head": {"sha": "k1"}}
+    ]
     pushing.get_branch_sha.side_effect = {"marginal/knowledge": "k1", "master": "base-head"}.get
 
     _propose("--comment")
@@ -461,3 +464,79 @@ def test_claims_all_accepted_already_open_no_empty_knowledge_pr(pushing):
     pushing.create_file.assert_not_called()
     pushing.create_pull_request.assert_not_called()
     assert "Added to" not in pushing.create_issue_comment.call_args.args[1]
+
+
+# -- rejections ----------------------------------------------------------------
+
+DELETED = ".marginal/knowledge/paths/shop/7be210.yaml"
+KEPT = ".marginal/knowledge/paths/shop/a3f91c.yaml"
+RECORD = ".marginal/knowledge/rejected/c41d07.yaml"
+
+
+def _previous_pr(pushing, merged, on_base):
+    """Knowledge PR #7, now merged or closed, whose commits added the files
+    `DELETED`, `KEPT` and `RECORD`; `on_base` is what reached the base branch."""
+    pushing.list_pull_requests.return_value = [
+        {
+            "number": 7,
+            "state": "closed",
+            "merged_at": "2026-11-20" if merged else None,
+            "head": {"sha": "k3"},
+        }
+    ]
+    pushing.get_branch_sha.side_effect = {"marginal/knowledge": "k3", "master": "base-head"}.get
+    pushing.list_pull_request_commits.return_value = [
+        {"sha": "k1", "commit": {"message": f"Propose knowledge from #40: {DELETED}"}},
+        {"sha": "k2", "commit": {"message": f"Propose knowledge from #41: {KEPT}"}},
+        {"sha": "k3", "commit": {"message": f"Record knowledge rejected in #5: {RECORD}"}},
+        {"sha": "k4", "commit": {"message": "Delete 7be210.yaml"}},
+    ]
+    pushing.list_files.side_effect = lambda folder, ref: on_base if ref == "base-head" else []
+    pushing.get_file.side_effect = lambda path, ref: (
+        f"statement: from {path} at {ref}\n" if path.startswith(".marginal/knowledge/") else None
+    )
+
+
+def _recorded(pushing):
+    return {
+        c.args[0]: (c.args[1], c.args[3])
+        for c in pushing.create_file.call_args_list
+        if c.args[0].startswith(".marginal/knowledge/rejected/")
+    }
+
+
+def test_a_claim_the_team_deleted_is_recorded_as_rejected(pushing):
+    """The team deleted 7be210 and un-rejected c41d07 before merging #7."""
+    _previous_pr(pushing, merged=True, on_base=[KEPT])
+
+    _propose("--comment")
+
+    assert _recorded(pushing) == {
+        ".marginal/knowledge/rejected/7be210.yaml": (
+            f"statement: from {DELETED} at k1\n",
+            "Record knowledge rejected in #7: .marginal/knowledge/rejected/7be210.yaml",
+        )
+    }
+    # Recorded on the fresh branch, before the new claim.
+    pushing.set_branch.assert_called_once_with("marginal/knowledge", "base-head")
+    assert pushing.create_file.call_args_list[0].args[0].endswith("rejected/7be210.yaml")
+
+
+def test_closing_a_knowledge_pr_rejects_its_claims_and_keeps_its_records(pushing):
+    _previous_pr(pushing, merged=False, on_base=[])
+
+    _propose("--comment")
+
+    assert set(_recorded(pushing)) == {
+        ".marginal/knowledge/rejected/7be210.yaml",
+        ".marginal/knowledge/rejected/a3f91c.yaml",
+        ".marginal/knowledge/rejected/c41d07.yaml",
+    }
+
+
+def test_a_rejection_already_recorded_on_the_base_is_not_written_again(pushing):
+    _previous_pr(pushing, merged=True, on_base=[KEPT, ".marginal/knowledge/rejected/7be210.yaml"])
+
+    _propose("--comment")
+
+    assert _recorded(pushing) == {}
