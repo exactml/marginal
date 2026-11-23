@@ -285,3 +285,93 @@ def test_another_bot_cannot_supply_rules_or_take_over_the_proposal(client, capsy
 
     assert "Forged" not in client.create_issue_comment.call_args.args[1]
     client.update_issue_comment.assert_not_called()
+
+
+# -- the rolling knowledge PR ------------------------------------------------
+
+
+@pytest.fixture
+def pushing(client, tmp_path):
+    """`client` with `permissions.write.push` on and a maintainer decision to propose."""
+    (tmp_path / ".marginal" / "config.yaml").write_text(
+        "version: 1\nproposals:\n  enabled: true\npermissions:\n  write:\n    push: true\n"
+    )
+    client.get_pull_request.return_value = {
+        **MERGED,
+        "base": {"sha": "abc", "ref": "master"},
+        "user": {"login": "bob"},
+    }
+    finding = {
+        "id": 1,
+        "path": "requirements.txt",
+        "line": 2,
+        "body": "🟡 **Medium**\n\nUnpinned.\n\n<!-- marginal:finding:0000000000000000 -->",
+        "user": {"login": "github-actions[bot]", "type": "Bot"},
+    }
+    reply = {
+        "id": 2,
+        "in_reply_to_id": 1,
+        "body": "Intentional: we pin requests because 2.32 broke retries.",
+        "user": {"login": "alice", "type": "User"},
+    }
+    client.list_review_comments.return_value = [finding, reply]
+    client.get_file.side_effect = lambda path, ref: None  # nothing on the knowledge branch yet
+    client.get_branch_sha.return_value = "base-head"
+    client.find_open_pull_request.return_value = None
+    client.create_pull_request.return_value = {"html_url": "https://github.com/acme/widgets/pull/7"}
+    return client
+
+
+def test_a_merged_decision_opens_the_knowledge_pr(pushing):
+    assert _propose("--comment") == 0
+
+    pushing.set_branch.assert_called_once_with("marginal/knowledge", "base-head")
+    [(path, text, branch, message)] = [c.args for c in pushing.create_file.call_args_list]
+    assert path.startswith(".marginal/knowledge/paths/") and path.endswith(".yaml")
+    assert "kind: decision" in text and "pr: 42" in text and "author: bob" in text
+    assert (branch, message) == ("marginal/knowledge", "Propose knowledge from #42")
+    head, base, title, _ = pushing.create_pull_request.call_args.args
+    assert (head, base, title) == ("marginal/knowledge", "master", "marginal: knowledge to review")
+    comment = pushing.create_issue_comment.call_args.args[1]
+    assert "Added to https://github.com/acme/widgets/pull/7 for the team to review." in comment
+
+
+def test_an_open_knowledge_pr_gets_the_new_files_and_is_not_reopened(pushing):
+    pushing.find_open_pull_request.return_value = {
+        "html_url": "https://github.com/acme/widgets/pull/7"
+    }
+
+    _propose("--comment")
+
+    pushing.set_branch.assert_not_called()
+    pushing.create_pull_request.assert_not_called()
+    assert pushing.create_file.call_count == 1
+
+
+def test_a_claim_already_on_the_knowledge_branch_is_not_written_again(pushing):
+    pushing.get_file.side_effect = lambda path, ref: (
+        "kind: decision\n" if ref == "marginal/knowledge" else None
+    )
+
+    _propose("--comment")
+
+    pushing.create_file.assert_not_called()
+
+
+def test_without_push_permission_nothing_is_pushed(pushing, tmp_path):
+    (tmp_path / ".marginal" / "config.yaml").write_text("version: 1\nproposals:\n  enabled: true\n")
+
+    _propose("--comment")
+
+    pushing.set_branch.assert_not_called()
+    pushing.create_file.assert_not_called()
+    assert "Added to" not in pushing.create_issue_comment.call_args.args[1]
+
+
+def test_only_structural_claims_open_no_knowledge_pr(pushing):
+    pushing.list_review_comments.return_value = []
+
+    _propose("--comment")
+
+    pushing.find_open_pull_request.assert_not_called()
+    pushing.create_file.assert_not_called()
