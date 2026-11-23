@@ -340,6 +340,19 @@ class GitHubClient:
             },
         )
 
+    def delete_file(self, path: str, branch: str, message: str) -> None:
+        """Commit the deletion of file `path` from `branch`.
+
+        Requires `permissions.write.push`.
+        """
+        self._require_write("push")
+        url = f"/repos/{self._repo}/contents/{quote(path)}"
+        # GitHub deletes a file only given the blob it holds now.
+        blob = self._request("GET", url, params={"ref": branch})
+        self._request(
+            "DELETE", url, json={"message": message, "sha": blob["sha"], "branch": branch}
+        )
+
     def list_pull_requests(self, head: str) -> list[dict[str, object]]:
         """The newest 100 pull requests from this repo's branch `head`, open
         or closed, newest first."""

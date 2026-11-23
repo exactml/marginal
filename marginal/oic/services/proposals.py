@@ -49,6 +49,8 @@ class ProposedClaim:
     reason: str = ""
     # Who stated it, when known (a maintainer's reply); not part of the id.
     author: str = ""
+    # The id of the accepted rule or decision it replaces, if any; not part of the id.
+    replaces: str = ""
 
     @property
     def id(self) -> str:
@@ -166,10 +168,10 @@ def decisions_from_replies(
 
 
 def knowledge_claims(
-    knowledge: Iterable[tuple[str, str, str, str, int, str]],
+    knowledge: Iterable[tuple[str, str, str, str, int, str, str]],
     files: Iterable[dict[str, object]],
 ) -> list[ProposedClaim]:
-    """A claim for each `(kind, statement, about, file, line, quote)` a review
+    """A claim for each `(kind, statement, about, file, line, quote, replaces)` a review
     reported whose quote is still on a line of `file` in the merged diff: a
     later push may have removed what the rule or decision rested on.
 
@@ -183,13 +185,19 @@ def knowledge_claims(
     }
     relation = {"rule": Relation.CONSTRAINS, "decision": Relation.DECISION_ABOUT}
     claims = []
-    for kind, statement, about, file, line, quote in knowledge:
+    for kind, statement, about, file, line, quote, replaces in knowledge:
         quote = " ".join(quote.split())
         still_there = bool(quote) and any(quote in text for text in shown.get(file, []))
         if kind in relation and still_there:
             path = about if about in shown else file
             claims.append(
-                ProposedClaim(f"{kind}: {statement}", relation[kind], path, f"{file}:{line}")
+                ProposedClaim(
+                    f"{kind}: {statement}",
+                    relation[kind],
+                    path,
+                    f"{file}:{line}",
+                    replaces=replaces,
+                )
             )
     return list({claim.id: claim for claim in claims}.values())
 

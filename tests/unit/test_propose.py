@@ -542,6 +542,65 @@ def test_a_rejection_already_recorded_on_the_base_is_not_written_again(pushing):
     assert _recorded(pushing) == {}
 
 
+# -- supersession --------------------------------------------------------------
+
+# The new rule is about requirements.txt, so its file sits at the top of paths/.
+OLD = ".marginal/knowledge/paths/7be210.yaml"
+
+
+def _review_replacing(pushing, replaces):
+    """A marginal review whose rule replaces the accepted claim `replaces`."""
+    rule = Knowledge(
+        kind="rule",
+        statement="Requests is pinned to an exact version.",
+        about="requirements.txt",
+        evidence=Evidence(file="requirements.txt", line=2, quote="requests==2.31.0"),
+        replaces=replaces,
+    )
+    pushing.list_review_comments.return_value = []
+    pushing.list_reviews.return_value = [
+        {
+            "body": "### 🤖 marginal review\n\n" + knowledge_marker([rule]),
+            "user": {"login": "github-actions[bot]", "type": "Bot"},
+        }
+    ]
+
+
+@pytest.mark.parametrize("old", [OLD, ".marginal/knowledge/repo/7be210.yaml"])
+def test_a_claim_that_replaces_an_accepted_one_supersedes_it(pushing, old):
+    _review_replacing(pushing, "7be210")
+    pushing.list_files.return_value = [old]
+
+    _propose("--comment")
+
+    [(path, text, _, _)] = [c.args for c in pushing.create_file.call_args_list]
+    assert "supersedes: 7be210" in text
+    stem = path.rsplit("/", 1)[-1].removesuffix(".yaml")
+    pushing.delete_file.assert_called_once_with(
+        old, "marginal/knowledge", f"Supersede 7be210 with {stem}"
+    )
+
+
+@pytest.mark.parametrize(
+    "on_branch",
+    # The id the model gave matches nothing, a claim the team rejected, or one in
+    # another area, which the review never showed.
+    [
+        [],
+        [".marginal/knowledge/rejected/7be210.yaml"],
+        [".marginal/knowledge/paths/shop/7be210.yaml"],
+    ],
+)
+def test_a_replaced_id_the_team_doesnt_hold_supersedes_nothing(pushing, on_branch):
+    _review_replacing(pushing, "7be210")
+    pushing.list_files.return_value = on_branch
+
+    _propose("--comment")
+
+    assert "supersedes" not in pushing.create_file.call_args.args[1]
+    pushing.delete_file.assert_not_called()
+
+
 def test_a_knowledge_pr_past_githubs_commit_listing_cap_warns(pushing, capsys):
     _previous_pr(pushing, merged=True, on_base=[KEPT])
     commits = pushing.list_pull_request_commits.return_value
@@ -554,3 +613,30 @@ def test_a_knowledge_pr_past_githubs_commit_listing_cap_warns(pushing, capsys):
     assert "knowledge PR #7 has 250 or more commits" in capsys.readouterr().err
     # What the listing shows is still recorded.
     assert ".marginal/knowledge/rejected/7be210.yaml" in _recorded(pushing)
+
+
+def test_two_claims_replacing_the_same_one_delete_it_once(pushing):
+    rules = [
+        Knowledge(
+            kind=kind,
+            statement=f"Requests is pinned ({kind}).",
+            about="requirements.txt",
+            evidence=Evidence(file="requirements.txt", line=2, quote="requests==2.31.0"),
+            replaces="7be210",
+        )
+        for kind in ("rule", "decision")
+    ]
+    pushing.list_review_comments.return_value = []
+    pushing.list_reviews.return_value = [
+        {
+            "body": "### 🤖 marginal review\n\n" + knowledge_marker(rules),
+            "user": {"login": "github-actions[bot]", "type": "Bot"},
+        }
+    ]
+    pushing.list_files.return_value = [OLD]
+
+    _propose("--comment")
+
+    texts = [c.args[1] for c in pushing.create_file.call_args_list]
+    assert len(texts) == 2 and all("supersedes: 7be210" in t for t in texts)
+    pushing.delete_file.assert_called_once()

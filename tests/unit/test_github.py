@@ -688,6 +688,8 @@ def test_pushing_writes_need_permissions_write_push(monkeypatch):
     with pytest.raises(PermissionDeniedError, match="permissions.write.push"):
         client.create_file("a.yaml", "x", "b", "m")
     with pytest.raises(PermissionDeniedError, match="permissions.write.push"):
+        client.delete_file("a.yaml", "b", "m")
+    with pytest.raises(PermissionDeniedError, match="permissions.write.push"):
         client.create_pull_request("b", "master", "t", "body")
 
 
@@ -706,6 +708,24 @@ def test_create_file_commits_base64_text_to_a_branch(monkeypatch):
     )
     assert kwargs["json"]["content"] == base64.b64encode(b"kind: rule\n").decode()
     assert kwargs["json"]["branch"] == "marginal/knowledge"
+
+
+def test_delete_file_deletes_the_blob_the_branch_holds(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.side_effect = [_response(200, {"sha": "blob1"}), _response(200, {})]
+    client = _client(PermissionsConfig(write=PermissionsWrite(push=True)), session)
+
+    client.delete_file("k/a.yaml", "marginal/knowledge", "Supersede")
+
+    get, delete = session.request.call_args_list
+    assert get.args[0] == "GET" and get.kwargs["params"] == {"ref": "marginal/knowledge"}
+    assert delete.args[0] == "DELETE"
+    assert delete.kwargs["json"] == {
+        "message": "Supersede",
+        "sha": "blob1",
+        "branch": "marginal/knowledge",
+    }
 
 
 def test_file_paths_are_percent_encoded_in_the_url(monkeypatch):

@@ -47,6 +47,8 @@ class AcceptedClaim(BaseModel):
     about: str = ""
     pr: int | None = None
     author: str | None = None
+    # The id of the claim this one replaced, when a later PR changed it.
+    supersedes: str | None = None
 
 
 def load_accepted(

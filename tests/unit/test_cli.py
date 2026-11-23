@@ -2459,7 +2459,7 @@ def test_review_loads_accepted_knowledge_from_the_base_commit(
         [{"filename": "shop/selection.py", "patch": "+levels.reverse()"}],
     )
 
-    assert "- rule (PR #462, shop/helpers.py): agg levels stay ordered" in prompt
+    assert "- rule a3f91c (PR #462, shop/helpers.py): agg levels stay ordered" in prompt
     assert "loaded 1 accepted rule(s) and decision(s)" in capsys.readouterr().err
 
 

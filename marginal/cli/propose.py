@@ -10,7 +10,13 @@ from pathlib import PurePosixPath
 from marginal.config.errors import ConfigError
 from marginal.config.schema import PermissionsConfig
 from marginal.context import load_base_config
-from marginal.context.knowledge import KNOWLEDGE_DIR, REJECTED_DIR, AcceptedClaim, claim_file
+from marginal.context.knowledge import (
+    KNOWLEDGE_DIR,
+    REJECTED_DIR,
+    REPO_DIR,
+    AcceptedClaim,
+    claim_file,
+)
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubError
 from marginal.oic.domain.schema import Relation
@@ -50,6 +56,7 @@ it changes.
 under `.marginal/knowledge/rejected/` and doesn't propose it again; delete that record to \
 let it come back.
 - **Fix** it: edit the file.
+- **Keep an older claim** marginal deleted because a newer one `supersedes` it: restore its file.
 - **Make it repo-wide**, so every review loads it: move the file to `.marginal/knowledge/repo/`.
 
 Merging accepts what's left. Each merged PR adds to this one until it's merged; \
@@ -112,7 +119,15 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
         knowledge = posted_knowledge(with_knowledge[-1:])
         claims += knowledge_claims(
             (
-                (k.kind, k.statement, k.about, k.evidence.file, k.evidence.line, k.evidence.quote)
+                (
+                    k.kind,
+                    k.statement,
+                    k.about,
+                    k.evidence.file,
+                    k.evidence.line,
+                    k.evidence.quote,
+                    k.replaces,
+                )
                 for k in knowledge
             ),
             files,
@@ -158,23 +173,22 @@ def _add_to_knowledge_pr(
         return None
     kinds = {Relation.CONSTRAINS: "rule", Relation.DECISION_ABOUT: "decision"}
     pr_author = str((pull_request.get("user") or {}).get("login") or "")
-    files = [
-        claim_file(
-            AcceptedClaim(
-                id=claim.id,
-                repo=repo.split("/")[-1],
-                kind=kinds[claim.relation],
-                statement=claim.subject.split(": ", 1)[-1],
-                about=claim.object,
-                pr=pr_number,
-                # The replier for a decision from a reply; else the PR's author.
-                author=claim.author or pr_author or None,
-            )
+    accepted = [
+        AcceptedClaim(
+            id=claim.id,
+            repo=repo.split("/")[-1],
+            kind=kinds[claim.relation],
+            statement=claim.subject.split(": ", 1)[-1],
+            about=claim.object,
+            pr=pr_number,
+            # The replier for a decision from a reply; else the PR's author.
+            author=claim.author or pr_author or None,
+            supersedes=claim.replaces or None,
         )
         for claim in claims
         if claim.relation in kinds
     ]
-    if not files:
+    if not accepted:
         return None
     pulls = client.list_pull_requests(KNOWLEDGE_BRANCH)
     knowledge_pr = next((p for p in pulls if p["state"] == "open"), None)
@@ -202,12 +216,33 @@ def _add_to_knowledge_pr(
             )
     # By id anywhere in the folder: the team may have moved a claim to `repo/`, and
     # one under `rejected/` isn't proposed again.
-    known = {PurePosixPath(f).stem for f in client.list_files(KNOWLEDGE_DIR, KNOWLEDGE_BRANCH)}
-    new = [(path, text) for path, text in files if PurePosixPath(path).stem not in known]
-    for path, text in new:
+    on_branch = client.list_files(KNOWLEDGE_DIR, KNOWLEDGE_BRANCH)
+    known = {PurePosixPath(f).stem for f in on_branch}
+    # Only a claim the team still holds can be replaced: the id comes from the model.
+    live = {
+        PurePosixPath(f).stem: f
+        for f in on_branch
+        if f.endswith((".yaml", ".yml")) and not f.startswith(REJECTED_DIR)
+    }
+    new = [c for c in accepted if c.id not in known]
+    retired: set[str] = set()
+    for claim in new:
+        old = live.get(claim.supersedes or "") if claim.supersedes != claim.id else None
+        # Only one the review could have shown: repo-wide, or in this claim's folder
+        # or a folder above it, as reviews load them.
+        folders = PurePosixPath(claim_file(claim)[0]).parents
+        if old and not (old.startswith(REPO_DIR) or PurePosixPath(old).parent in folders):
+            old = None
+        path, text = claim_file(claim if old else claim.model_copy(update={"supersedes": None}))
         client.create_file(
             path, text, KNOWLEDGE_BRANCH, f"Propose knowledge from #{pr_number}: {path}"
         )
+        if old and old not in retired:
+            retired.add(old)  # two new claims may replace the same one
+            # The team sees the old file's deletion in the knowledge PR, and can undo it.
+            client.delete_file(
+                old, KNOWLEDGE_BRANCH, f"Supersede {claim.supersedes} with {claim.id}"
+            )
     if knowledge_pr is None and restart and not new:
         return None  # all accepted already: a PR with no commits can't be opened
     if knowledge_pr is None:

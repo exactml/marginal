@@ -139,6 +139,8 @@ class Knowledge(BaseModel):
     # The file the rule or decision is about.
     about: str
     evidence: Evidence
+    # The id of an accepted rule or decision this one replaces, or "" for none.
+    replaces: str = ""
 
 
 class FindingsResponse(BaseModel):
