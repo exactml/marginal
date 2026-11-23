@@ -332,16 +332,16 @@ class GitHubClient:
             },
         )
 
-    def find_open_pull_request(self, head: str) -> dict[str, object] | None:
-        """The open pull request from this repo's branch `head`, if any."""
+    def list_pull_requests(self, head: str) -> list[dict[str, object]]:
+        """The newest 100 pull requests from this repo's branch `head`, open
+        or closed, newest first."""
         self._require_read("pull_requests")
         owner = self._repo.split("/", 1)[0]
-        pulls = self._request(
+        return self._request(
             "GET",
             f"/repos/{self._repo}/pulls",
-            params={"head": f"{owner}:{head}", "state": "open"},
+            params={"head": f"{owner}:{head}", "state": "all", "per_page": 100},
         )
-        return pulls[0] if pulls else None
 
     def create_pull_request(self, head: str, base: str, title: str, body: str) -> dict[str, object]:
         """Open a pull request from branch `head` into `base`.

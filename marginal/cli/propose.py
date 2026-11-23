@@ -164,9 +164,15 @@ def _add_to_knowledge_pr(
     if not files:
         return None
     base = str(pull_request["base"]["ref"])
-    knowledge_pr = client.find_open_pull_request(KNOWLEDGE_BRANCH)
-    if knowledge_pr is None:
-        # Start over from the base branch: a knowledge PR closed unmerged was a rejection.
+    pulls = client.list_pull_requests(KNOWLEDGE_BRANCH)
+    knowledge_pr = next((p for p in pulls if p["state"] == "open"), None)
+    branch_sha = client.get_branch_sha(KNOWLEDGE_BRANCH)
+    # A merged or closed PR's files are done with (a closed one was rejected), so
+    # start over from the base branch. Files no PR carried yet, because opening
+    # one failed, stay: the PR is opened below.
+    if knowledge_pr is None and (
+        branch_sha is None or any(p["head"]["sha"] == branch_sha for p in pulls)
+    ):
         base_sha = client.get_branch_sha(base)
         if base_sha is None:
             raise GitHubError(f"base branch {base} not found")
