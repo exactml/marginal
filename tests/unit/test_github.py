@@ -324,6 +324,16 @@ def test_get_pull_request_files_follows_every_full_page(monkeypatch):
     assert second_call.kwargs["params"] == {"per_page": 100, "page": 2}
 
 
+def test_list_pull_request_commits_reads_the_prs_commits(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = _response(200, [{"sha": "k1"}])
+    client = _client(session=session)
+
+    assert client.list_pull_request_commits(7) == [{"sha": "k1"}]
+    assert session.request.call_args.args[1].endswith("/pulls/7/commits")
+
+
 def test_get_compare_files_returns_the_compare_files_list(monkeypatch):
     monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
     session = MagicMock()

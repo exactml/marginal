@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from collections.abc import Callable
 from pathlib import PurePosixPath
@@ -9,7 +10,7 @@ from pathlib import PurePosixPath
 from marginal.config.errors import ConfigError
 from marginal.config.schema import PermissionsConfig
 from marginal.context import load_base_config
-from marginal.context.knowledge import KNOWLEDGE_DIR, AcceptedClaim, claim_file
+from marginal.context.knowledge import KNOWLEDGE_DIR, REJECTED_DIR, AcceptedClaim, claim_file
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubError
 from marginal.oic.domain.schema import Relation
@@ -33,12 +34,21 @@ _WORKFLOW_BOT = "github-actions[bot]"
 # The branch of the one open knowledge PR, which each merged PR adds files to.
 KNOWLEDGE_BRANCH = "marginal/knowledge"
 _KNOWLEDGE_PR_TITLE = "marginal: knowledge to review"
+# Each file marginal commits to the knowledge branch is named in its commit message,
+# so a later run can tell which of them the team deleted.
+_COMMITTED_FILE = re.compile(
+    r"(?:Propose knowledge from|Record knowledge rejected in) #\d+: (?P<path>.+\.yaml)$"
+)
+# GitHub lists at most this many of a pull request's commits.
+_MAX_PR_COMMITS = 250
 _KNOWLEDGE_PR_BODY = """Rules and decisions marginal found in merged pull requests, one file each \
 under `.marginal/knowledge/paths/`. Once merged, a review loads the ones about the files \
 it changes.
 
 - **Accept** a claim: keep its file.
-- **Reject** it: delete the file.
+- **Reject** it: delete the file. Once this PR is merged or closed, marginal records it \
+under `.marginal/knowledge/rejected/` and doesn't propose it again; delete that record to \
+let it come back.
 - **Fix** it: edit the file.
 - **Make it repo-wide**, so every review loads it: move the file to `.marginal/knowledge/repo/`.
 
@@ -179,14 +189,25 @@ def _add_to_knowledge_pr(
         base_sha = client.get_branch_sha(base)
         if base_sha is None:
             raise GitHubError(f"base branch {base} not found")
+        # The newest PR that isn't open is the one just merged or closed.
+        previous = next((p for p in pulls if p["state"] != "open"), None)
+        rejected = _rejected(client, previous, base_sha) if previous else {}
         client.set_branch(KNOWLEDGE_BRANCH, base_sha)
-    # By id anywhere in the folder: the team may have moved a claim to `repo/`.
-    # shortcut: a claim the team deleted can come back when proposed again; that
-    # needs a record of rejections, which the knowledge store will hold.
+        for path, text in rejected.items():
+            client.create_file(
+                path,
+                text,
+                KNOWLEDGE_BRANCH,
+                f"Record knowledge rejected in #{previous['number']}: {path}",
+            )
+    # By id anywhere in the folder: the team may have moved a claim to `repo/`, and
+    # one under `rejected/` isn't proposed again.
     known = {PurePosixPath(f).stem for f in client.list_files(KNOWLEDGE_DIR, KNOWLEDGE_BRANCH)}
     new = [(path, text) for path, text in files if PurePosixPath(path).stem not in known]
     for path, text in new:
-        client.create_file(path, text, KNOWLEDGE_BRANCH, f"Propose knowledge from #{pr_number}")
+        client.create_file(
+            path, text, KNOWLEDGE_BRANCH, f"Propose knowledge from #{pr_number}: {path}"
+        )
     if knowledge_pr is None and restart and not new:
         return None  # all accepted already: a PR with no commits can't be opened
     if knowledge_pr is None:
@@ -194,6 +215,38 @@ def _add_to_knowledge_pr(
             KNOWLEDGE_BRANCH, base, _KNOWLEDGE_PR_TITLE, _KNOWLEDGE_PR_BODY
         )
     return str(knowledge_pr["html_url"])
+
+
+def _rejected(client: GitHubClient, previous: dict[str, object], base_sha: str) -> dict[str, str]:
+    """The files to record under `rejected/`, by path: each claim marginal
+    committed to the knowledge PR `previous` whose id is nowhere in the
+    knowledge folder at `base_sha`, because the team deleted it or closed the
+    PR. Each holds the claim as marginal proposed it.
+
+    Records a closed PR carried are kept too; for a merged one the base is the
+    record, since the team may have deleted one to let its claim come back."""
+    on_base = {PurePosixPath(f).stem for f in client.list_files(KNOWLEDGE_DIR, base_sha)}
+    merged = bool(previous.get("merged_at"))
+    committed: dict[str, tuple[str, str]] = {}
+    commits = client.list_pull_request_commits(int(previous["number"]))
+    # shortcut: GitHub lists a PR's first 250 commits only; reading further means
+    # walking the branch's history, worth it if knowledge PRs grow that long.
+    if len(commits) >= _MAX_PR_COMMITS:
+        print(
+            f"marginal propose: warning: knowledge PR #{previous['number']} has "
+            f"{_MAX_PR_COMMITS} or more commits; a claim deleted after the first "
+            f"{_MAX_PR_COMMITS} isn't recorded as rejected and may be proposed again",
+            file=sys.stderr,
+        )
+    for commit in commits:
+        match = _COMMITTED_FILE.match(str(commit["commit"]["message"]).splitlines()[0])
+        if not match or (merged and match["path"].startswith(REJECTED_DIR)):
+            continue
+        claim_id = PurePosixPath(match["path"]).stem
+        if claim_id not in on_base:
+            committed[f"{REJECTED_DIR}{claim_id}.yaml"] = (match["path"], str(commit["sha"]))
+    texts = {path: client.get_file(source, sha) for path, (source, sha) in committed.items()}
+    return {path: text for path, text in texts.items() if text is not None}
 
 
 def _trusted_author(client: GitHubClient) -> Callable[[dict[str, object]], bool]:

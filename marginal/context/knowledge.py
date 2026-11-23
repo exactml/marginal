@@ -6,6 +6,7 @@ never conflicts with another:
 
     .marginal/knowledge/repo/d2e8a1.yaml         repo-wide: every review
     .marginal/knowledge/paths/shop/c41d07.yaml   about shop/: reviews touching it
+    .marginal/knowledge/rejected/7be210.yaml     rejected: never loaded or proposed again
 
 The folder is the opt-in: without it a review is unchanged.
 """
@@ -26,6 +27,7 @@ from marginal.github.client import GitHubClient
 KNOWLEDGE_DIR = ".marginal/knowledge"
 REPO_DIR = f"{KNOWLEDGE_DIR}/repo/"
 PATHS_DIR = f"{KNOWLEDGE_DIR}/paths/"
+REJECTED_DIR = f"{KNOWLEDGE_DIR}/rejected/"
 # Each loaded claim costs prompt tokens on every review it reaches.
 MAX_ACCEPTED_PER_REVIEW = 15
 # Repo-wide claims reach every review, so they get a smaller share.

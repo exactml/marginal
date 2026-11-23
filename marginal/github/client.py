@@ -171,6 +171,11 @@ class GitHubClient:
         self._require_read("pull_requests")
         return self._get_all_pages(f"/repos/{self._repo}/pulls/{number}/files")
 
+    def list_pull_request_commits(self, number: int) -> list[dict[str, object]]:
+        """The PR's commits, oldest first (GitHub lists at most 250)."""
+        self._require_read("pull_requests")
+        return self._get_all_pages(f"/repos/{self._repo}/pulls/{number}/commits")
+
     def get_compare_files(self, base: str, head: str) -> list[dict[str, object]]:
         """Return the files changed between commits `base` and `head`, in the
         same shape as `get_pull_request_files`.
