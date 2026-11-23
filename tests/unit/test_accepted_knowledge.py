@@ -131,13 +131,20 @@ def test_load_keeps_only_claims_for_this_repo():
     commit = _Commit(
         {
             f"{REPO}/own.yaml": _yaml(repo="widgets", pr=4),
-            f"{REPO}/other.yaml": _yaml(repo="gadgets", pr=3),
-            f"{REPO}/glob.yaml": _yaml(repo="core", applies_to="[wid*]", pr=2),
+            # Decided elsewhere, but its file is here and it names no repos.
+            f"{REPO}/copied.yaml": _yaml(repo="gadgets", pr=3),
+            f"{REPO}/glob.yaml": _yaml(repo="core", applies_to='["widg?ts"]', pr=2),
             f"{REPO}/moved.yaml": _yaml(repo="widgets", applies_to="[gadgets]", pr=1),
         }
     )
 
-    assert _ids(load_accepted(commit, "abc", "acme/widgets", ["a.py"])) == ["own", "glob"]
+    assert _ids(load_accepted(commit, "abc", "acme/widgets", ["a.py"])) == [
+        "own",
+        "copied",
+        "glob",
+    ]
+    # A local review names the repo after its folder, which may differ.
+    assert _ids(load_accepted(commit, "abc", "widgets-clone", ["a.py"])) == ["own", "copied"]
 
 
 def test_load_caps_repo_wide_claims_and_warns(capsys):

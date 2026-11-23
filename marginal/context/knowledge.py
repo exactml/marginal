@@ -36,7 +36,8 @@ class AcceptedClaim(BaseModel):
     # Unknown keys are ignored, so a file written for a newer marginal still loads.
     id: str  # the file's name
     repo: str
-    # Repo names or globs (`customer-pipeline-*`) it applies to; empty means `repo`.
+    # Repo names or globs (`customer-pipeline-*`) it applies to; empty means the
+    # repo whose folder holds it, whatever that repo is named.
     applies_to: list[str] = []
     kind: Literal["rule", "decision"]
     statement: str
@@ -103,10 +104,12 @@ def parse_accepted(path: str, text: str) -> AcceptedClaim | None:
 
 
 def _read(client: GitHubClient, ref: str, path: str, repo: str) -> AcceptedClaim | None:
-    """The claim in `path` at `ref`, if it's valid and applies to `repo`."""
+    """The claim in `path` at `ref`, if it's valid and applies to `repo`. One
+    without `applies_to` applies here, so a local review needn't know the
+    repo's real name."""
     text = client.get_file(path, ref)
     claim = parse_accepted(path, text) if text is not None else None
-    if claim and any(fnmatch(repo, pattern) for pattern in claim.applies_to or [claim.repo]):
+    if claim and (not claim.applies_to or any(fnmatch(repo, p) for p in claim.applies_to)):
         return claim
     return None
 
