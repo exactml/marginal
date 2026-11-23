@@ -646,3 +646,53 @@ def test_get_permission_of_an_unknown_user_is_none(monkeypatch):
     session.request.return_value = _response(404, {"message": "Not Found"})
 
     assert _client(session=session).get_permission("ghost") == "none"
+
+
+def test_set_branch_creates_a_missing_branch_and_moves_an_existing_one(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.side_effect = [
+        _response(404, {"message": "Not Found"}),
+        _response(201, {}),
+        _response(200, {"object": {"sha": "old"}}),
+        _response(200, {}),
+    ]
+    client = _client(PermissionsConfig(write=PermissionsWrite(push=True)), session)
+
+    client.set_branch("marginal/knowledge", "s1")
+    client.set_branch("marginal/knowledge", "s2")
+
+    created, moved = session.request.call_args_list[1], session.request.call_args_list[3]
+    assert created.args[0] == "POST"
+    assert created.kwargs["json"] == {"ref": "refs/heads/marginal/knowledge", "sha": "s1"}
+    assert moved.args[0] == "PATCH"
+    assert moved.kwargs["json"] == {"sha": "s2", "force": True}
+
+
+def test_pushing_writes_need_permissions_write_push(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    client = _client()
+
+    with pytest.raises(PermissionDeniedError, match="permissions.write.push"):
+        client.set_branch("b", "s")
+    with pytest.raises(PermissionDeniedError, match="permissions.write.push"):
+        client.create_file("a.yaml", "x", "b", "m")
+    with pytest.raises(PermissionDeniedError, match="permissions.write.push"):
+        client.create_pull_request("b", "master", "t", "body")
+
+
+def test_create_file_commits_base64_text_to_a_branch(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = _response(201, {})
+    client = _client(PermissionsConfig(write=PermissionsWrite(push=True)), session)
+
+    client.create_file("k/a.yaml", "kind: rule\n", "marginal/knowledge", "Propose")
+
+    args, kwargs = session.request.call_args
+    assert (args[0], args[1]) == (
+        "PUT",
+        "https://api.github.com/repos/acme/widgets/contents/k/a.yaml",
+    )
+    assert kwargs["json"]["content"] == base64.b64encode(b"kind: rule\n").decode()
+    assert kwargs["json"]["branch"] == "marginal/knowledge"
