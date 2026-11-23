@@ -41,19 +41,19 @@ def _ids(claims):
 
 def test_parse_reads_every_field_and_takes_the_id_from_the_file_name():
     text = """
-repo: rocks-noob
-applies_to: [rocks-noob, customer-pipeline-*]
+repo: widgets
+applies_to: [widgets, widgets-*]
 kind: decision
-statement: noob runs on the ML runtime
-about: rocks/noob/cluster.py
+statement: checkout runs on the payments service
+about: shop/cart/payments.py
 pr: 516
 author: some-login
 supersedes: 7be210
 """
-    claim = parse_accepted(f"{PATHS}/rocks/noob/a3f91c.yaml", text)
+    claim = parse_accepted(f"{PATHS}/shop/cart/a3f91c.yaml", text)
 
     assert claim.id == "a3f91c"
-    assert claim.applies_to == ["rocks-noob", "customer-pipeline-*"]
+    assert claim.applies_to == ["widgets", "widgets-*"]
     assert (claim.kind, claim.pr, claim.author) == ("decision", 516, "some-login")
 
 
@@ -75,22 +75,22 @@ def test_parse_skips_a_bad_file_with_a_warning(capsys):
 def test_load_matches_the_file_its_folder_and_its_siblings_and_reads_no_other_area():
     commit = _Commit(
         {
-            f"{PATHS}/rocks/noob/same.yaml": _yaml("rocks/noob/helpers.py", pr=1),
-            f"{PATHS}/rocks/noob/sibling.yaml": _yaml("rocks/noob/agg.py", pr=2),
-            f"{PATHS}/rocks/folder.yaml": _yaml("rocks/", pr=3),
-            f"{PATHS}/rocks/parent-file.yaml": _yaml("rocks/other.py", pr=4),
-            f"{PATHS}/shop/elsewhere.yaml": _yaml("shop/pricing.py", pr=5),
-            f"{PATHS}/rocks/noob/notes.md": "not a claim",
+            f"{PATHS}/shop/cart/same.yaml": _yaml("shop/cart/helpers.py", pr=1),
+            f"{PATHS}/shop/cart/sibling.yaml": _yaml("shop/cart/agg.py", pr=2),
+            f"{PATHS}/shop/folder.yaml": _yaml("shop/", pr=3),
+            f"{PATHS}/shop/parent-file.yaml": _yaml("shop/other.py", pr=4),
+            f"{PATHS}/billing/elsewhere.yaml": _yaml("billing/invoice.py", pr=5),
+            f"{PATHS}/shop/cart/notes.md": "not a claim",
         }
     )
 
-    claims = load_accepted(commit, "abc", "acme/widgets", ["rocks/noob/helpers.py"])
+    claims = load_accepted(commit, "abc", "acme/widgets", ["shop/cart/helpers.py"])
 
     # A rule on helpers.py also reaches a change next to it: that's how a rule
     # broken in a sibling file was caught.
     assert _ids(claims) == ["folder", "sibling", "same"]
-    assert f"{PATHS}/shop/elsewhere.yaml" not in commit.read
-    assert f"{PATHS}/rocks/noob/notes.md" not in commit.read
+    assert f"{PATHS}/billing/elsewhere.yaml" not in commit.read
+    assert f"{PATHS}/shop/cart/notes.md" not in commit.read
 
 
 def test_load_reads_about_as_written_by_hand():
