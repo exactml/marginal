@@ -112,6 +112,19 @@ def test_init_workflow_reviews_a_draft_once_it_is_marked_ready(tmp_path):
     assert "ready_for_review" in workflow[True]["pull_request"]["types"]
 
 
+def test_init_workflow_runs_on_a_merge_for_the_knowledge_proposal(tmp_path):
+    """marginal-action runs `marginal propose` on a merged PR's `closed` event."""
+    main(["init", str(tmp_path)])
+
+    workflow = yaml.safe_load((tmp_path / ".github" / "workflows" / "marginal.yml").read_text())
+
+    assert "closed" in workflow[True]["pull_request"]["types"]
+    # Closed without merging: skipped before a runner starts.
+    assert workflow["jobs"]["review"]["if"] == (
+        "github.event.action != 'closed' || github.event.pull_request.merged"
+    )
+
+
 def test_init_workflow_passes_both_provider_keys(tmp_path):
     main(["init", str(tmp_path)])
 

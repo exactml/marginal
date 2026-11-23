@@ -140,7 +140,8 @@ on:
   pull_request:
     # ready_for_review: a draft is skipped (review.skip_drafts), so review it
     # once it's marked ready rather than waiting for the next push.
-    types: [opened, synchronize, reopened, ready_for_review]
+    # closed: a merged PR posts its knowledge proposal (proposals.enabled).
+    types: [opened, synchronize, reopened, ready_for_review, closed]
 
 # One review per PR at a time: two runs started by quick successive pushes
 # would each miss the other's review and post the same header twice.
@@ -150,6 +151,8 @@ concurrency:
 
 jobs:
   review:
+    # A PR closed without merging has nothing to review or propose.
+    if: github.event.action != 'closed' || github.event.pull_request.merged
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
