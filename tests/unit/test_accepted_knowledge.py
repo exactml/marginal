@@ -22,9 +22,9 @@ class _Commit:
     def list_files(self, path, ref):
         return [f for f in self.files if f.startswith(path + "/")]
 
-    def get_file(self, path, ref):
-        self.read.append(path)
-        return self.files.get(path)
+    def get_files(self, paths, ref):
+        self.read += paths
+        return {path: self.files[path] for path in paths if path in self.files}
 
 
 def _yaml(about="", repo="widgets", pr=None, applies_to=None, kind="rule"):
@@ -204,6 +204,16 @@ def test_prompt_redacts_a_secret_in_a_statement():
 
     assert "AKIAIOSFODNN7EXAMPLE" not in prompt
     assert "use key [REDACTED" in prompt
+
+
+def test_prompt_cuts_a_long_statement():
+    files = [{"filename": "a.py", "patch": "+x = 1"}]
+    claim = _claim("a.py").model_copy(update={"statement": "word " * 200})
+
+    prompt = build_finding_prompt(files, [], [], ".", accepted=[claim])
+
+    assert "word " * 60 in prompt
+    assert "word " * 61 not in prompt
 
 
 def test_prompt_without_accepted_claims_is_unchanged():

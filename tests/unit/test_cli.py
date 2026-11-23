@@ -2359,6 +2359,9 @@ def _review_prompt(mock_github_client, mock_provider, base_files, pr_files):
     client = mock_github_client.return_value
     client.get_file.side_effect = _base_commit(base_files)
     client.list_files.side_effect = lambda path, ref: [f for f in base_files if f.startswith(path)]
+    client.get_files.side_effect = lambda paths, ref: {
+        p: base_files[p] for p in paths if p in base_files
+    }
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = pr_files
     client.list_review_comments.return_value = []

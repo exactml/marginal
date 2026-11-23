@@ -54,24 +54,26 @@ def load_accepted(
     prefix is dropped): the newest `MAX_REPO_WIDE_PER_REVIEW` repo-wide ones,
     then the newest about `changed` files, `MAX_ACCEPTED_PER_REVIEW` in all.
 
-    Only files in a changed file's folder or a folder above it are read."""
+    Only files in a changed file's folder or a folder above it are read, all
+    in one batch."""
     name = repo.rsplit("/", 1)[-1]
     files = [f for f in client.list_files(KNOWLEDGE_DIR, base_sha) if f.endswith((".yaml", ".yml"))]
     wanted = {PurePosixPath(PATHS_DIR, folder) for path in changed for folder in _folders(path)}
-    repo_wide = _newest(_read(client, base_sha, f, name) for f in files if f.startswith(REPO_DIR))
+    repo_files = [f for f in files if f.startswith(REPO_DIR)]
+    area_files = [f for f in files if f.startswith(PATHS_DIR) and PurePosixPath(f).parent in wanted]
+    texts = client.get_files(repo_files + area_files, base_sha) if repo_files or area_files else {}
+
+    def read(path: str) -> AcceptedClaim | None:
+        return _applying(parse_accepted(path, texts[path]), name) if path in texts else None
+
+    repo_wide = _newest(read(f) for f in repo_files)
     if len(repo_wide) > MAX_REPO_WIDE_PER_REVIEW:
         _warn(
             f"{len(repo_wide)} repo-wide claims in {REPO_DIR}, but a review loads only the "
             f"newest {MAX_REPO_WIDE_PER_REVIEW}: keep the folder to what applies everywhere"
         )
     repo_wide = repo_wide[:MAX_REPO_WIDE_PER_REVIEW]
-    about = _newest(
-        claim
-        for f in files
-        if f.startswith(PATHS_DIR) and PurePosixPath(f).parent in wanted
-        for claim in [_read(client, base_sha, f, name)]
-        if claim and _about_changed(claim.about, changed)
-    )
+    about = [c for c in _newest(read(f) for f in area_files) if _about_changed(c.about, changed)]
     return repo_wide + about[: MAX_ACCEPTED_PER_REVIEW - len(repo_wide)]
 
 
@@ -103,12 +105,9 @@ def parse_accepted(path: str, text: str) -> AcceptedClaim | None:
     return claim.model_copy(update={"about": about})
 
 
-def _read(client: GitHubClient, ref: str, path: str, repo: str) -> AcceptedClaim | None:
-    """The claim in `path` at `ref`, if it's valid and applies to `repo`. One
-    without `applies_to` applies here, so a local review needn't know the
-    repo's real name."""
-    text = client.get_file(path, ref)
-    claim = parse_accepted(path, text) if text is not None else None
+def _applying(claim: AcceptedClaim | None, repo: str) -> AcceptedClaim | None:
+    """`claim` if it applies to `repo`. One without `applies_to` applies here,
+    so a local review needn't know the repo's real name."""
     if claim and (not claim.applies_to or any(fnmatch(repo, p) for p in claim.applies_to)):
         return claim
     return None

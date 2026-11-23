@@ -244,6 +244,21 @@ def test_list_files_reads_each_subfolder_as_one_tree(monkeypatch):
     assert kwargs["params"] == {"recursive": "1"}
 
 
+def test_get_files_reads_many_files_in_one_graphql_call(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    data = {"repository": {"f0": {"text": "kind: rule\n"}, "f1": None, "f2": {"text": None}}}
+    session.request.return_value = _response(200, {"data": data})
+
+    texts = _client(session=session).get_files(["a.yaml", "gone.yaml", "image.png"], "abc123")
+
+    assert texts == {"a.yaml": "kind: rule\n"}
+    assert session.request.call_count == 1
+    variables = session.request.call_args.kwargs["json"]["variables"]
+    assert variables["e0"] == "abc123:a.yaml"
+    assert variables["owner"] == "acme"
+
+
 def test_list_files_warns_when_github_truncates_a_tree(monkeypatch, capsys):
     monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
     session = MagicMock()

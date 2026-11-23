@@ -41,6 +41,10 @@ mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id }
 """
 
 
+# Files `get_files` reads per GraphQL call, well under GitHub's per-query node limit.
+_FILES_PER_QUERY = 100
+
+
 class GitHubClient:
     """Thin wrapper around the GitHub REST API for one `"owner/name"` repo.
 
@@ -82,6 +86,31 @@ class GitHubClient:
         if not isinstance(data, dict) or "content" not in data:
             return None
         return base64.b64decode(str(data["content"])).decode()
+
+    def get_files(self, paths: list[str], ref: str) -> dict[str, str]:
+        """The text of each of `paths` that is a text file at commit `ref`,
+        read in one GraphQL call per `_FILES_PER_QUERY` files, not one each."""
+        self._require_read("repository")
+        owner, name = self._repo.split("/", 1)
+        texts = {}
+        for start in range(0, len(paths), _FILES_PER_QUERY):
+            batch = paths[start : start + _FILES_PER_QUERY]
+            args = "".join(f", $e{i}: String!" for i in range(len(batch)))
+            fields = " ".join(
+                f"f{i}: object(expression: $e{i}) {{ ... on Blob {{ text }} }}"
+                for i in range(len(batch))
+            )
+            data = self._graphql(
+                f"query($owner: String!, $name: String!{args}) "
+                f"{{ repository(owner: $owner, name: $name) {{ {fields} }} }}",
+                {"owner": owner, "name": name}
+                | {f"e{i}": f"{ref}:{path}" for i, path in enumerate(batch)},
+            )
+            for i, path in enumerate(batch):
+                blob = data["repository"][f"f{i}"]  # null when missing
+                if blob and blob.get("text") is not None:  # text is null for binary
+                    texts[path] = blob["text"]
+        return texts
 
     def list_files(self, path: str, ref: str) -> list[str]:
         """Every file under folder `path` as of commit `ref`, at any depth, or
