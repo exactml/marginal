@@ -244,6 +244,18 @@ def test_list_files_reads_each_subfolder_as_one_tree(monkeypatch):
     assert kwargs["params"] == {"recursive": "1"}
 
 
+def test_list_files_warns_when_github_truncates_a_tree(monkeypatch, capsys):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.side_effect = [
+        _response(200, [{"type": "dir", "path": "k/paths", "sha": "t1"}]),
+        _response(200, {"tree": [{"type": "blob", "path": "a.yaml"}], "truncated": True}),
+    ]
+
+    assert _client(session=session).list_files("k", "abc123") == ["k/paths/a.yaml"]
+    assert "k/paths has more files than GitHub lists at once" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize(
     "response",
     [_response(404, {"message": "Not Found"}), _response(200, {"content": "eA=="})],

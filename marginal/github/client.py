@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import sys
 from typing import Literal
 from urllib.parse import quote
 
@@ -110,6 +111,12 @@ class GitHubClient:
                     for item in tree["tree"]
                     if item["type"] == "blob"
                 ]
+                if tree.get("truncated"):  # over GitHub's 100,000 entries per tree
+                    print(
+                        f"marginal: warning: {entry['path']} has more files than GitHub "
+                        "lists at once, so some were left out",
+                        file=sys.stderr,
+                    )
         return files
 
     def get_workflow_run(self, run_id: int) -> dict[str, object]:
