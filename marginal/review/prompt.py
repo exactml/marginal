@@ -32,6 +32,10 @@ MAX_REPLY_THREADS = 10
 _REPLY_COMMENT_CHARS = 600
 _REPLY_TEXT_CHARS = 1500
 
+# Characters kept from each accepted claim's statement: people write them by
+# hand, and one long one would cost tokens on every review that loads it.
+_ACCEPTED_STATEMENT_CHARS = 300
+
 # Rough characters-per-token ratio for estimating a prompt's size without a
 # provider-specific tokenizer. Code and diffs tokenize denser than English
 # prose (~4 chars/token), so 3 errs toward over-counting: the cap stays a
@@ -121,7 +125,8 @@ def build_accepted_section(accepted: list[AcceptedClaim]) -> str:
     rows = []
     for claim in accepted:
         source = f"PR #{claim.pr}, " if claim.pr else ""
-        rows.append(f"- {claim.kind} ({source}{claim.about or 'repo-wide'}): {claim.statement}")
+        statement = " ".join(claim.statement.split())[:_ACCEPTED_STATEMENT_CHARS]
+        rows.append(f"- {claim.kind} ({source}{claim.about or 'repo-wide'}): {statement}")
     # Redacted like the replies and caller snippets: it's repo text the team wrote.
     return redact_secrets(
         "The team accepted these rules and decisions in earlier pull requests, for "
