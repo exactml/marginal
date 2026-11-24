@@ -158,7 +158,13 @@ def test_build_checkout_seeds_accepted_knowledge_at_the_base_and_diffs_to_the_he
             "source": "https://github.com/owner/shop/pull/2",
             "must_find": [{"file": "shop/cart.py", "lines": [1, 1], "severity": "medium"}],
             "accepted": [
-                {"kind": "rule", "about": "shop/cart.py", "statement": "Totals stay 1.", "pr": 1}
+                {
+                    "kind": "rule",
+                    "about": "shop/cart.py",
+                    "statement": "Totals stay 1.",
+                    "pr": 1,
+                    "broken": True,
+                }
             ],
         }
     )
@@ -170,6 +176,9 @@ def test_build_checkout_seeds_accepted_knowledge_at_the_base_and_diffs_to_the_he
     base = checkout.merge_base("HEAD~1")
     [claim] = load_accepted(checkout, base, "shop", ["shop/cart.py"])
     assert (claim.statement, claim.pr) == ("Totals stay 1.", 1)
+    # The answer key's `broken` never reaches the knowledge a review reads.
+    seeded = [f for f in (root / ".marginal").rglob("*") if f.is_file() and f.name != "config.yaml"]
+    assert seeded and not any("broken" in f.read_text() for f in seeded)
     changed = sorted(f["filename"] for f in checkout.get_compare_files(base, "HEAD"))
     # The knowledge and the per-attempt config are never part of the diff.
     assert changed == ["shop/api_gen.py", "shop/cart.py", "shop/gone.py", "shop/new.py"]

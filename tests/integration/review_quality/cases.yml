@@ -757,6 +757,7 @@ cases:
     statement: APNs tokens are case-insensitive, so look them up and compare them case-insensitively; FCM tokens stay
       case-sensitive.
     pr: 35289
+    broken: true
     source: zilencer/views.py:1107
   must_find:
   - file: zerver/lib/push_registration.py
@@ -796,6 +797,7 @@ cases:
     statement: When a test parametrizes an argname itself, including with indirect=True, that parametrization wins over
       the fixture's own params.
     pr: 7736
+    broken: true
     source: src/_pytest/fixtures.py:1711
   must_find:
   - file: src/_pytest/fixtures.py
@@ -820,6 +822,7 @@ cases:
     statement: For each test path, or the invocation dir when none is given, pytest loads conftest.py and
       test*/conftest.py relative to it.
     pr: 11843
+    broken: true
     source: doc/en/how-to/writing_plugins.rst:56
   must_find:
   - file: src/_pytest/config/__init__.py
@@ -844,6 +847,7 @@ cases:
     statement: On Python 3.10 or later, HTTPS is verified with system certificates (truststore) as well as certifi by
       default; passing --cert turns truststore off.
     pr: 11647
+    broken: true
     source: docs/html/topics/https-certificates.md:31
   must_find:
   - file: src/pip/_internal/build_env.py
@@ -875,6 +879,7 @@ cases:
     statement: Task success, failure and retry emails use the [email] configuration, including email_backend (SES,
       SendGrid), never SMTP directly.
     pr: 21958
+    broken: true
     source: airflow-core/docs/howto/email-config.rst:160
   must_find:
   - file: task-sdk/src/airflow/sdk/execution_time/task_runner.py
@@ -898,6 +903,7 @@ cases:
     about: providers/cncf/kubernetes/src/airflow/providers/cncf/kubernetes/operators/pod.py
     statement: Every callback's on_operator_resuming is called when KubernetesPodOperator resumes from deferred state.
     pr: 35714
+    broken: true
     source: providers/cncf/kubernetes/src/airflow/providers/cncf/kubernetes/callbacks.py:182
   must_find:
   - file: providers/cncf/kubernetes/src/airflow/providers/cncf/kubernetes/operators/pod.py

@@ -347,21 +347,40 @@ def test_shipped_cases_are_valid():
 
 
 def reversal_case(**overrides) -> Case:
-    accepted = [{"kind": "rule", "about": "app.py", "statement": "Totals round once.", "pr": 462}]
+    accepted = [
+        {
+            "kind": "rule",
+            "about": "app.py",
+            "statement": "Totals round once.",
+            "pr": 462,
+            "broken": True,
+        },
+        {"kind": "rule", "about": "app.py", "statement": "Prices are in cents.", "pr": 301},
+    ]
     return bug_case(id="rounding-reversal", kind="reversal", accepted=accepted, **overrides)
 
 
-def test_a_reversal_case_needs_the_accepted_claim_it_breaks():
-    with pytest.raises(ValidationError, match="needs the accepted claim it breaks"):
-        bug_case(kind="reversal")
+def test_a_reversal_case_needs_one_broken_claim_with_its_pr():
+    unmarked = [{"kind": "rule", "about": "app.py", "statement": "Totals round once.", "pr": 462}]
+    with pytest.raises(ValidationError, match="needs one broken accepted claim"):
+        bug_case(kind="reversal", accepted=unmarked)
+
+
+def test_only_a_reversal_case_breaks_an_accepted_claim():
+    broken = [{"kind": "rule", "about": "app.py", "statement": "s", "pr": 1, "broken": True}]
+    with pytest.raises(ValidationError, match="only a reversal case"):
+        bug_case(accepted=broken)
 
 
 def test_a_reversal_hit_counts_as_named_only_when_it_names_the_earlier_pr():
     named = score_review(reversal_case(), review(finding(message="Reverses PR #462's rule")))
     unnamed = score_review(reversal_case(), review(finding(message="Rounds twice")))
+    # Every claim carries a PR number, so naming an unbroken one isn't a catch.
+    decoy = score_review(reversal_case(), review(finding(message="Reverses PR #301's rule")))
 
     assert (named["reversal_hits"], named["reversals_named"]) == (1, 1)
     assert (unnamed["reversal_hits"], unnamed["reversals_named"]) == (1, 0)
+    assert (decoy["reversal_hits"], decoy["reversals_named"]) == (1, 0)
 
 
 def claim(kind="rule", file="app.py", line=30) -> dict:

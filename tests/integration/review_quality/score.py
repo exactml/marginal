@@ -106,6 +106,9 @@ class Seed(_Strict):
     pr: int | None = None
     # Where the repo states it at the base commit, so a person can check it.
     source: str | None = None
+    # The claim a reversal case's PR breaks. Answer key only: run.py never writes
+    # it into the knowledge, so a review can't tell it from the others.
+    broken: bool = False
 
 
 class ExpectedClaim(Location):
@@ -140,8 +143,13 @@ class Case(_Strict):
             raise ValueError(
                 f"{self.id}: a clean case has no must_find; every other kind needs one"
             )
-        if self.kind == "reversal" and not any(seed.pr for seed in self.accepted):
-            raise ValueError(f"{self.id}: a reversal case needs the accepted claim it breaks")
+        broken = [seed for seed in self.accepted if seed.broken]
+        if self.kind == "reversal" and not (len(broken) == 1 and broken[0].pr):
+            raise ValueError(
+                f"{self.id}: a reversal case needs one broken accepted claim, with its PR"
+            )
+        if self.kind != "reversal" and broken:
+            raise ValueError(f"{self.id}: only a reversal case breaks an accepted claim")
         return self
 
 
@@ -252,7 +260,11 @@ def score_review(case: Case, review: dict) -> dict:
         # A reversal is caught when a hit says which earlier PR the rule came from.
         "reversal_hits": len(hits) if case.kind == "reversal" else 0,
         "reversals_named": sum(
-            any(f"#{seed.pr}" in str(f.get("message") or "") for seed in case.accepted if seed.pr)
+            any(
+                f"#{seed.pr}" in str(f.get("message") or "")
+                for seed in case.accepted
+                if seed.broken
+            )
             for f, _ in hits
         )
         if case.kind == "reversal"
