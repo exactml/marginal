@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -43,7 +44,8 @@ def _fake_claude(tmp_path, *answers):
         "n = len(calls.read_text().splitlines()) if calls.exists() else 0\n"
         "with calls.open('a') as log:\n"
         "    log.write(json.dumps({'argv': sys.argv[1:], 'stdin': sys.stdin.read(),\n"
-        "        'env': sorted(os.environ)}) + '\\n')\n"
+        "        'env': sorted(os.environ), 'cwd': os.getcwd(),\n"
+        "        'memory_off': os.environ.get('CLAUDE_CODE_DISABLE_AUTO_MEMORY')}) + '\\n')\n"
         "print(json.dumps(json.loads((here / 'answers.json').read_text())[n]))\n"
     )
     script.chmod(0o755)
@@ -157,3 +159,45 @@ def test_the_factory_resolves_claude_code():
     assert isinstance(
         get_provider(ModelSpec(provider="claude-code", model="opus")), (ClaudeCodeProvider)
     )
+
+
+def test_the_reviewer_runs_without_auto_memory_in_an_empty_directory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # a repo whose auto-memory holds the user's notes
+    provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer()))
+
+    asyncio.run(provider.generate("review this"))
+
+    (call,) = _calls(tmp_path)
+    assert call["memory_off"] == "1"
+    assert call["cwd"] != str(tmp_path)
+    assert not os.path.exists(call["cwd"])  # a temporary directory, removed after
+
+
+def test_an_email_the_prompt_never_had_is_removed_from_the_answer(tmp_path):
+    finding = dict(_FINDINGS["findings"][0], message="Ask someone@employer.example, or a@b.io.")
+    provider = ClaudeCodeProvider(
+        "opus",
+        executable=_fake_claude(
+            tmp_path, _answer({"findings": [finding]}, result="from someone@employer.example")
+        ),
+    )
+
+    result = asyncio.run(provider.generate_structured("mail a@b.io", schema=FindingsResponse))
+
+    assert result.findings[0].message == "Ask [REDACTED], or a@b.io."  # a@b.io was in the prompt
+
+
+def test_the_signed_in_account_and_machine_are_removed_from_the_answer(tmp_path, monkeypatch):
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / ".claude.json").write_text(
+        json.dumps({"oauthAccount": {"emailAddress": "jo.doe@corp.example", "fullName": "Jo Doe"}})
+    )
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    leaked = "Jo Doe at corp.example (jo.doe) works in " + str(Path.home())
+    provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result=leaked)))
+
+    answer = asyncio.run(provider.generate("review corp.example's API"))
+
+    assert "Jo Doe" not in answer and "jo.doe" not in answer and str(Path.home()) not in answer
+    assert "corp.example" in answer  # named in the prompt, so it stays
