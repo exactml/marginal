@@ -269,7 +269,7 @@ def _verdict(
     age = (now - package.created).days if package.created else None
     new = age is not None and age < NEW_PACKAGE_DAYS
     published = f" It was first published {age} day(s) ago." if age is not None else ""
-    if similar and (age is None or age < LOOKALIKE_MAX_DAYS):
+    if similar and age is not None and age < LOOKALIKE_MAX_DAYS:
         return Severity.HIGH if new else Severity.MEDIUM, (
             f"{name} is one character away from the popular `{similar}`. A lookalike name is "
             f"how typosquatted packages get installed, so check it's the one you meant.{published}"
@@ -433,7 +433,9 @@ def _record(ecosystem: str, data: dict[str, object]) -> Package:
         ]
         info = data.get("info") or {}
         urls = [*(info.get("project_urls") or {}).values(), info.get("home_page") or ""]
-        return Package(True, _parse_time(min(uploads)) if uploads else None, _github(urls))
+        if not uploads:
+            return Package(exists=False)  # no file was ever uploaded: nothing installs
+        return Package(True, _parse_time(min(uploads)), _github(urls))
     times = data.get("time") or {}
     if "unpublished" in times and not data.get("versions"):
         return Package(exists=False)  # unpublished: the name can be registered again

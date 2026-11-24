@@ -373,7 +373,8 @@ def test_an_unreachable_registry_is_asked_once(monkeypatch):
 
 def test_a_funding_link_is_not_the_repository(monkeypatch):
     urls = {"Funding": "https://github.com/sponsors/someone", "Source": "https://github.com/a/b"}
-    data = {"info": {"project_urls": urls}, "releases": {}}
+    upload = [{"upload_time_iso_8601": "2020-01-01T00:00:00Z"}]
+    data = {"info": {"project_urls": urls}, "releases": {"1.0": upload}}
     monkeypatch.setattr(requests, "get", lambda url, **kw: _Response(200, data))
     assert lookup("pypi", "b").repository == "a/b"
 
@@ -833,3 +834,13 @@ def test_the_github_token_goes_only_to_github_com(monkeypatch, api_url, sent):
     )
     deps._releases("a/b")
     assert ("Authorization" in seen) is sent
+
+
+def test_a_lookalike_of_unknown_age_is_not_flagged():
+    assert _findings(_new("reqeusts", "npm"), Package(exists=True, created=None)) == []
+
+
+def test_a_pypi_project_with_no_files_is_missing(monkeypatch):
+    data = {"info": {}, "releases": {"0.0.0": []}}
+    monkeypatch.setattr(requests, "get", lambda url, **kw: _Response(200, data))
+    assert lookup("pypi", "zz-empty") == Package(exists=False)
