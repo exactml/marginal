@@ -7,6 +7,7 @@ import json
 import os
 import re
 import tempfile
+import unicodedata
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -42,6 +43,7 @@ _EMAIL = re.compile(r"[\w.+-]+@(?:[\w-]+\.)+[A-Za-z]{2,}(?!\w)")
 # Shorter account terms (a name like `Ann`) are left alone: as whole words
 # they'd still redact ordinary text.
 _MIN_TERM = 4
+_MIN_PIECE = 5
 
 
 class ClaudeCodeProvider(ModelProvider):
@@ -213,11 +215,22 @@ def _account_terms() -> tuple[set[str], set[str]]:
     local, _, domain = email.partition("@")
     names = [str(account.get(key) or "") for key in ("fullName", "displayName")]
     distinctive = local if re.search(r"[._\-\d]", local) else ""
+    # A distinctive local part is usually a name (`jo.doe`), and the model may
+    # split it ("Doe"): its longer words are terms too, in any case. Short ones
+    # (`mark`) aren't, since they'd redact ordinary words.
+    pieces = {p for p in re.split(r"[._\-\d]+", distinctive) if len(p) >= _MIN_PIECE}
     # A name of two or more words is distinctive as a whole (`Jo Doe`).
     full = [name for name in names if len(name.split()) > 1]
-    whole = {home, *full, *((email, distinctive, domain) if domain else ())}
+    whole = {home, *full, *pieces, *((email, distinctive, domain) if domain else ())}
     # Only names split into parts: their capitals keep `Mark` apart from `mark`,
     # which a lowercase local part (`mark.stone`) wouldn't.
     parts = {part for name in names for part in re.split(r"[\s._-]+", name)}
     keep = lambda terms: {t for t in terms if len(t) >= _MIN_TERM}  # noqa: E731
-    return keep(whole), keep(parts)
+    # The model may drop accents (Renée -> Renee): both spellings count.
+    plain = lambda terms: terms | {_ascii(t) for t in terms}  # noqa: E731
+    return keep(plain(whole)), keep(plain(parts))
+
+
+def _ascii(text: str) -> str:
+    folded = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in folded if not unicodedata.combining(c)).replace("ı", "i")

@@ -264,3 +264,17 @@ def test_no_home_directory_never_breaks_a_review(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", no_home)
     provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result="ok")))
     assert asyncio.run(provider.generate("review")) == "ok"
+
+
+def test_a_split_local_part_and_an_accent_free_name_are_redacted(tmp_path, monkeypatch):
+    config = tmp_path / "config"
+    config.mkdir()
+    account = {"emailAddress": "renee.dubois@corp.example", "fullName": "Renée Dubois"}
+    (config / ".claude.json").write_text(json.dumps({"oauthAccount": account}))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    said = "Likely Renee Dubois, or Renée; DUBOIS again; mark it."
+    provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result=said)))
+
+    answer = asyncio.run(provider.generate("review"))
+
+    assert answer == "Likely [REDACTED], or [REDACTED]; [REDACTED] again; mark it."
