@@ -4198,7 +4198,11 @@ def test_review_drops_release_notes_rather_than_the_review_when_over_budget(
             [],
             [],
             ".",
-            dependencies=deps.CHECKED_NOTE,
+            dependencies=deps.checked_note(
+                deps.dependency_changes(
+                    [{"filename": "requirements.txt", "patch": _REQUIREMENTS_PATCH}], str(tmp_path)
+                )
+            ),
         )
     )
     (tmp_path / ".marginal" / "config.yaml").write_text(
@@ -4210,7 +4214,7 @@ def test_review_drops_release_notes_rather_than_the_review_when_over_budget(
 
     prompt = mock_provider.return_value.generate_structured.call_args.args[0]
     assert "bumps the dependencies" not in prompt
-    assert deps.CHECKED_NOTE in prompt
+    assert "marginal already checked these packages" in prompt
     assert "left out the bumped dependencies' release notes" in capsys.readouterr().err
 
 
@@ -4225,7 +4229,8 @@ def test_review_tells_the_model_the_registry_checks_ran_even_with_no_bump(
     assert main(["review", "--repo", "acme/widgets", "--pr", "42"]) == 0
 
     prompt = mock_provider.return_value.generate_structured.call_args.args[0]
-    assert deps.CHECKED_NOTE in prompt
+    assert "marginal already checked these packages against their registry" in prompt
+    assert "`reqeusts`" in prompt
     assert "bumps the dependencies" not in prompt
 
 

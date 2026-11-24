@@ -30,22 +30,15 @@ from marginal.review import Evidence, Finding, Severity
 from marginal.review.redact import redact_secrets
 
 __all__ = [
-    "CHECKED_NOTE",
     "Change",
     "Package",
     "bumps_section",
+    "checked_note",
     "dependency_changes",
     "dependency_findings",
     "lookalike",
     "lookup",
 ]
-
-# Tells the model the registry checks are done, so it doesn't repeat them.
-CHECKED_NOTE = (
-    "marginal already checked every package this pull request adds or bumps against its "
-    "registry, and reports a missing, misspelled, brand-new or placeholder package itself. "
-    "Don't flag a dependency for any of those reasons."
-)
 
 # First published more recently than this, a new package gets a finding.
 NEW_PACKAGE_DAYS = 30
@@ -286,6 +279,23 @@ def _verdict(
     return None
 
 
+def checked_note(
+    changes: list[Change], *, fetch: Callable[[str, str], Package | None] | None = None
+) -> str:
+    """Tells the model which packages the registry checks covered, so it
+    doesn't repeat them. Only those: one whose lookup failed, or that was
+    over the cap, isn't named, and the model may still flag it."""
+    fetch = fetch or lookup  # cached: no new request
+    names = [f"`{c.name}`" for c in changes if fetch(c.ecosystem, c.name) is not None]
+    if not names:
+        return ""
+    return (
+        "marginal already checked these packages against their registry, and reports a "
+        "missing, misspelled, brand-new or placeholder one itself, so don't flag them for "
+        "those reasons: " + ", ".join(names) + "."
+    )
+
+
 def bumps_section(
     changes: list[Change],
     repo_root: str,
@@ -382,10 +392,16 @@ def _lookup(ecosystem: str, name: str) -> Package | None:
         response.raise_for_status()
         data = response.json()
     except (requests.RequestException, ValueError) as exc:
-        _unreachable.add(ecosystem)
+        # Only a failed connection is an outage worth skipping the rest for; a
+        # slow, rate-limited or broken record costs just this package's check.
+        outage = isinstance(exc, requests.ConnectionError) and not isinstance(exc, requests.Timeout)
+        if outage:
+            _unreachable.add(ecosystem)
         print(
             f"marginal review: warning: couldn't check `{name}` on "
-            f"{_REGISTRY_NAMES[ecosystem]}, skipping its dependency checks: {exc}",
+            f"{_REGISTRY_NAMES[ecosystem]}"
+            + (", skipping its other dependency checks" if outage else "")
+            + f": {exc}",
             file=sys.stderr,
         )
         return None

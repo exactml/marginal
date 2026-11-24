@@ -363,7 +363,7 @@ def test_an_unreachable_registry_is_asked_once(monkeypatch):
 
     def fail(url, **kw):
         calls.append(url)
-        raise requests.Timeout("slow")
+        raise requests.ConnectionError("no route to host")
 
     monkeypatch.setattr(requests, "get", fail)
     assert lookup("pypi", "zz-one") is None
@@ -751,3 +751,24 @@ def test_a_slow_full_record_skips_only_that_package(monkeypatch):
     monkeypatch.setattr(requests, "get", slow)
     assert deps._source("pypi", "huge", "2") is None
     assert "pypi" not in deps._unreachable
+
+
+@pytest.mark.parametrize(
+    "error", [requests.Timeout("slow"), requests.HTTPError("503"), ValueError("bad json")]
+)
+def test_one_bad_record_skips_only_that_package(monkeypatch, error):
+    def fail(url, **kw):
+        raise error
+
+    monkeypatch.setattr(requests, "get", fail)
+    assert lookup("pypi", "zz-one") is None
+    assert "pypi" not in deps._unreachable
+
+
+def test_checked_note_names_only_the_packages_that_were_checked():
+    checked, unreachable = _new("reqeusts"), _new("zz-down")
+    note = deps.checked_note(
+        [checked, unreachable], fetch=lambda e, n: None if n == "zz-down" else Package(False)
+    )
+    assert "`reqeusts`" in note and "zz-down" not in note
+    assert deps.checked_note([unreachable], fetch=lambda e, n: None) == ""

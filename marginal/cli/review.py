@@ -19,8 +19,8 @@ from marginal.context import (
     read_ci_conclusion,
 )
 from marginal.context.dependencies import (
-    CHECKED_NOTE,
     bumps_section,
+    checked_note,
     dependency_changes,
     dependency_findings,
 )
@@ -505,7 +505,7 @@ def _review_files(
                 ),
                 knowledge=config.proposals.enabled,
                 accepted=accepted,
-                dependency_note=CHECKED_NOTE if changes else "",
+                dependency_note=checked_note(changes),
                 dependencies=bumps_section(changes, path, config.dependencies.internal),
             )
         )
