@@ -799,3 +799,19 @@ def test_usages_match_a_name_written_with_underscores(tmp_path):
     assert "app.py:1: from dateutil import parser" in bumps_section(
         [bump], root, source=lambda c: None
     )
+
+
+@pytest.mark.parametrize(
+    "data",
+    [["not", "a", "dict"], {"releases": {"1.0": "not a list"}}, {"releases": {"1.0": [1, 2]}}],
+)
+def test_an_oddly_shaped_record_skips_the_check_without_failing(monkeypatch, capsys, data):
+    monkeypatch.setattr(requests, "get", lambda url, **kw: _Response(200, data))
+    assert lookup("pypi", "zz-odd") is None
+    assert "couldn't read `zz-odd`'s record" in capsys.readouterr().err
+    assert deps._source("pypi", "zz-odd", "1.0") is None
+
+
+def test_releases_drop_entries_that_arent_objects(monkeypatch):
+    monkeypatch.setattr(requests, "get", lambda *a, **kw: _Response(200, ["x", {"tag_name": "v1"}]))
+    assert deps._releases("a/b") == [{"tag_name": "v1"}]

@@ -410,6 +410,19 @@ def _lookup(ecosystem: str, name: str) -> Package | None:
             file=sys.stderr,
         )
         return None
+    try:
+        return _record(ecosystem, data)
+    except (AttributeError, TypeError, KeyError, ValueError) as exc:
+        # A registry reply is untrusted input: an odd shape costs this check, never the review.
+        print(
+            f"marginal review: warning: couldn't read `{name}`'s record on "
+            f"{_REGISTRY_NAMES[ecosystem]}: {exc!r}",
+            file=sys.stderr,
+        )
+        return None
+
+
+def _record(ecosystem: str, data: dict[str, object]) -> Package:
     if ecosystem == "pypi":
         uploads = [
             f["upload_time_iso_8601"]
@@ -454,10 +467,14 @@ def _source(ecosystem: str, name: str, new: str, old: str = "") -> str | None:
         except requests.RequestException:
             _unreachable.add(ecosystem)  # a failed connection: the registry is down
             return None
-        if ecosystem == "npm":
-            return _npm_repository(data)
-        info = data.get("info") or {}
-        return _github([*(info.get("project_urls") or {}).values(), info.get("home_page") or ""])
+        try:
+            if ecosystem == "npm":
+                return _npm_repository(data)
+            info = data.get("info") or {}
+            urls = [*(info.get("project_urls") or {}).values(), info.get("home_page") or ""]
+            return _github([str(url) for url in urls])
+        except (AttributeError, TypeError):
+            return None  # an odd record: no notes for this package
     return None
 
 
@@ -499,7 +516,7 @@ def _releases(repository: str) -> list[dict[str, object]]:
     except requests.RequestException:
         _unreachable.add("github")
         return []
-    return data if isinstance(data, list) else []
+    return [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
 
 
 def _notes(change: Change, releases: list[dict[str, object]]) -> str:
