@@ -14,7 +14,7 @@ import os
 import re
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from fnmatch import fnmatch
@@ -198,8 +198,7 @@ def _verdict(
     change: Change, package: Package, internal: list[str], now: datetime
 ) -> tuple[Severity, str] | None:
     name, registry = f"`{change.name}`", _REGISTRY_NAMES[change.ecosystem]
-    normalized = _normalize(change.ecosystem, change.name)
-    if any(fnmatch(normalized, _normalize(change.ecosystem, p)) for p in internal):
+    if _is_internal(change, internal):
         if not package.exists:
             return None
         return Severity.HIGH, (
@@ -241,20 +240,24 @@ def _verdict(
 def bumps_section(
     changes: list[Change],
     repo_root: str,
+    internal: Sequence[str] = (),
     *,
     fetch: Callable[[str, str], Package | None] | None = None,
     releases: Callable[[str], list[dict[str, object]]] | None = None,
 ) -> str:
     """A prompt section for the packages `changes` bump: what changed upstream
     between the two versions, and the lines in the repository that use the
-    package. Empty when nothing is bumped."""
+    package. Empty when nothing is bumped. `internal` packages get no notes."""
     fetch = fetch or lookup
     releases = releases or _releases
     blocks, budget = [], _NOTES_CHARS_TOTAL
     for change in changes:
         if change.is_new or change.old is None or change.new is None:
             continue
-        if budget > 0:
+        if _is_internal(change, internal):
+            # The public package with this name isn't this one: never its notes.
+            notes, missing = "", "An internal package: no public release notes."
+        elif budget > 0:
             package = fetch(change.ecosystem, change.name)
             repository = package.repository if package else None
             notes = _notes(change, releases(repository))[:budget] if repository else ""
@@ -346,6 +349,13 @@ def _lookup(ecosystem: str, name: str) -> Package | None:
     return Package(True, _parse_time(created) if created else None, _github([url or ""]))
 
 
+def _is_internal(change: Change, internal: Sequence[str]) -> bool:
+    """Whether `change` names one of the team's `internal` packages, however
+    the pattern is spelled (`acme_utils` matches `acme-utils` on PyPI)."""
+    name = _normalize(change.ecosystem, change.name)
+    return any(fnmatch(name, _normalize(change.ecosystem, pattern)) for pattern in internal)
+
+
 def _releases(repository: str) -> list[dict[str, object]]:
     """The latest 100 GitHub releases of `repository`, or none if unreachable."""
     if "github" in _unreachable:
@@ -362,8 +372,12 @@ def _releases(repository: str) -> list[dict[str, object]]:
         )
         response.raise_for_status()
         data = response.json()
-    except (requests.HTTPError, ValueError):
-        return []  # this repository: no releases, private, or moved
+    except requests.HTTPError as exc:
+        if exc.response is None or exc.response.status_code != 404:
+            _unreachable.add("github")  # down or rate-limited: skip the rest
+        return []  # 404: this repository is private, moved or gone
+    except ValueError:
+        return []
     except requests.RequestException:
         _unreachable.add("github")
         return []
@@ -379,7 +393,8 @@ def _notes(change: Change, releases: list[dict[str, object]]) -> str:
         match = _VERSION.search(tag)
         prefix = tag[: match.start()].strip("vV-_@/ ").lower() if match else ""
         # A monorepo tags each package (`pkg@1.2.3`): keep only this one's.
-        if not match or prefix not in ("", change.name.split("/")[-1].lower()):
+        names = ("", change.name.split("/")[-1].lower(), change.name.lstrip("@").lower())
+        if not match or prefix not in names:
             continue
         version = _version_key(match.group())
         if old < version <= new and not release.get("draft"):

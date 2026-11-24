@@ -500,7 +500,7 @@ def _review_files(
                 ),
                 knowledge=config.proposals.enabled,
                 accepted=accepted,
-                dependencies=bumps_section(changes, path),
+                dependencies=bumps_section(changes, path, config.dependencies.internal),
             )
         )
     except PromptOverBudget as exc:

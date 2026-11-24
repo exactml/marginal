@@ -408,3 +408,35 @@ def test_npm_entries_installed_from_elsewhere_are_skipped(tmp_path):
     patch = "@@ -0,0 +1,5 @@\n" + "".join(f'+    "{k}": "{v}",\n' for k, v in local.items())
     changes = dependency_changes([_file("package.json", patch)], str(tmp_path))
     assert [c.name for c in changes] == ["lodash"]
+
+
+def test_notes_match_a_tag_with_the_full_scoped_name():
+    bump = Change("npm", "@babel/core", False, "7.23.0", "7.24.0", "package.json", 1, "x")
+    releases = [
+        {"tag_name": "@babel/core@7.24.0", "body": "core"},
+        {"tag_name": "v7.24.0", "body": "all"},
+    ]
+    assert "core" in deps._notes(bump, releases) and "all" in deps._notes(bump, releases)
+
+
+@pytest.mark.parametrize(("status", "skips_github"), [(404, False), (403, True), (503, True)])
+def test_releases_skip_github_after_an_outage_but_not_a_missing_repo(
+    monkeypatch, status, skips_github
+):
+    response = requests.Response()
+    response.status_code = status
+    monkeypatch.setattr(requests, "get", lambda *a, **kw: response)
+    assert deps._releases("a/b") == []
+    assert ("github" in deps._unreachable) is skips_github
+
+
+def test_an_internal_bump_gets_no_public_notes(tmp_path):
+    bump = Change("pypi", "acme-utils", False, "1.0", "2.0", "requirements.txt", 1, "x")
+    section = bumps_section(
+        [bump],
+        str(tmp_path),
+        ["acme-*"],
+        fetch=lambda e, n: pytest.fail("looked up"),
+        releases=lambda r: pytest.fail("fetched notes"),
+    )
+    assert "An internal package: no public release notes." in section
