@@ -272,9 +272,22 @@ def test_a_split_local_part_and_an_accent_free_name_are_redacted(tmp_path, monke
     account = {"emailAddress": "renee.dubois@corp.example", "fullName": "Renée Dubois"}
     (config / ".claude.json").write_text(json.dumps({"oauthAccount": account}))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
-    said = "Likely Renee Dubois, or Renée; DUBOIS again; mark it."
+    said = "Likely Renee Dubois, or Renée; dubois as a word stays; mark it."
     provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result=said)))
 
     answer = asyncio.run(provider.generate("review"))
 
-    assert answer == "Likely [REDACTED], or [REDACTED]; [REDACTED] again; mark it."
+    assert answer == "Likely [REDACTED], or [REDACTED]; dubois as a word stays; mark it."
+
+
+def test_local_part_words_redact_only_as_names(tmp_path, monkeypatch):
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / ".claude.json").write_text(
+        json.dumps({"oauthAccount": {"emailAddress": "admin.price@corp.example"}})
+    )
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    said = "The admin sets a price; ask Price."
+    provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result=said)))
+
+    assert asyncio.run(provider.generate("review")) == "The admin sets a price; ask [REDACTED]."

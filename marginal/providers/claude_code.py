@@ -215,16 +215,16 @@ def _account_terms() -> tuple[set[str], set[str]]:
     local, _, domain = email.partition("@")
     names = [str(account.get(key) or "") for key in ("fullName", "displayName")]
     distinctive = local if re.search(r"[._\-\d]", local) else ""
-    # A distinctive local part is usually a name (`jo.doe`), and the model may
-    # split it ("Doe"): its longer words are terms too, in any case. Short ones
-    # (`mark`) aren't, since they'd redact ordinary words.
-    pieces = {p for p in re.split(r"[._\-\d]+", distinctive) if len(p) >= _MIN_PIECE}
     # A name of two or more words is distinctive as a whole (`Jo Doe`).
     full = [name for name in names if len(name.split()) > 1]
-    whole = {home, *full, *pieces, *((email, distinctive, domain) if domain else ())}
-    # Only names split into parts: their capitals keep `Mark` apart from `mark`,
-    # which a lowercase local part (`mark.stone`) wouldn't.
-    parts = {part for name in names for part in re.split(r"[\s._-]+", name)}
+    whole = {home, *full, *((email, distinctive, domain) if domain else ())}
+    # Name parts match only as written, capitalized: `Price` the name, not
+    # `price` the word. A distinctive local part is usually a name (`jo.doe`)
+    # the model may write out ("Doe"), so its longer words count as names too.
+    # The cost: a capitalized ordinary word at the start of a sentence ("Will
+    # this crash?" for a Will) is redacted; leaking the name would be worse.
+    pieces = {p.capitalize() for p in re.split(r"[._\-\d]+", distinctive) if len(p) >= _MIN_PIECE}
+    parts = {part for name in names for part in re.split(r"[\s._-]+", name)} | pieces
     keep = lambda terms: {t for t in terms if len(t) >= _MIN_TERM}  # noqa: E731
     # The model may drop accents (Renée -> Renee): both spellings count.
     plain = lambda terms: terms | {_ascii(t) for t in terms}  # noqa: E731
