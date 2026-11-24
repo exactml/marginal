@@ -366,6 +366,15 @@ def test_a_reversal_case_needs_one_broken_claim_with_its_pr():
         bug_case(kind="reversal", accepted=unmarked)
 
 
+def test_every_claim_on_a_reversal_case_needs_its_pr():
+    accepted = [
+        {"kind": "rule", "about": "app.py", "statement": "s", "pr": 1, "broken": True},
+        {"kind": "rule", "about": "app.py", "statement": "t"},
+    ]
+    with pytest.raises(ValidationError, match="needs its PR"):
+        bug_case(kind="reversal", accepted=accepted)
+
+
 def test_only_a_reversal_case_breaks_an_accepted_claim():
     broken = [{"kind": "rule", "about": "app.py", "statement": "s", "pr": 1, "broken": True}]
     with pytest.raises(ValidationError, match="only a reversal case"):

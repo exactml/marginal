@@ -103,6 +103,7 @@ class Seed(_Strict):
     kind: Literal["rule", "decision"]
     about: str = Field(min_length=1)
     statement: str = Field(min_length=1)
+    # The PR the claim came from; None for one stated before the repo took PRs.
     pr: int | None = None
     # Where the repo states it at the base commit, so a person can check it.
     source: str | None = None
@@ -144,10 +145,12 @@ class Case(_Strict):
                 f"{self.id}: a clean case has no must_find; every other kind needs one"
             )
         broken = [seed for seed in self.accepted if seed.broken]
-        if self.kind == "reversal" and not (len(broken) == 1 and broken[0].pr):
-            raise ValueError(
-                f"{self.id}: a reversal case needs one broken accepted claim, with its PR"
-            )
+        if self.kind == "reversal" and len(broken) != 1:
+            raise ValueError(f"{self.id}: a reversal case needs one broken accepted claim")
+        # Every claim a reversal loads names its PR, so a PR number never marks
+        # the broken one.
+        if self.kind == "reversal" and any(seed.pr is None for seed in self.accepted):
+            raise ValueError(f"{self.id}: every accepted claim on a reversal case needs its PR")
         if self.kind != "reversal" and broken:
             raise ValueError(f"{self.id}: only a reversal case breaks an accepted claim")
         return self
