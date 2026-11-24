@@ -885,3 +885,23 @@ def test_a_timestamp_without_an_offset_is_read_as_utc():
     )
     young = Package(exists=True, created=deps._parse_time("2026-11-20T10:00:00"))
     assert _findings(_new("left-pad-ng"), young)[0].severity is Severity.MEDIUM
+
+
+def test_release_notes_keep_removals_ahead_of_banners_and_other_sections():
+    body = (
+        "## 🚀 urllib3 is fundraising for HTTP/2 support\n" + "please give " * 150 + "\n\n"
+        "## Security\n- Fixed a decompression bomb.\n\n"
+        "## Features\n" + "- a feature\n" * 80 + "\n"
+        "## Removals\n- Removed the `HTTPResponse.getheaders()` method.\n"
+    )
+    bump = Change("pypi", "urllib3", False, "2.5.0", "2.6.0", "requirements.txt", 59, "x")
+    notes = deps._notes(bump, [{"tag_name": "2.6.0", "body": body}])
+    assert "getheaders()" in notes
+    assert notes.index("## Removals") < notes.index("## Security") < notes.index("## Features")
+    assert notes.index("## Features") < notes.index("fundraising")  # the banner goes last
+
+
+def test_bumps_section_allows_indirect_use_through_a_pinned_dependency(tmp_path):
+    bump = Change("pypi", "urllib3", False, "2.5.0", "2.6.0", "requirements.txt", 59, "x")
+    section = bumps_section([bump], str(tmp_path), source=lambda c: None)
+    assert "`# via` comment" in section and "quote the bumped manifest line" in section
