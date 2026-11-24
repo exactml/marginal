@@ -90,7 +90,7 @@ Each merged PR proposes what it decided; the team accepts it the way it accepts 
 - **Context over diff** — when a PR changes a function, marginal finds its callers outside the diff and shows them to the model, so a change that breaks one of them is flagged with that caller as evidence. (The caller index covers Python today.)
 - **Your team's rules** — Markdown policies in `.marginal/policies/` are checked against every diff, and anti-policies list the deliberate tradeoffs marginal must never re-litigate.
 - **Decisions your team already made** — rules and decisions accepted from earlier pull requests live in `.marginal/knowledge/`, and a PR that breaks one, or quietly reverses it, gets a finding that names where it came from. Merged PRs propose new ones for the team to review.
-- **Dependencies a PR adds or bumps** — each package added or bumped in `pyproject.toml`, a requirements file or `package.json` is checked against PyPI or npm, with no model call: one that doesn't exist (often a name a coding agent made up, which anyone can register later), a recent lookalike of a popular package (`reqeusts`), a package published days ago, and an npm security placeholder each get a finding. For a version bump, the model sees the upstream release notes between the two versions next to the lines that use the package, and flags a change that affects them.
+- **Dependencies a PR adds or bumps** (opt-in, `dependencies.check: true`) — each package added or bumped in `pyproject.toml`, a requirements file or `package.json` is checked against PyPI or npm, with no model call: one that doesn't exist (often a name a coding agent made up, which anyone can register later), a recent lookalike of a popular package (`reqeusts`), a package published days ago, and an npm security placeholder each get a finding. For a version bump, the model sees the upstream release notes between the two versions next to the lines that use the package, and flags a change that affects them.
 - **Findings that show their work** — each posted finding quotes the lines it rests on and names its trigger, in a folded "Why marginal flagged this" block. A finding whose quote isn't in your code, or whose trigger names no real code, is dropped, not posted.
 - **Quiet by design** — evidence-checked findings and a comment cap, no repeated findings across pushes, findings closed once a later push fixes them, and a maintainer's reply taken into account on the next review.
 - **Team-friendly defaults** — drafts, bot PRs, and PRs labelled `skip-review` are skipped, and lockfiles and minified assets never reach the model.
@@ -316,7 +316,7 @@ proposals:
   enabled: false     # on: a merged PR posts the knowledge it proposes (see marginal propose)
 
 dependencies:
-  check: true        # check added and bumped packages against PyPI and npm
+  check: false       # on: check added and bumped packages against PyPI and npm (see Dependency checks)
   internal: []       # your private packages, e.g. ["acme-*"]: never "missing", flagged if the name is public
 
 models:
@@ -346,6 +346,38 @@ A policy is plain Markdown: the rule, why it exists, and where it applies. List 
 ```
 
 A finding that breaks a policy says so, e.g. *"Changing rounding from ROUND_HALF_UP to ROUND_DOWN violates the money policy."* Anti-policies work the same way for things marginal must never flag, such as a tradeoff your team made on purpose.
+
+### Dependency checks
+
+Off by default, since it sends the names of added and bumped packages to PyPI, npm and GitHub. Turn it on in `.marginal/config.yaml`:
+
+```yaml
+dependencies:
+  check: true
+  internal: ["acme-*"]   # packages from your private index
+```
+
+It reads `pyproject.toml` (PEP 621 and Poetry tables), requirements files (`requirements*.txt`, `requirements/*.txt`, `*-requirements.txt`, `.in`) and `package.json`. With no model call, each added or bumped package gets:
+
+| The package | Finding |
+|---|---|
+| Isn't on PyPI or npm, or was unpublished | 🟠 High, naming the popular package it may have meant (`reqeusts` → `requests`) |
+| Is one typo from a top-5000 package, first published under a year ago | 🟠 High under 30 days old, else 🟡 Medium |
+| Was first published under 30 days ago | 🟡 Medium |
+| Is an npm security placeholder (npm removed a malicious package and kept the name) | 🟠 High |
+| Matches `internal`, but its name is also on the public registry (dependency confusion) | 🟠 High |
+| Matches `internal` and isn't public | nothing |
+
+Every pin style is checked, since the checks need only the name. The version only decides which release notes a bump gets:
+
+| Change | Release notes |
+|---|---|
+| New package, pinned or not (`pkg`, `pkg>=2`, `pkg==2.0`) | none (nothing to compare) |
+| Version bump (`==2.31.0` → `==2.32.0`, `>=2.31` → `~=2.32`, `^18` → `^18 \|\| ^19`) | from the old version to the new one |
+| Pin added or removed (`pkg` → `pkg==2.0`) | none (one side has no version) |
+| Only an upper bound changed (`<3` → `<4`) | not a change |
+
+For a bump, the model sees the GitHub release notes between the two versions and the lines in your code that import the package, and flags a change only when it affects them. Popular packages are never downloaded, workspace, path, git and alias entries are skipped, and an unreachable registry is skipped with a warning. Not covered yet: lockfiles (indirect dependencies), Go modules, and release notes kept outside GitHub Releases.
 
 ### Accepted knowledge
 

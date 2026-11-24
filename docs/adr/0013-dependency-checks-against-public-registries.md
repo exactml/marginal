@@ -45,10 +45,10 @@ as the model's. They still post when the prompt is over budget.
 
 ## What this means
 
-- Package names a PR adds reach PyPI or npm, the same requests `pip install`
-  or `npm install` would make. Names in `dependencies.internal` are sent too,
-  to check whether the name is taken publicly. `dependencies.check: false`
-  turns every lookup off.
+- **Off by default** (`dependencies.check: true` turns it on): package names
+  a PR adds or bumps reach PyPI, npm and GitHub, the same requests `pip install`
+  or `npm install` would make, and names in `dependencies.internal` are sent
+  too, to check whether the name is taken publicly. A team should choose that.
 - An unreachable registry skips its checks with a warning; it never fails
   the review.
 - Release notes are written by the package's maintainers, so the prompt
