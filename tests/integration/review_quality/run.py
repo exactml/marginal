@@ -88,6 +88,7 @@ def _accepted(case: Case, seed: Seed) -> AcceptedClaim:
         kind=seed.kind,
         statement=seed.statement,
         about=seed.about,
+        source=seed.source,
         pr=seed.pr,
     )
 
