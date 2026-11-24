@@ -36,15 +36,39 @@ you'd prefer to stay anonymous.
 
 ## Supported Versions
 
-marginal is pre-1.0 (currently `0.1.x`) and evolving quickly. Only the
-latest release published to PyPI as
-[`marginal-review`](https://pypi.org/project/marginal-review/) receives
-security fixes; we don't backport patches to older `0.1.x` releases.
+marginal is pre-1.0 and evolving quickly. Security fixes ship in the latest
+release published to PyPI as
+[`marginal-review`](https://pypi.org/project/marginal-review/); we don't
+backport them to older releases.
 
 | Version | Supported |
 | ------- | --------- |
-| latest `0.1.x` | :white_check_mark: |
+| latest | :white_check_mark: |
 | < latest | :x: |
 
 Once marginal reaches 1.0, this policy will be revisited to define a longer
 support window.
+
+## Pinned versions
+
+You can pin marginal to a version and upgrade on your own schedule (see
+[Pinning and upgrading](README.md#pinning-and-upgrading)). Three promises
+make that safe:
+
+- **You'll be told about security fixes.** Every security fix is published as
+  a [GitHub Security Advisory](https://github.com/exactml/marginal/security/advisories)
+  against the `marginal-review` package, so a repo that pins an affected
+  version gets a Dependabot alert. The fix is also listed under **Security**
+  in [CHANGELOG.md](CHANGELOG.md) and the release notes.
+- **Breaking changes are never hidden.** Each one is listed under **Breaking
+  Changes** and never ships in a patch release: it always comes with at least
+  a minor version bump (`0.3.x` -> `0.4.0`).
+- **You can jump straight to the latest release.** You don't need to step
+  through the releases in between: read only their **Breaking Changes** and
+  **Security** sections, then change the pinned version.
+
+Each release also attaches `constraints.txt` to its
+[GitHub release](https://github.com/exactml/marginal/releases): the exact
+dependency versions it was built and tested with. With `marginal-version`
+pinned, `marginal-action` installs those versions too, so nothing changes
+underneath you.
