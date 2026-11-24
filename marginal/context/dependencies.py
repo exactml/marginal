@@ -61,6 +61,7 @@ _MAX_USAGES = 10
 _USAGE_CHARS = 200
 _TIMEOUT = 5
 _HEADERS = {"User-Agent": "marginal-review"}
+_GITHUB_API = "https://api.github.com"
 
 _HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)")
 # PEP 508 names, and npm names with an optional scope. Anything else is never
@@ -496,11 +497,13 @@ def _releases(repository: str) -> list[dict[str, object]]:
     if "github" in _unreachable:
         return []
     headers = dict(_HEADERS)
-    if os.environ.get("GITHUB_TOKEN"):
+    # On GitHub Enterprise the token belongs to another host: never send it here.
+    api = os.environ.get("GITHUB_API_URL", _GITHUB_API).rstrip("/")
+    if os.environ.get("GITHUB_TOKEN") and api == _GITHUB_API:
         headers["Authorization"] = f"Bearer {os.environ['GITHUB_TOKEN']}"
     try:
         response = requests.get(
-            f"https://api.github.com/repos/{repository}/releases",
+            f"{_GITHUB_API}/repos/{repository}/releases",
             params={"per_page": 100},
             headers=headers,
             timeout=_TIMEOUT,

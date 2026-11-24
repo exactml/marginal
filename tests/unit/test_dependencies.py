@@ -815,3 +815,21 @@ def test_an_oddly_shaped_record_skips_the_check_without_failing(monkeypatch, cap
 def test_releases_drop_entries_that_arent_objects(monkeypatch):
     monkeypatch.setattr(requests, "get", lambda *a, **kw: _Response(200, ["x", {"tag_name": "v1"}]))
     assert deps._releases("a/b") == [{"tag_name": "v1"}]
+
+
+@pytest.mark.parametrize(
+    ("api_url", "sent"),
+    [(None, True), ("https://api.github.com", True), ("https://ghe.acme.com/api/v3", False)],
+)
+def test_the_github_token_goes_only_to_github_com(monkeypatch, api_url, sent):
+    seen = {}
+    monkeypatch.setenv("GITHUB_TOKEN", "t0ken")
+    if api_url:
+        monkeypatch.setenv("GITHUB_API_URL", api_url)
+    else:
+        monkeypatch.delenv("GITHUB_API_URL", raising=False)
+    monkeypatch.setattr(
+        requests, "get", lambda url, headers, **kw: seen.update(headers) or _Response(200, [])
+    )
+    deps._releases("a/b")
+    assert ("Authorization" in seen) is sent
