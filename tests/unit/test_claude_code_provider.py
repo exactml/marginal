@@ -206,10 +206,10 @@ def test_the_signed_in_account_and_machine_are_removed_from_the_answer(tmp_path,
 def test_account_terms_redact_whole_words_only_and_emails_ignore_case(tmp_path, monkeypatch):
     config = tmp_path / "config"
     config.mkdir()
-    account = {"emailAddress": "anne@corp.example", "fullName": "Ann"}
+    account = {"emailAddress": "anne.lee@corp.example", "fullName": "Ann"}
     (config / ".claude.json").write_text(json.dumps({"oauthAccount": account}))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
-    said = "Annexes and annotations stay; anne leaks; Ops@Shop.example is quoted."
+    said = "Annexes and annotations stay; anne.lee leaks; Ops@Shop.example is quoted."
     provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result=said)))
 
     answer = asyncio.run(provider.generate("mail ops@shop.example"))
@@ -239,5 +239,28 @@ def test_an_odd_account_in_the_config_never_breaks_a_review(tmp_path, monkeypatc
     config.mkdir()
     (config / ".claude.json").write_text(json.dumps({"oauthAccount": account}))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result="ok")))
+    assert asyncio.run(provider.generate("review")) == "ok"
+
+
+def test_a_one_word_name_never_redacts_the_ordinary_word(tmp_path, monkeypatch):
+    config = tmp_path / "config"
+    config.mkdir()
+    account = {"emailAddress": "mark@corp.example", "displayName": "Mark"}
+    (config / ".claude.json").write_text(json.dumps({"oauthAccount": account}))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    said = "Thanks Mark; use pytest.mark.parametrize and mark it done."
+    provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result=said)))
+
+    answer = asyncio.run(provider.generate("review the Markdown"))
+
+    assert answer == "Thanks [REDACTED]; use pytest.mark.parametrize and mark it done."
+
+
+def test_no_home_directory_never_breaks_a_review(tmp_path, monkeypatch):
+    def no_home():
+        raise RuntimeError("Could not determine home directory")
+
+    monkeypatch.setattr(Path, "home", no_home)
     provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result="ok")))
     assert asyncio.run(provider.generate("review")) == "ok"

@@ -158,11 +158,12 @@ def _without_injected_emails(value: object, prompt: str) -> object:
     replaced by `[REDACTED]`."""
     lowered = prompt.lower()
     whole, parts = _account_terms()
-    # Whole words only, so a term never redacts part of another word. Name parts
-    # match in their own case: `Mark` the name, not `mark` the word.
+    # Whole words only, so a term never redacts part of another word, and kept
+    # only when the prompt has it as a word too (not `Mark` inside `Markdown`).
+    # Name parts match in their own case: `Mark` the name, not `mark` the word.
     patterns = [
-        _words({t for t in whole if t.lower() not in lowered}, re.IGNORECASE),
-        _words({t for t in parts if t not in prompt}, 0),
+        _words({t for t in whole if not _words({t}, re.IGNORECASE).search(prompt)}, re.IGNORECASE),
+        _words({t for t in parts if not _words({t}, 0).search(prompt)}, 0),
     ]
 
     def scrub(text: str) -> str:
@@ -196,8 +197,13 @@ def _account_terms() -> tuple[set[str], set[str]]:
     """What identifies the signed-in user, from Claude Code's config: whole
     terms (the account's email, its local part and domain, its names, and the
     home directory) and name parts (each word of a name).
-    Not the bare user name: one like `dev` would mangle real findings."""
-    config = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home()) / ".claude.json"
+    Not the bare user name, a one-word name or a plain local part (`will@`):
+    as words they can't be told apart from ordinary text."""
+    try:
+        home = str(Path.home())
+    except RuntimeError:  # no HOME and no passwd entry, in some containers
+        return set(), set()
+    config = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home) / ".claude.json"
     try:
         account = json.loads(config.read_text()).get("oauthAccount")
     except (OSError, ValueError, AttributeError):
@@ -206,7 +212,10 @@ def _account_terms() -> tuple[set[str], set[str]]:
     email = str(account.get("emailAddress") or "")
     local, _, domain = email.partition("@")
     names = [str(account.get(key) or "") for key in ("fullName", "displayName")]
-    whole = {str(Path.home()), *names, *((email, local, domain) if domain else ())}
+    distinctive = local if re.search(r"[._\-\d]", local) else ""
+    # A name of two or more words is distinctive as a whole (`Jo Doe`).
+    full = [name for name in names if len(name.split()) > 1]
+    whole = {home, *full, *((email, distinctive, domain) if domain else ())}
     # Only names split into parts: their capitals keep `Mark` apart from `mark`,
     # which a lowercase local part (`mark.stone`) wouldn't.
     parts = {part for name in names for part in re.split(r"[\s._-]+", name)}
