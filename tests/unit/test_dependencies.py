@@ -479,3 +479,56 @@ def test_package_json_reads_a_name_declared_in_two_sections(tmp_path):
     patch = '@@ -2 +2 @@\n-    "react": "^18.3.0"\n+    "react": "^19.0.0"\n'
     [change] = dependency_changes([_file("package.json", patch)], str(tmp_path))
     assert (change.name, change.old, change.new) == ("react", "18.3.0", "19.0.0")
+
+
+def test_pyproject_lines_are_matched_by_text_when_the_checkout_is_shifted(tmp_path):
+    # The checkout (a merge commit) has two lines the PR's patch numbering doesn't.
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "shop"\ndescription = "x"\nlicense = "MIT"\n'
+        'dependencies = [\n    "reqeusts>=1",\n]\n[tool.x]\nlist = [\n    "flask",\n]\n'
+    )
+    patch = '@@ -3,2 +3,3 @@\n dependencies = [\n+    "reqeusts>=1",\n ]\n'
+    [change] = dependency_changes([_file("pyproject.toml", patch)], str(tmp_path))
+    assert (change.name, change.line) == ("reqeusts", 4)
+
+
+@pytest.mark.parametrize(
+    ("spec", "version"),
+    [
+        ("==2.32.3", "2.32.3"),
+        (">=2.31,<3", "2.31"),
+        ("<3,>=2.31", "2.31"),
+        ("^18 || ^19", "19"),
+        ("~=2.32", "2.32"),
+        ("!=1.5,>=1.4", "1.4"),
+        ("1.2.0", "1.2.0"),
+        ("", None),
+    ],
+)
+def test_a_specs_version_is_its_highest_lower_bound(spec, version):
+    assert deps._version(spec) == version
+
+
+def test_a_widened_npm_range_is_a_bump(tmp_path):
+    (tmp_path / "package.json").write_text(
+        json.dumps({"peerDependencies": {"react": "^18 || ^19"}})
+    )
+    patch = '@@ -2 +2 @@\n-    "react": "^18"\n+    "react": "^18 || ^19"\n'
+    [change] = dependency_changes([_file("package.json", patch)], str(tmp_path))
+    assert (change.old, change.new) == ("18", "19")
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["requirements.txt", "dev-requirements.txt", "requirements/dev.txt", "py/requirements-ci.in"],
+)
+def test_requirements_files_in_common_layouts(tmp_path, path):
+    [change] = dependency_changes([_file(path, "@@ -0,0 +1 @@\n+reqeusts==1.0\n")], str(tmp_path))
+    assert change.name == "reqeusts"
+
+
+def test_other_text_files_are_not_requirements(tmp_path):
+    assert (
+        dependency_changes([_file("docs/notes.txt", "@@ -0,0 +1 @@\n+flask\n")], str(tmp_path))
+        == []
+    )

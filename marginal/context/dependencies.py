@@ -75,8 +75,12 @@ _NPM_ENTRY = re.compile(r'^\s*"((?:@[^"/]+/)?[^"]+)"\s*:\s*"([^"]*)"')
 _NPM_ELSEWHERE = re.compile(r"[:/]")
 _NPM_SECTIONS = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
 _VERSION = re.compile(r"\d+(?:\.\d+)*")
+_BOUND = re.compile(r"(<=?|>=?|===?|~=|!=|\^|~)?\s*v?(\d+(?:\.\d+)*)")
 _GITHUB_REPO = re.compile(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[/#?]|$)")
-_REQUIREMENTS_FILE = re.compile(r"requirements[\w.-]*\.txt")
+# requirements.txt, dev-requirements.txt, requirements/base.txt, pip-tools' .in files.
+_REQUIREMENTS_FILE = re.compile(
+    r"(?:^|/)(?:[\w.-]*requirements[\w.-]*|requirements/[\w./-]+)\.(?:txt|in)"
+)
 # The repository npm gives a name it took over after removing a malicious package.
 _NPM_SECURITY_HOLDER = "npm/security-holder"
 # GitHub links in package metadata that aren't a repository (funding, org pages).
@@ -151,7 +155,7 @@ def dependency_changes(files: list[dict[str, object]], repo_root: str) -> list[C
         elif name == "pyproject.toml":
             ecosystem, added = "pypi", _pyproject(lines, text)
             removed = _python_removed(lines, quoted=True)
-        elif _REQUIREMENTS_FILE.fullmatch(name):
+        elif _REQUIREMENTS_FILE.search(path):
             ecosystem = "pypi"
             added = [(n, *spec, t) for n, t in lines.added if (spec := _python_spec(t))]
             removed = _python_removed(lines, quoted=False)
@@ -476,8 +480,7 @@ def _python_spec(text: str) -> tuple[str, str | None] | None:
     match = _REQUIREMENT.match(text)
     if not match:
         return None
-    version = _VERSION.search(match.group(2))
-    return _normalize("pypi", match.group(1)), version.group() if version else None
+    return _normalize("pypi", match.group(1)), _version(match.group(2))
 
 
 def _python_removed(lines: _Lines, *, quoted: bool) -> dict[str, str | None]:
@@ -501,9 +504,11 @@ def _pyproject(lines: _Lines, text: str | None) -> list[tuple[int, str, str | No
     from the whole file's tables and arrays."""
     if text is None:
         return []
-    in_dependencies: set[int] = set()
+    # Lines by text, not number: the checkout may be a merge commit whose
+    # numbering differs from the patch's when the base also edited the file.
+    in_dependencies: set[str] = set()
     table, array, project = "", None, None
-    for number, raw in enumerate(text.splitlines(), 1):
+    for raw in text.splitlines():
         line = raw.split("#", 1)[0]
         header = _TOML_TABLE.match(line)
         if header:
@@ -519,12 +524,12 @@ def _pyproject(lines: _Lines, text: str | None) -> list[tuple[int, str, str | No
             table in ("project.optional-dependencies", "dependency-groups")
             or (table == "project" and array == "dependencies")
         ):
-            in_dependencies.add(number)
+            in_dependencies.add(raw.strip())
         if array and "]" in _QUOTED.sub("", line).split("[", 1)[-1]:
             array = None  # not a `]` inside a string, like the extras in `pkg[x]`
     found = []
     for number, line in lines.added:
-        if number in in_dependencies:
+        if line.strip() in in_dependencies:
             # Not `{include-group = "test"}`: an inline table names a group, not a package.
             for basic, literal in _QUOTED.findall(_INLINE_TABLE.sub("", line)):
                 spec = _python_spec(basic or literal)
@@ -546,8 +551,7 @@ def _npm(lines: _Lines, text: str | None) -> list[tuple[int, str, str | None, st
     for number, line in lines.added:
         match = _NPM_ENTRY.match(line)
         if match and (match.group(1), match.group(2)) in declared and _from_registry(match):
-            version = _VERSION.search(match.group(2))
-            found.append((number, match.group(1), version.group() if version else None, line))
+            found.append((number, match.group(1), _version(match.group(2)), line))
     return found
 
 
@@ -562,8 +566,7 @@ def _npm_removed(lines: _Lines) -> dict[str, str | None]:
     for text in lines.removed:
         match = _NPM_ENTRY.match(text)
         if match:
-            version = _VERSION.search(match.group(2))
-            removed[match.group(1)] = version.group() if version else None
+            removed[match.group(1)] = _version(match.group(2))
     return removed
 
 
@@ -608,6 +611,15 @@ def _one_edit_apart(a: str, b: str) -> bool:
     while i < len(short) and short[i] == long[i]:
         i += 1
     return short[i:] == long[i + 1 :]
+
+
+def _version(spec: str) -> str | None:
+    """The version a spec asks for: its highest lower bound, so `>=2.31,<3` is
+    2.31 and `^18 || ^19` is 19. Upper bounds and exclusions aren't one."""
+    bounds = [
+        m.group(2) for m in _BOUND.finditer(spec) if not (m.group(1) or "").startswith(("<", "!"))
+    ]
+    return max(bounds, key=_version_key) if bounds else None
 
 
 def _version_key(version: str | None) -> tuple[int, ...]:
