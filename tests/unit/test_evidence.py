@@ -202,5 +202,6 @@ def test_a_finding_on_a_diff_line_isnt_moved_out_of_the_diff(tmp_path):
 
     decide([finding], _view(tmp_path), max_comments=5)
 
-    assert finding.line == 12  # stays inline; the quote alone moves
-    assert finding.evidence[0].line == 14
+    assert finding.line == 12  # stays inline, and so does its quote
+    assert finding.evidence[0].line == 12
+    assert finding.checks.caller_shown is False  # a numbering slip isn't a caller

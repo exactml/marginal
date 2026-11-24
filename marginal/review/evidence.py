@@ -167,6 +167,10 @@ def _anchor(finding: Finding, view: CodeView) -> None:
     for evidence, actual in zip(quotes, found, strict=True):
         if actual is None or actual == evidence.line:
             continue
+        # Not out of the diff: that would make a numbering slip look like a
+        # caller the model was shown (`caller_shown`).
+        if view.in_diff(evidence.file, evidence.line) and not view.in_diff(evidence.file, actual):
+            continue
         claimed = (finding.file, finding.line) == (evidence.file, evidence.line)
         keeps_inline = view.in_diff(finding.file, actual) or not view.in_diff(
             finding.file, finding.line or 0
