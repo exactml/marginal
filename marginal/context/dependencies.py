@@ -92,10 +92,9 @@ _BOUND = re.compile(r"(<=?|>=?|===?|~=|!=|\^|~)?\s*v?(\d+(?:\.\d+)*)(?:[-+._]?[A
 _TAG_END = re.compile(r"[-_@/ ]*[vV]?$")
 _TAG_VERSION = re.compile(r"\d+(?:\.\d+)*(?=(?:[-+._]?[A-Za-z][\w.+-]*)?$)")
 # Release-note headings for changes that can break a caller, and for banners.
-# Not GitHub's generated `## What's Changed`, which lists every PR.
-_BREAKING = re.compile(
-    r"breaking|remov|deprecat|incompatib|backward|migrat|(?<!what's )(?<!whats )changed"
-)
+# `Changed` (Keep a Changelog) and GitHub's `What's Changed` aren't breaking as
+# such: they rank after these, with security.
+_BREAKING = re.compile(r"breaking|remov|deprecat|incompatib|backward|migrat")
 _BANNER = re.compile(r"fundrais|sponsor|donat|thank|contributors")
 # A Markdown heading: `## Removals`, not `#1234` or a comment in a code block.
 _HEADING = re.compile(r"^(#{1,6})\s+\S")
@@ -565,41 +564,62 @@ def _notes(change: Change, releases: list[dict[str, object]]) -> str:
 
 
 def _breaking_first(body: str) -> str:
-    """`body`'s sections reordered so the cut keeps what can break a caller:
-    removals, breaking changes and deprecations first, then security, then the
-    rest, and banners (fundraising, sponsors) last. urllib3 2.6.0 lists its
-    `getheaders()` removal after a fundraising banner and a security section,
-    2,227 characters in."""
+    """`body` reordered so the cut keeps what can break a caller: every
+    breaking, removal or deprecation section first, at any heading level (GitHub
+    nests `### Breaking Changes` under `## What's Changed`), then the rest by
+    section: security and changes, then the others, and banners (fundraising,
+    sponsors) last. urllib3 2.6.0 lists its `getheaders()` removal after a
+    fundraising banner and a security section, 2,227 characters in."""
     lines = body.splitlines()
     fenced, headings = False, []
     for number, line in enumerate(lines):
         if line.lstrip().startswith("```"):
             fenced = not fenced
         elif not fenced and (match := _HEADING.match(line)):
-            headings.append((number, len(match.group(1))))
-    # Split only at the top level, so a `### HTTPResponse` stays under its
-    # `## Breaking changes`.
-    levels = sorted({level for _, level in headings})
-    top = levels[0] if levels else 0
-    starts = [number for number, level in headings if level == top]
-    # A lone title on the first line (`# urllib3 2.6.0`) heads the whole body:
-    # split at the level below it instead.
-    if starts == [0] and len(levels) > 1:
-        top = levels[1]
-        starts = [number for number, level in headings if level == top]
-    bounds = [0, *[n for n in starts if n], len(lines)]
-    blocks = ["\n".join(lines[a:b]).strip() for a, b in zip(bounds, bounds[1:], strict=False)]
+            headings.append((number, len(match.group(1)), line.lower()))
 
-    def rank(block: str) -> int:
-        first = block.splitlines()[0]
-        heading = first.lower() if _HEADING.match(first) else ""
-        if _BREAKING.search(heading):
-            return 0
-        if "security" in heading:
+    def end_of(index: int) -> int:
+        """Where heading `index`'s section ends: at the next heading of its level or above."""
+        level = headings[index][1]
+        later = (n for n, other, _ in headings[index + 1 :] if other <= level)
+        return next(later, len(lines))
+
+    front, taken = [], set()
+    for index, (number, _, heading) in enumerate(headings):
+        if number not in taken and _BREAKING.search(heading):
+            span = range(number, end_of(index))
+            front.append("\n".join(lines[n] for n in span).strip())
+            taken.update(span)
+    rest = [(n, line) for n, line in enumerate(lines) if n not in taken]
+    return "\n\n".join(filter(None, [*front, _by_section(rest, headings)]))
+
+
+def _by_section(rest: list[tuple[int, str]], headings: list[tuple[int, int, str]]) -> str:
+    """The lines left after the breaking sections, split at their top heading
+    level (below a lone title) and ordered security first, banners last."""
+    remaining = {n for n, _ in rest}
+    levels = sorted({level for n, level, _ in headings if n in remaining})
+    starts: list[int] = []
+    for level in levels[:2]:
+        starts = [n for n, other, _ in headings if other == level and n in remaining]
+        first = rest[0][0] if rest else 0
+        if starts != [first]:  # a lone title on the first line heads it all
+            break
+    blocks: list[list[str]] = [[]]
+    for n, line in rest:
+        if n in starts and blocks[-1]:
+            blocks.append([])
+        blocks[-1].append(line)
+    texts = ["\n".join(block).strip() for block in blocks]
+
+    def rank(text: str) -> int:
+        first = text.splitlines()[0].lower() if text else ""
+        heading = first if _HEADING.match(first) else ""
+        if "security" in heading or "changed" in heading:
             return 1
         return 3 if _BANNER.search(heading) else 2
 
-    return "\n\n".join(sorted((b for b in blocks if b), key=rank))
+    return "\n\n".join(sorted((t for t in texts if t), key=rank))
 
 
 def _usages(change: Change, repo_root: str) -> list[str]:

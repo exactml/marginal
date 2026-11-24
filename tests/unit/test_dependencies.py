@@ -935,3 +935,18 @@ def test_a_title_heading_doesnt_stop_the_reordering():
     body = "# urllib3 2.6.0\n\n## Sponsors\n- thanks\n\n## Removals\n- removed getheaders()\n"
     ordered = deps._breaking_first(body)
     assert ordered.index("## Removals") < ordered.index("## Sponsors")
+
+
+def test_a_breaking_subsection_under_whats_changed_comes_first():
+    body = (
+        "## What's Changed\n### Features\n"
+        + "- a feature\n" * 60
+        + "### ⚠ Breaking Changes\n- removed x()\n## New Contributors\n- someone\n"
+    )
+    assert deps._breaking_first(body).startswith("### ⚠ Breaking Changes\n- removed x()")
+
+
+def test_keep_a_changelog_changed_comes_after_removed():
+    body = "## Changed\n" + "- tweak\n" * 60 + "\n## Removed\n- dropped y()\n"
+    ordered = deps._breaking_first(body)
+    assert ordered.index("## Removed") < ordered.index("## Changed")
