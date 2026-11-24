@@ -706,19 +706,33 @@ async def _generate_findings(
     prompt is estimated over `max_prompt_tokens`. The check runs on the final
     prompt string, so every section the builder adds counts toward the cap.
     """
-    prompt = build_finding_prompt(
-        files,
-        policies,
-        graph_context,
-        repo_root,
-        replies,
-        anti_policies,
-        ci_conclusion,
-        knowledge,
-        accepted,
-        dependencies,
-    )
+
+    def build(dependencies: str) -> str:
+        return build_finding_prompt(
+            files,
+            policies,
+            graph_context,
+            repo_root,
+            replies,
+            anti_policies,
+            ci_conclusion,
+            knowledge,
+            accepted,
+            dependencies,
+        )
+
+    prompt = build(dependencies)
     estimated_tokens = estimate_tokens(prompt)
+    if estimated_tokens > max_prompt_tokens and dependencies:
+        # Release notes are extra context: drop them before giving up the review.
+        prompt = build("")
+        estimated_tokens = estimate_tokens(prompt)
+        if estimated_tokens <= max_prompt_tokens:
+            print(
+                "marginal review: left out the bumped dependencies' release notes "
+                "to stay under review.max_prompt_tokens",
+                file=sys.stderr,
+            )
     if estimated_tokens > max_prompt_tokens:
         raise PromptOverBudget(
             f"the review prompt is an estimated {estimated_tokens:,} tokens, over "

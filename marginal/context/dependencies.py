@@ -57,6 +57,7 @@ _NOTES_CHARS_PER_PACKAGE = 4000
 # review prompt over `review.max_prompt_tokens` on its own.
 _NOTES_CHARS_TOTAL = 12_000
 _MAX_USAGES = 10
+_USAGE_CHARS = 200
 _TIMEOUT = 5
 _HEADERS = {"User-Agent": "marginal-review"}
 
@@ -493,7 +494,7 @@ def _usages(change: Change, repo_root: str) -> list[str]:
         path, _, rest = row.partition(":")
         number, _, text = rest.partition(":")
         if uses.search(text):
-            found.append(f"{path}:{number}: {text.strip()}")
+            found.append(f"{path}:{number}: {text.strip()[:_USAGE_CHARS]}")
             if len(found) == _MAX_USAGES:
                 break
     return found

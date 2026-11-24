@@ -4173,3 +4173,30 @@ def test_review_posts_a_bump_finding_quoting_a_file_the_pr_doesnt_touch(
 
     body = mock_github_client.return_value.create_review.call_args.args[1]
     assert "2.32.0 changes how `requests` reuses verify=False" in body
+
+
+def test_review_drops_release_notes_rather_than_the_review_when_over_budget(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _review_dependencies(tmp_path, monkeypatch, mock_github_client, mock_provider)
+    monkeypatch.setattr(
+        deps, "_releases", lambda repo: [{"tag_name": "v2.32.0", "body": "notes " * 2000}]
+    )
+    without_notes = estimate_tokens(
+        build_finding_prompt(
+            redact_patches([{"filename": "requirements.txt", "patch": _REQUIREMENTS_PATCH}]),
+            [],
+            [],
+            ".",
+        )
+    )
+    (tmp_path / ".marginal" / "config.yaml").write_text(
+        "version: 1\nmodels:\n  reviewer:\n    provider: anthropic\n    model: m\n"
+        f"review:\n  max_prompt_tokens: {without_notes + 50}\n"
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42"]) == 0
+
+    prompt = mock_provider.return_value.generate_structured.call_args.args[0]
+    assert "bumps the dependencies" not in prompt
+    assert "left out the bumped dependencies' release notes" in capsys.readouterr().err
