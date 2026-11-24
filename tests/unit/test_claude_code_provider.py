@@ -296,3 +296,17 @@ def test_local_part_words_redact_only_as_names(tmp_path, monkeypatch):
     provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result=said)))
 
     assert asyncio.run(provider.generate("review")) == "The admin sets a price; ask [REDACTED]."
+
+
+def test_a_multi_word_name_matches_as_written_and_public_domains_stay(tmp_path, monkeypatch):
+    config = tmp_path / "config"
+    config.mkdir()
+    account = {"emailAddress": "will.grant@gmail.com", "fullName": "Will Grant"}
+    (config / ".claude.json").write_text(json.dumps({"oauthAccount": account}))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    said = "Will Grant: the server will grant access; validate gmail.com addresses."
+    provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result=said)))
+
+    answer = asyncio.run(provider.generate("review"))
+
+    assert answer == "[REDACTED]: the server will grant access; validate gmail.com addresses."

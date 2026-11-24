@@ -42,6 +42,28 @@ _SYSTEM_PROMPT = "You are a code reviewer. Answer from the prompt alone."
 # Shorter account terms (a name like `Ann`) are left alone: as whole words
 # they'd still redact ordinary text.
 _MIN_TERM = 4
+_PUBLIC_MAIL_DOMAINS = frozenset(
+    {
+        "gmail.com",
+        "googlemail.com",
+        "outlook.com",
+        "hotmail.com",
+        "live.com",
+        "msn.com",
+        "yahoo.com",
+        "icloud.com",
+        "me.com",
+        "mac.com",
+        "aol.com",
+        "proton.me",
+        "protonmail.com",
+        "gmx.com",
+        "gmx.net",
+        "yandex.com",
+        "zoho.com",
+        "fastmail.com",
+    }
+)
 _MIN_PIECE = 5
 
 
@@ -209,16 +231,18 @@ def _account_terms() -> tuple[set[str], set[str]]:
     local, _, domain = email.partition("@")
     names = [str(account.get(key) or "") for key in ("fullName", "displayName")]
     distinctive = local if re.search(r"[._\-\d]", local) else ""
-    # A name of two or more words is distinctive as a whole (`Jo Doe`).
-    full = [name for name in names if len(name.split()) > 1]
-    whole = {home, *full, *((email, distinctive, domain) if domain else ())}
-    # Name parts match only as written, capitalized: `Price` the name, not
-    # `price` the word. A distinctive local part is usually a name (`jo.doe`)
-    # the model may write out ("Doe"), so its longer words count as names too.
-    # The cost: a capitalized ordinary word at the start of a sentence ("Will
-    # this crash?" for a Will) is redacted; leaking the name would be worse.
+    # A public mail provider's domain (gmail.com) identifies nobody.
+    own_domain = domain if domain.lower() not in _PUBLIC_MAIL_DOMAINS else ""
+    whole = {home, *((email, distinctive, own_domain) if domain else ())}
+    # Names match only as written, capitalized: `Will Grant` and `Price` the
+    # names, not "will grant" or `price` the words. A distinctive local part is
+    # usually a name (`jo.doe`) the model may write out ("Doe"), so its longer
+    # words count as names too. The cost: a capitalized ordinary word at the
+    # start of a sentence ("Will this crash?" for a Will) is redacted; leaking
+    # the name would be worse.
     pieces = {p.capitalize() for p in re.split(r"[._\-\d]+", distinctive) if len(p) >= _MIN_PIECE}
-    parts = {part for name in names for part in re.split(r"[\s._-]+", name)} | pieces
+    full = {name for name in names if len(name.split()) > 1}
+    parts = {part for name in names for part in re.split(r"[\s._-]+", name)} | pieces | full
     keep = lambda terms: {t for t in terms if len(t) >= _MIN_TERM}  # noqa: E731
     # The model may drop accents (Renée -> Renee): both spellings count.
     plain = lambda terms: terms | {_ascii(t) for t in terms}  # noqa: E731
