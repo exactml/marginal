@@ -336,6 +336,7 @@ applies_to: [widgets]         # optional: repo names or globs; omitted, it appli
 kind: decision                # or: rule
 statement: Discounts apply before tax, because invoices must match the POS.
 about: shop/pricing.py        # or a folder: shop/ (not needed under repo/)
+source: shop/pricing.py:42    # optional: where it's stated, for a person to check
 pr: 142
 author: some-login
 ```

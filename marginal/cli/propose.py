@@ -180,6 +180,7 @@ def _add_to_knowledge_pr(
             kind=kinds[claim.relation],
             statement=claim.subject.split(": ", 1)[-1],
             about=claim.object,
+            source=claim.source or None,
             pr=pr_number,
             # The replier for a decision from a reply; else the PR's author.
             author=claim.author or pr_author or None,

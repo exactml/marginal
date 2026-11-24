@@ -45,6 +45,8 @@ class AcceptedClaim(BaseModel):
     statement: str
     # A file, or a folder ending in `/`; a repo-wide claim needs none.
     about: str = ""
+    # Where it's stated (`path:line`), for a person to check; reviews don't read it.
+    source: str | None = None
     pr: int | None = None
     author: str | None = None
     # The id of the claim this one replaced, when a later PR changed it.
