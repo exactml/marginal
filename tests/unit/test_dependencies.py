@@ -330,7 +330,7 @@ def test_bumps_section_shows_notes_in_range_and_usages(tmp_path):
     assert "--- requests 2.31.0 -> 2.32.0 (requirements.txt:1) ---" in section
     assert "app.py:1: import requests" in section
     assert "requests_cache" not in section
-    assert section.index("## v2.31.1") < section.index("## v2.32.0")
+    assert section.index("## v2.32.0") < section.index("## v2.31.1")  # newest first
     assert "too new" not in section and "the old one" not in section
     assert "another package" not in section
     assert "flask" not in section
@@ -950,3 +950,20 @@ def test_keep_a_changelog_changed_comes_after_removed():
     body = "## Changed\n" + "- tweak\n" * 60 + "\n## Removed\n- dropped y()\n"
     ordered = deps._breaking_first(body)
     assert ordered.index("## Removed") < ordered.index("## Changed")
+
+
+def test_backwards_compatible_sections_arent_breaking():
+    body = (
+        "## Backwards-compatible improvements\n"
+        + "- nicer\n" * 60
+        + "\n## Removals\n- dropped z()\n"
+    )
+    assert deps._breaking_first(body).startswith("## Removals")
+
+
+def test_the_package_cap_drops_the_oldest_releases():
+    bump = Change("pypi", "pkg", False, "1.0", "4.0", "requirements.txt", 1, "x")
+    releases = [{"tag_name": f"v{n}.0", "body": f"release {n} " + "x" * 1800} for n in (2, 3, 4)]
+    notes = deps._notes(bump, releases)
+    assert notes.index("release 4") < notes.index("release 3") < notes.index("release 2")
+    assert "release 4 " + "x" * 1800 in notes  # the newest is kept whole; the oldest is cut

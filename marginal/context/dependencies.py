@@ -94,7 +94,7 @@ _TAG_VERSION = re.compile(r"\d+(?:\.\d+)*(?=(?:[-+._]?[A-Za-z][\w.+-]*)?$)")
 # Release-note headings for changes that can break a caller, and for banners.
 # `Changed` (Keep a Changelog) and GitHub's `What's Changed` aren't breaking as
 # such: they rank after these, with security.
-_BREAKING = re.compile(r"breaking|remov|deprecat|incompatib|backward|migrat")
+_BREAKING = re.compile(r"breaking|remov|deprecat|incompatib|migrat")
 _BANNER = re.compile(r"fundrais|sponsor|donat|thank|contributors")
 # A Markdown heading: `## Removals`, not `#1234` or a comment in a code block.
 _HEADING = re.compile(r"^(#{1,6})\s+\S")
@@ -540,7 +540,8 @@ def _releases(repository: str) -> list[dict[str, object]]:
 
 
 def _notes(change: Change, releases: list[dict[str, object]]) -> str:
-    """The release notes after `change.old` up to `change.new`, oldest first."""
+    """The release notes after `change.old` up to `change.new`, newest first,
+    so the package cap drops the oldest: removals tend to land in later releases."""
     old, new = _version_key(change.old), _version_key(change.new)
     picked = []
     for release in releases:
@@ -559,7 +560,7 @@ def _notes(change: Change, releases: list[dict[str, object]]) -> str:
             picked.append(
                 (version, f"## {tag}\n{_breaking_first(body)[:_NOTES_CHARS_PER_RELEASE]}")
             )
-    text = "\n\n".join(notes for _, notes in sorted(picked))
+    text = "\n\n".join(notes for _, notes in sorted(picked, reverse=True))
     return text[:_NOTES_CHARS_PER_PACKAGE]
 
 
