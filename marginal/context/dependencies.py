@@ -185,9 +185,10 @@ def dependency_findings(
     fetch: Callable[[str, str], Package | None] | None = None,
     now: datetime | None = None,
 ) -> list[Finding]:
-    """A finding for each package that doesn't exist on its registry, is an
-    npm security placeholder, or is `internal` but also public; and for each
-    new one that looks like a popular package or is days old."""
+    """A finding for each added or bumped package that doesn't exist on its
+    registry, is an npm security placeholder, is `internal` but also public,
+    recently copied a popular package's name, or is days old. Popular
+    packages are never looked up, so bumps of them cost nothing."""
     fetch = fetch or lookup
     now = now or datetime.now(timezone.utc)
     # In parallel, so a slow registry costs one wait, not one per package.
@@ -231,8 +232,8 @@ def _verdict(
             "name, usually because it was malicious, and reserved the name. It installs "
             "nothing useful, so check which package was meant."
         )
-    # A bump's package was already there: only a new one can be a fresh lookalike.
-    similar = lookalike(change.ecosystem, change.name) if change.is_new else None
+    # Bumps too: a removed line elsewhere can make a new package look like one.
+    similar = lookalike(change.ecosystem, change.name)
     if not package.exists:
         hint = f" Did you mean `{similar}`?" if similar else ""
         return Severity.HIGH, (
@@ -241,8 +242,6 @@ def _verdict(
             "install. If it's your own package from a private index, add it to "
             "`dependencies.internal` in `.marginal/config.yaml`."
         )
-    if not change.is_new:
-        return None
     age = (now - package.created).days if package.created else None
     new = age is not None and age < NEW_PACKAGE_DAYS
     published = f" It was first published {age} day(s) ago." if age is not None else ""

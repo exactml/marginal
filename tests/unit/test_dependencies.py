@@ -163,11 +163,18 @@ def test_a_brand_new_package_is_medium():
     assert "first published on PyPI 3 day(s) ago" in finding.message
 
 
-def test_an_established_package_and_a_bump_post_nothing():
+def test_an_established_package_added_or_bumped_posts_nothing():
     assert _findings(_new("flask"), OLD) == []
-    bump = Change("pypi", "reqeusts", False, "1.0", "1.1", "requirements.txt", 1, "x")
+    bump = Change("pypi", "left-pad-ng", False, "1.0", "1.1", "requirements.txt", 1, "x")
+    assert _findings(bump, OLD) == []
+
+
+def test_a_bump_gets_every_check():
+    # Removing `"reqeusts"` from another pyproject table makes an added one look like a bump.
+    bump = Change("pypi", "reqeusts", False, "1.0", "1.1", "pyproject.toml", 4, "x")
     young = Package(exists=True, created=NOW - timedelta(days=3))
-    assert _findings(bump, young) == []  # a bump's package was already there
+    [finding] = _findings(bump, young)
+    assert "one character away from the popular `requests`" in finding.message
 
 
 def test_a_bumped_package_that_doesnt_exist_is_still_flagged():
@@ -175,7 +182,7 @@ def test_a_bumped_package_that_doesnt_exist_is_still_flagged():
     bump = Change("pypi", "reqeusts", False, "1.0", "1.1", "pyproject.toml", 4, "x")
     [finding] = _findings(bump, Package(exists=False))
     assert finding.severity is Severity.HIGH
-    assert "isn't on PyPI." in finding.message and "Did you mean" not in finding.message
+    assert "isn't on PyPI. Did you mean `requests`?" in finding.message
 
 
 def test_an_unreachable_registry_posts_nothing():
