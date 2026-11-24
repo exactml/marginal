@@ -53,8 +53,10 @@ marginal provides the controls above. Your team is responsible for:
   records ship (#163), choose and retain their sink.
 - **Deciding what a finding means for a merge**: marginal comments; branch
   protection and required reviewers decide what can merge.
-- **Watching for security fixes**: follow the repository's advisories, or
-  enable Dependabot alerts on the repo that pins `marginal-review`.
+- **Watching for security fixes**: watch the marginal repository for
+  security alerts. Dependabot alerts only reach a repo that lists
+  `marginal-review` in a dependency manifest, not one that pins it through
+  marginal-action's `marginal-version` input.
 
 ## Evidence an auditor can collect
 
