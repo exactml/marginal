@@ -198,6 +198,30 @@ Open a PR, and marginal builds context, reasons over the change, and posts inlin
 
 If a `workflow_run` event triggers marginal instead (another workflow, such as your tests, finished), the review prompt also gets that run's conclusion as context. The job then needs `actions: read` in its `permissions:` to read the run, and `pr-number:` passed to the action, since a `workflow_run` event has no `pull_request` to take it from (for a PR from a fork, `github.event.workflow_run.pull_requests` is empty too). A `workflow_run` job also gets your secrets and a write token even for a PR from a fork, so that PR's diff reaches your model with those permissions in place; keep the job's `permissions:` to what marginal needs.
 
+### Pinning and upgrading
+
+By default the action installs the latest marginal on every run. To change nothing until you decide to, pin a version:
+
+```yaml
+# keep me current (default)
+- uses: exactml/marginal-action@v1
+
+# nothing changes until we say so
+- uses: exactml/marginal-action@v1
+  with:
+    marginal-version: "0.3.1"
+```
+
+A pinned run also installs the exact dependency versions that release was tested with, from the `constraints.txt` attached to its [GitHub release](https://github.com/exactml/marginal/releases). Releases made before that file existed install the pinned marginal with the newest dependencies, and the run prints a warning.
+
+| Event | `@v1`, no pin | `marginal-version: 0.3.1` |
+|---|---|---|
+| New feature release | Picked up on the next PR | Nothing changes |
+| Security fix release | Picked up on the next PR | Dependabot alert from the advisory; bump when ready |
+| Your planned upgrade | n/a | Read the Breaking Changes and Security sections of the releases in between, change one line |
+
+[SECURITY.md](SECURITY.md#pinned-versions) has the full policy.
+
 ### Check your setup
 
 `marginal doctor` checks everything a review needs, without calling a model or posting anything: that `.marginal/config.yaml` is valid, that `models.reviewer` is set and each configured provider's API key is in the environment, that `permissions` let `marginal review` read the PR, and that `GITHUB_TOKEN` is set. If `permissions.write.comments` is off it prints a note rather than a failure, since `--comment` is only needed to post. With `--repo`, it also makes one read-only GitHub call to confirm the token is accepted and the repository is reachable.
