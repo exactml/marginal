@@ -374,22 +374,26 @@ def lookup(ecosystem: str, name: str) -> Package | None:
     pattern = _PYPI_NAME if ecosystem == "pypi" else _NPM_NAME
     if not pattern.fullmatch(name):
         return None  # never goes in a URL; nothing installs it by this name either
-    if _normalize(ecosystem, name) in _popular_names(ecosystem):
-        # Exists and is established, so no check can flag it, and its full
-        # record is the kind that runs to megabytes (typescript: 16 MB).
+    key = (ecosystem, name)
+    popular = _normalize(ecosystem, name) in _popular_names(ecosystem)
+    # A popular package is established, and its full record can run to
+    # megabytes (typescript: 16 MB). PyPI has no placeholder to catch, so it's
+    # never fetched; npm's small /latest record still shows a removed package.
+    if popular and ecosystem == "pypi":
         return Package(exists=True)
     if ecosystem in _unreachable:
-        return _looked_up.get((ecosystem, name))  # what it answered before the outage
-    if (ecosystem, name) not in _looked_up:
-        _looked_up[(ecosystem, name)] = _lookup(ecosystem, name)
-    return _looked_up[(ecosystem, name)]
+        # What it answered before the outage; a popular one is taken as fine.
+        return _looked_up.get(key, Package(exists=True) if popular else None)
+    if key not in _looked_up:
+        _looked_up[key] = _lookup(ecosystem, name, latest=popular)
+    return _looked_up[key]
 
 
-def _lookup(ecosystem: str, name: str) -> Package | None:
+def _lookup(ecosystem: str, name: str, *, latest: bool = False) -> Package | None:
     url = (
         f"https://pypi.org/pypi/{name}/json"
         if ecosystem == "pypi"
-        else f"https://registry.npmjs.org/{quote(name, safe='@')}"
+        else f"https://registry.npmjs.org/{quote(name, safe='@')}" + ("/latest" if latest else "")
     )
     try:
         response = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)

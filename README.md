@@ -377,7 +377,7 @@ Every pin style is checked, since the checks need only the name. The version onl
 | Pin added or removed (`pkg` → `pkg==2.0`) | none (one side has no version) |
 | Only an upper bound changed (`<3` → `<4`) | not a change |
 
-For a bump, the model sees the GitHub release notes between the two versions and the lines in your code that import the package, and flags a change only when it affects them. Popular packages are never downloaded, workspace, path, git and alias entries are skipped, and an unreachable registry is skipped with a warning. Not covered yet: lockfiles (indirect dependencies), Go modules, and release notes kept outside GitHub Releases.
+For a bump, the model sees the GitHub release notes between the two versions and the lines in your code that import the package, and flags a change only when it affects them. Popular packages are never downloaded in full (npm ones still get a 5 KB check for a security placeholder), workspace, path, git and alias entries are skipped, and an unreachable registry is skipped with a warning. Not covered yet: lockfiles (indirect dependencies), Go modules, and release notes kept outside GitHub Releases.
 
 ### Accepted knowledge
 

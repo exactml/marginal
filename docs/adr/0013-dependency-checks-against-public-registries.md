@@ -16,8 +16,9 @@ change behavior the code relies on, which the diff doesn't show either.
 For each package a PR adds or bumps in `pyproject.toml`, a requirements file
 or `package.json`, the review asks the package's public registry (PyPI or
 npm), with **no model call**. A package in the bundled top-5000 list is
-never looked up: it exists and is established, and its full record can run
-to megabytes.
+never downloaded in full: it's established, and its full record can run to
+megabytes. A popular npm package still gets its 5 KB `/latest` record, which
+shows if npm replaced it with a security placeholder.
 
 | Check | Finding |
 |---|---|

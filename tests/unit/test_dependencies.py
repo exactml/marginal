@@ -590,10 +590,22 @@ def test_lookups_run_in_parallel():
     assert seen == {"flask", "django", "numpy"}
 
 
-def test_a_popular_package_is_never_downloaded(monkeypatch):
-    monkeypatch.setattr(requests, "get", lambda *a, **kw: pytest.fail("downloaded"))
-    assert lookup("npm", "typescript") == Package(exists=True)
+def test_a_popular_package_is_never_downloaded_in_full(monkeypatch):
+    calls = []
+    latest = {"repository": {"url": "git+https://github.com/microsoft/TypeScript.git"}}
+    monkeypatch.setattr(
+        requests, "get", lambda url, **kw: calls.append(url) or _Response(200, latest)
+    )
+    assert lookup("npm", "typescript") == Package(True, None, "microsoft/TypeScript")
     assert lookup("pypi", "Boto3") == Package(exists=True)
+    assert calls == ["https://registry.npmjs.org/typescript/latest"]
+
+
+def test_a_popular_npm_package_replaced_by_a_placeholder_is_flagged(monkeypatch):
+    holder = {"repository": {"url": "https://github.com/npm/security-holder"}}
+    monkeypatch.setattr(requests, "get", lambda url, **kw: _Response(200, holder))
+    [finding] = dependency_findings([_new("lodash", "npm")], [], now=NOW)
+    assert "security placeholder" in finding.message
 
 
 def test_an_unpublished_npm_package_is_missing(monkeypatch):
@@ -847,8 +859,9 @@ def test_a_pypi_project_with_no_files_is_missing(monkeypatch):
 
 
 def test_a_popular_package_stays_checked_after_an_outage(monkeypatch):
-    deps._unreachable.add("pypi")
+    deps._unreachable.update({"pypi", "npm"})
     assert lookup("pypi", "requests") == Package(exists=True)
+    assert lookup("npm", "lodash") == Package(exists=True)
     assert "`requests`" in deps.checked_note([_new("requests")])
 
 
