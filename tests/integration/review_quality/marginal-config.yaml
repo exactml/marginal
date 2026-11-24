@@ -2,5 +2,8 @@
 # .marginal/config.yaml, so run.py places this one in each case's snapshot,
 # with `models.reviewer` set to the attempt's provider and model (cases.yml's
 # `attempts`). Everything else stays at marginal's defaults, so the benchmark
-# measures what a new user gets.
+# measures what a new user gets, except proposals: on, so a review also
+# reports the rules and decisions a PR states (scored against `must_propose`).
 version: 1
+proposals:
+  enabled: true

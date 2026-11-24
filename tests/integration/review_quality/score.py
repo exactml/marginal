@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import statistics
 import sys
 from datetime import date
@@ -40,6 +41,10 @@ _METRICS = [
     ("cost_usd", "Cost", "usd"),
     ("duplicates", "Duplicate findings", "count"),
     ("unlabeled", "Unlabeled findings", "count"),
+    ("reversal_naming", "Reversals naming their PR", "ratio"),
+    ("knowledge_recall", "Knowledge recall", "ratio"),
+    ("knowledge_precision", "Knowledge precision", "ratio"),
+    ("invented_knowledge", "Invented knowledge", "count"),
 ]
 # One plain sentence per metric, shown next to it in the run summary.
 _MEANING = {
@@ -53,6 +58,10 @@ _MEANING = {
     "cost_usd": "Model cost in USD of reviewing every case once",
     "duplicates": "Extra findings on a bug already hit",
     "unlabeled": "Findings outside the answer key, for a person to judge",
+    "reversal_naming": "Hits on a reversal PR that name the PR the broken rule came from",
+    "knowledge_recall": "Rules and decisions a PR states that the review reported",
+    "knowledge_precision": "Reported rules and decisions that the PR really states",
+    "invented_knowledge": "Reported rules and decisions the PR doesn't state",
 }
 # Time and cost swing more between runs than the ratios, so they warn only on
 # a relative increase this large.
@@ -88,12 +97,37 @@ class Expected(Location):
     severity: Severity
 
 
+class Seed(_Strict):
+    """A rule or decision the team accepted earlier: run.py writes it into the
+    snapshot's `.marginal/knowledge/` at the base commit, where a review reads it."""
+
+    kind: Literal["rule", "decision"]
+    about: str = Field(min_length=1)
+    statement: str = Field(min_length=1)
+    # The PR the claim came from; None for one stated before the repo took PRs.
+    pr: int | None = None
+    # Where the repo states it at the base commit, so a person can check it.
+    source: str | None = None
+    # The claim a reversal case's PR breaks. Answer key only: run.py never writes
+    # it into the knowledge, so a review can't tell it from the others.
+    broken: bool = False
+
+
+class ExpectedClaim(Location):
+    """A rule or decision the PR's own diff states. A reported one matches by
+    kind and its evidence line; the statement is for a person to read."""
+
+    kind: Literal["rule", "decision"]
+    statement: str = Field(min_length=1)
+
+
 class Case(_Strict):
     id: str = Field(min_length=1)
     upstream: str = Field(pattern=r"^[\w.-]+/[\w.-]+$")
     base: str = Field(min_length=7)
     head: str = Field(min_length=7)
-    kind: Literal["security", "dependency", "caller", "logic", "test", "clean"]
+    # reversal: the PR breaks a rule or decision in `accepted`.
+    kind: Literal["security", "dependency", "caller", "logic", "test", "clean", "reversal"]
     # When the source PR merged, so scores can be split by a model's training cutoff.
     merged: date
     source: str
@@ -102,6 +136,8 @@ class Case(_Strict):
     why: str | None = None
     must_find: list[Expected] = Field(default_factory=list)
     must_not_flag: list[Location] = Field(default_factory=list)
+    accepted: list[Seed] = Field(default_factory=list)
+    must_propose: list[ExpectedClaim] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_answer_key(self) -> Case:
@@ -109,6 +145,15 @@ class Case(_Strict):
             raise ValueError(
                 f"{self.id}: a clean case has no must_find; every other kind needs one"
             )
+        broken = [seed for seed in self.accepted if seed.broken]
+        if self.kind == "reversal" and len(broken) != 1:
+            raise ValueError(f"{self.id}: a reversal case needs one broken accepted claim")
+        # Every claim a reversal loads names its PR, so a PR number never marks
+        # the broken one.
+        if self.kind == "reversal" and any(seed.pr is None for seed in self.accepted):
+            raise ValueError(f"{self.id}: every accepted claim on a reversal case needs its PR")
+        if self.kind != "reversal" and broken:
+            raise ValueError(f"{self.id}: only a reversal case breaks an accepted claim")
         return self
 
 
@@ -216,8 +261,49 @@ def score_review(case: Case, review: dict) -> dict:
         "duplicates": duplicates,
         "unlabeled": unlabeled,
         "correct": not review["findings"] if case.kind == "clean" else bool(hits),
+        # A reversal is caught when a hit says which earlier PR the rule came from.
+        "reversal_hits": len(hits) if case.kind == "reversal" else 0,
+        "reversals_named": sum(
+            any(
+                # Not followed by a digit, so #462 doesn't match #4621.
+                re.search(rf"#{seed.pr}(?!\d)", str(f.get("message") or ""))
+                for seed in case.accepted
+                if seed.broken
+            )
+            for f, _ in hits
+        )
+        if case.kind == "reversal"
+        else 0,
+        **_score_knowledge(case, review.get("knowledge")),
         "seconds": review["seconds"],
         "cost_usd": review_cost(review.get("usage")),
+    }
+
+
+def _score_knowledge(case: Case, knowledge: list[dict] | None) -> dict:
+    """Match the rules and decisions a review reported against `must_propose`,
+    each hit at most once. `None` counts for a tool that reports none."""
+    if knowledge is None:
+        return {"claims_expected": None, "claim_hits": None, "invented_knowledge": None}
+    claimed = [False] * len(case.must_propose)
+    invented = 0
+    for item in knowledge:
+        evidence = item.get("evidence") or {}
+        matched = [
+            i
+            for i, entry in enumerate(case.must_propose)
+            if entry.kind == item.get("kind")
+            and entry.contains(str(evidence.get("file")), evidence.get("line"))
+        ]
+        free = [i for i in matched if not claimed[i]]
+        if free:
+            claimed[free[0]] = True
+        elif not matched:
+            invented += 1
+    return {
+        "claims_expected": len(case.must_propose),
+        "claim_hits": sum(claimed),
+        "invented_knowledge": invented,
     }
 
 
@@ -246,6 +332,24 @@ def run_metrics(scores: list[dict]) -> dict[str, float | None]:
         "cost_usd": None if None in costs else sum(costs),
         "duplicates": sum(s["duplicates"] for s in scores),
         "unlabeled": sum(len(s["unlabeled"]) for s in scores),
+        "reversal_naming": _ratio(
+            sum(s["reversals_named"] for s in scores), sum(s["reversal_hits"] for s in scores)
+        ),
+        **_knowledge_metrics([s for s in scores if s["claims_expected"] is not None]),
+    }
+
+
+def _knowledge_metrics(scores: list[dict]) -> dict[str, float | None]:
+    """Knowledge metrics over the reviews that reported knowledge; all `None`
+    for a tool that never does."""
+    if not scores:
+        return dict.fromkeys(("knowledge_recall", "knowledge_precision", "invented_knowledge"))
+    hits = sum(s["claim_hits"] for s in scores)
+    invented = sum(s["invented_knowledge"] for s in scores)
+    return {
+        "knowledge_recall": _ratio(hits, sum(s["claims_expected"] for s in scores)),
+        "knowledge_precision": _ratio(hits, hits + invented),
+        "invented_knowledge": invented,
     }
 
 
@@ -445,7 +549,7 @@ def _attempt_details(attempt_id: str, result: dict, baseline: dict) -> list[str]
         before = _median(old_overall, key) if old_overall else None
         cells = [label, _format(new, style), _format(before, style) if old_overall else "—"]
         if runs > 1:
-            spread = result["overall"][key]
+            spread = result["overall"].get(key)
             cells.append(
                 f"{_format(spread['min'], style)}–{_format(spread['max'], style)}" if spread else ""
             )

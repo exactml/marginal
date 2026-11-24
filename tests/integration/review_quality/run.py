@@ -1,19 +1,23 @@
 """Run the review-quality benchmark: every attempt reviews every case, N times.
 
 An attempt is one review tool with one provider and model (cases.yml's
-`attempts`). For each case, downloads one snapshot of the head commit (no
-clone, no history), writes the benchmark's marginal-config.yaml into it as
-.marginal/config.yaml with the attempt's reviewer, and runs `marginal review
---base --head --format json` there, so the code graph sees the files around
-the change. Each review is saved as <out>/<attempt id>/<case-id>/<run>.json
-with the wall-clock `seconds` added; score.py turns those into scores. Calls
-each attempt's model once per case per run, so it needs that provider's API
-key (and GITHUB_TOKEN for the diff).
+`attempts`). For each case, downloads snapshots of the base and head commits
+(no clone, no history) and makes them a two-commit repository: the base with
+the case's accepted rules and decisions in .marginal/knowledge/, then the head.
+It writes the benchmark's marginal-config.yaml into it as .marginal/config.yaml
+with the attempt's reviewer, and runs `marginal review --local HEAD~1 --format
+json` there, so the review reads that knowledge from the base commit as it
+would from a PR's, and the code graph sees the files around the change. Each
+review is saved as <out>/<attempt id>/<case-id>/<run>.json with the
+wall-clock `seconds` added; score.py turns those into scores. Calls each
+attempt's model once per case per run, so it needs that provider's API key
+(and GITHUB_TOKEN for PR-Agent's diff).
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -26,12 +30,16 @@ import urllib.request
 from pathlib import Path
 
 import yaml
-from score import HERE, Attempt, Case, load_suite
+from score import HERE, Attempt, Case, Seed, load_suite
+
+from marginal.context.knowledge import AcceptedClaim, claim_file
+
+# A commit needs an author; these never leave the temporary snapshot.
+_GIT = ["git", "-c", "user.name=benchmark", "-c", "user.email=benchmark@localhost"]
 
 
 def download_snapshot(upstream: str, sha: str, dest: Path) -> Path:
-    """Extract the tarball of `upstream` at `sha` into `dest` as a git
-    repository; return its root."""
+    """Extract the tarball of `upstream` at `sha` into `dest`; return its root."""
     url = f"https://codeload.github.com/{upstream}/tar.gz/{sha}"
     with (
         urllib.request.urlopen(url, timeout=300) as response,
@@ -39,10 +47,60 @@ def download_snapshot(upstream: str, sha: str, dest: Path) -> Path:
     ):
         archive.extractall(dest, filter="data")
     (root,) = dest.iterdir()  # the archive's single <repo>-<sha>/ directory
-    # The code graph lists files with `git ls-files`, which needs a repository;
-    # untracked files are enough, so nothing is committed.
-    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     return root
+
+
+def build_checkout(case: Case, dest: Path) -> Path:
+    """The case as a git repository with two commits: the base snapshot plus
+    the case's accepted claims under .marginal/knowledge/, then the head
+    snapshot. The working tree is the head; return its root."""
+    root = download_snapshot(case.upstream, case.base, dest / "base")
+    head = download_snapshot(case.upstream, case.head, dest / "head")
+    # The case's knowledge is the seeded claims; an upstream's own would mix in.
+    if (root / ".marginal").exists() or (head / ".marginal").exists():
+        raise ValueError(f"{case.upstream} has its own .marginal/, so it can't be a case")
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    # run_attempt writes the config per attempt; it's never part of the diff.
+    (root / ".git" / "info" / "exclude").write_text(".marginal/config.yaml\n")
+    for seed in case.accepted:
+        path, text = claim_file(_accepted(case, seed))
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_text(text)
+    _commit(root, "base")
+    for entry in root.iterdir():
+        if entry.name in (".git", ".marginal"):
+            continue
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+    for entry in head.iterdir():
+        shutil.move(entry, root / entry.name)
+    _commit(root, "head")
+    return root
+
+
+def _accepted(case: Case, seed: Seed) -> AcceptedClaim:
+    return AcceptedClaim(
+        # Named like marginal names a claim: a short hash.
+        id=hashlib.sha256(f"{seed.kind}|{seed.statement}".encode()).hexdigest()[:6],
+        repo=case.upstream.split("/")[1],
+        kind=seed.kind,
+        statement=seed.statement,
+        about=seed.about,
+        pr=seed.pr,
+    )
+
+
+def _commit(root: Path, message: str) -> None:
+    # --force: a snapshot holds only tracked files, and one its .gitignore matches
+    # (generated or vendored) must still be in the diff.
+    subprocess.run(_GIT + ["add", "-A", "--force"], cwd=root, check=True)
+    subprocess.run(
+        _GIT + ["commit", "-q", "--no-verify", "--allow-empty", "-m", message],
+        cwd=root,
+        check=True,
+    )
 
 
 def review(attempt: Attempt, case: Case, checkout: Path) -> dict:
@@ -56,18 +114,8 @@ def review(attempt: Attempt, case: Case, checkout: Path) -> dict:
 def review_with_marginal(attempt: Attempt, case: Case, checkout: Path) -> dict:
     """`marginal review` of the case, with the reviewer run_attempt wrote into
     the snapshot's .marginal/config.yaml."""
-    command = [
-        "marginal",
-        "review",
-        "--repo",
-        case.upstream,
-        "--base",
-        case.base,
-        "--head",
-        case.head,
-        "--format",
-        "json",
-    ]
+    command = ["marginal", "review", "--local", "HEAD~1", "--repo", case.upstream]
+    command += ["--format", "json"]
     process = subprocess.run(command, cwd=checkout, capture_output=True, text=True, check=False)
     if process.returncode != 0:
         raise RuntimeError(f"marginal exited {process.returncode}: {process.stderr.strip()}")
@@ -210,9 +258,9 @@ def main(argv: list[str] | None = None) -> int:
             shutil.rmtree(args.out / attempt.id / case.id, ignore_errors=True)
         with tempfile.TemporaryDirectory() as tmp:
             try:
-                checkout = download_snapshot(case.upstream, case.head, Path(tmp))
-            except (OSError, tarfile.TarError, subprocess.CalledProcessError) as error:
-                print(f"{case.id}: download failed: {error}", file=sys.stderr)
+                checkout = build_checkout(case, Path(tmp))
+            except (OSError, tarfile.TarError, subprocess.CalledProcessError, ValueError) as error:
+                print(f"{case.id}: checkout failed: {error}", file=sys.stderr)
                 failures += args.runs * len(attempts)
                 continue
             (checkout / ".marginal").mkdir(exist_ok=True)
