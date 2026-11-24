@@ -5,7 +5,44 @@ on:
     types: [published]
 
 jobs:
+  # The exact dependency versions this release is tested with, attached to the
+  # release so marginal-action installs them when a team pins this version.
+  constraints:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          # marginal-action's default Python, so the file matches what a pinned run installs.
+          python-version: "3.11"
+
+      - name: Install the release with every extra and freeze it
+        run: |
+          pip install build
+          python -m build --wheel
+          python -m venv "$RUNNER_TEMP/release"
+          "$RUNNER_TEMP/release/bin/pip" install "$(ls dist/*.whl)[anthropic,openai,oic]"
+          "$RUNNER_TEMP/release/bin/pip" freeze --exclude marginal-review > constraints.txt
+          cat constraints.txt
+
+      - name: Test against those versions
+        run: |
+          "$RUNNER_TEMP/release/bin/pip" install pytest pytest-asyncio
+          "$RUNNER_TEMP/release/bin/pytest"
+
+      - name: Attach constraints.txt to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" constraints.txt --clobber
+
   publish:
+    # A release whose tests fail against its own constraints never reaches PyPI.
+    needs: constraints
     runs-on: ubuntu-latest
     environment:
       name: pypi
