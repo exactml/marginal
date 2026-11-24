@@ -422,3 +422,31 @@ def test_a_tool_that_reports_no_knowledge_gets_no_knowledge_score():
     assert result["claims_expected"] is None
     assert run_metrics([result])["knowledge_recall"] is None
     assert run_metrics([result])["invented_knowledge"] is None
+
+
+def test_a_finding_on_another_place_of_the_same_bug_is_a_hit():
+    case = bug_case(
+        must_find=[
+            {
+                "file": "app.py",
+                "lines": [10, 20],
+                "severity": "high",
+                "also": [{"file": "dev.txt", "lines": [140, 140]}],
+            }
+        ]
+    )
+    assert score_review(case, review(finding(file="dev.txt", line=140)))["hits"] == 1
+
+
+def test_a_valid_extra_finding_is_counted_on_its_own():
+    case = bug_case(valid_extra=[{"file": "demo.py", "lines": [30, 35]}])
+    result = score_review(case, review(finding(file="demo.py", line=33), finding(line=12)))
+    assert (result["hits"], result["valid_extra"], result["false_positives"]) == (1, 1, 0)
+    assert result["unlabeled"] == []
+    assert run_metrics([result])["valid_extra"] == 1
+    assert run_metrics([result])["precision"] == 1.0  # both posts are real
+
+
+def test_a_clean_case_cant_have_valid_extras():
+    with pytest.raises(ValidationError, match="nothing real to find"):
+        bug_case(kind="clean", must_find=[], valid_extra=[{"file": "a.py", "lines": [1, 2]}])
