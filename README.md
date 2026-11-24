@@ -212,7 +212,7 @@ By default the action installs the latest marginal on every run. To change nothi
     marginal-version: "0.3.1"
 ```
 
-A pinned run also installs the exact dependency versions that release was tested with, from the `constraints.txt` attached to its [GitHub release](https://github.com/exactml/marginal/releases). Releases made before that file existed install the pinned marginal with the newest dependencies, and the run prints a warning.
+A pinned run also installs the exact dependency versions that release was tested with, from the `constraints.txt` attached to its [GitHub release](https://github.com/exactml/marginal/releases). Releases made before that file existed install the pinned marginal with the newest dependencies, and the run prints a warning. The file is frozen on Linux with Python 3.11, the action's defaults; with another `python-version`, a pinned dependency may not install there, so keep the default when you pin.
 
 | Event | `@v1`, no pin | `marginal-version: 0.3.1` |
 |---|---|---|
