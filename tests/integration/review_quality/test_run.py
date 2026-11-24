@@ -182,3 +182,27 @@ def test_build_checkout_seeds_accepted_knowledge_at_the_base_and_diffs_to_the_he
     changed = sorted(f["filename"] for f in checkout.get_compare_files(base, "HEAD"))
     # The knowledge and the per-attempt config are never part of the diff.
     assert changed == ["shop/api_gen.py", "shop/cart.py", "shop/gone.py", "shop/new.py"]
+
+
+def test_build_checkout_refuses_an_upstream_with_its_own_marginal_folder(tmp_path, monkeypatch):
+    def fake_download(upstream, sha, dest):
+        root = dest / "repo"
+        (root / ".marginal").mkdir(parents=True)
+        (root / ".marginal" / "config.yaml").write_text("version: 1\n")
+        return root
+
+    monkeypatch.setattr(run, "download_snapshot", fake_download)
+    case = Case.model_validate(
+        {
+            "id": "clean-shop",
+            "upstream": "owner/shop",
+            "base": "b" * 40,
+            "head": "h" * 40,
+            "kind": "clean",
+            "merged": "2026-07-01",
+            "source": "https://github.com/owner/shop/pull/2",
+        }
+    )
+
+    with pytest.raises(ValueError, match="its own .marginal"):
+        run.build_checkout(case, tmp_path)

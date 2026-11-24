@@ -56,6 +56,9 @@ def build_checkout(case: Case, dest: Path) -> Path:
     snapshot. The working tree is the head; return its root."""
     root = download_snapshot(case.upstream, case.base, dest / "base")
     head = download_snapshot(case.upstream, case.head, dest / "head")
+    # The case's knowledge is the seeded claims; an upstream's own would mix in.
+    if (root / ".marginal").exists() or (head / ".marginal").exists():
+        raise ValueError(f"{case.upstream} has its own .marginal/, so it can't be a case")
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     # run_attempt writes the config per attempt; it's never part of the diff.
     (root / ".git" / "info" / "exclude").write_text(".marginal/config.yaml\n")
@@ -256,8 +259,8 @@ def main(argv: list[str] | None = None) -> int:
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 checkout = build_checkout(case, Path(tmp))
-            except (OSError, tarfile.TarError, subprocess.CalledProcessError) as error:
-                print(f"{case.id}: download failed: {error}", file=sys.stderr)
+            except (OSError, tarfile.TarError, subprocess.CalledProcessError, ValueError) as error:
+                print(f"{case.id}: checkout failed: {error}", file=sys.stderr)
                 failures += args.runs * len(attempts)
                 continue
             (checkout / ".marginal").mkdir(exist_ok=True)
