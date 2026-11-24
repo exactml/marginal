@@ -122,6 +122,8 @@ Neither tool posted a finding on any clean PR. The cases are in [`cases.yml`](te
 - **A PR can't rewrite its own rules** — config and policies always come from the PR's base branch, so a PR (or the agent that wrote it) can't switch its review off or add an anti-policy to silence a finding.
 - **Least privilege** — marginal reads the PR and posts review comments, nothing more. It never pushes code, and `permissions` in the config limits what it may read and write. The one push it can make is opt-in: with `permissions.write.push`, `marginal propose` adds knowledge files to a `marginal/knowledge` branch for the team to review. Turn on `permissions.write.labels` and it also labels the PR `marginal:<severity>` (e.g. `marginal:critical`) for each severity it found, and removes a `marginal:<severity>` label once a later review no longer finds that severity. GitHub creates a missing label on first use, which needs `issues: write` in the workflow's `permissions:` block, unless you create the `marginal:<severity>` labels in the repo first.
 
+Working under SOC 2 or ISO 27001? [docs/compliance.md](docs/compliance.md) maps marginal to those controls and lists the evidence an auditor can collect.
+
 ## Quickstart
 
 ```bash
