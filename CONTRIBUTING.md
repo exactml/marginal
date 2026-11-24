@@ -90,6 +90,7 @@ named `<issue>.<type>.md`, where `<type>` is one of:
 | Type          | CHANGELOG section |
 |---------------|-------------------|
 | `breaking`    | Breaking Changes  |
+| `security`    | Security          |
 | `feature`     | New Features      |
 | `improvement` | Improvements      |
 | `fix`         | Fixes             |

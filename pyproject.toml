@@ -61,6 +61,11 @@ name = "Breaking Changes"
 showcontent = true
 
 [[tool.towncrier.type]]
+directory = "security"
+name = "Security"
+showcontent = true
+
+[[tool.towncrier.type]]
 directory = "feature"
 name = "New Features"
 showcontent = true
