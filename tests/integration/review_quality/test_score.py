@@ -386,10 +386,12 @@ def test_a_reversal_hit_counts_as_named_only_when_it_names_the_earlier_pr():
     unnamed = score_review(reversal_case(), review(finding(message="Rounds twice")))
     # Every claim carries a PR number, so naming an unbroken one isn't a catch.
     decoy = score_review(reversal_case(), review(finding(message="Reverses PR #301's rule")))
+    longer = score_review(reversal_case(), review(finding(message="Reverses PR #4621's rule")))
 
     assert (named["reversal_hits"], named["reversals_named"]) == (1, 1)
     assert (unnamed["reversal_hits"], unnamed["reversals_named"]) == (1, 0)
     assert (decoy["reversal_hits"], decoy["reversals_named"]) == (1, 0)
+    assert (longer["reversal_hits"], longer["reversals_named"]) == (1, 0)
 
 
 def claim(kind="rule", file="app.py", line=30) -> dict:

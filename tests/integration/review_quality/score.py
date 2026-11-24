@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import statistics
 import sys
 from datetime import date
@@ -264,7 +265,8 @@ def score_review(case: Case, review: dict) -> dict:
         "reversal_hits": len(hits) if case.kind == "reversal" else 0,
         "reversals_named": sum(
             any(
-                f"#{seed.pr}" in str(f.get("message") or "")
+                # Not followed by a digit, so #462 doesn't match #4621.
+                re.search(rf"#{seed.pr}(?!\d)", str(f.get("message") or ""))
                 for seed in case.accepted
                 if seed.broken
             )
