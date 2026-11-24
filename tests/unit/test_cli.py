@@ -4259,3 +4259,30 @@ def test_review_gives_code_findings_the_comment_slot_on_a_severity_tie(
     posted = body + "".join(c["body"] for c in comments)
     assert "A code finding of the same severity." in posted
     assert "`reqeusts` isn't on PyPI" not in posted
+
+
+def test_a_bump_finding_naming_an_api_from_the_release_notes_is_posted(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _review_dependencies(tmp_path, monkeypatch, mock_github_client, mock_provider)
+    monkeypatch.setattr(
+        deps,
+        "_releases",
+        lambda repo: [{"tag_name": "v2.32.0", "body": "## Removals\n- Removed getheaders()"}],
+    )
+    finding = Finding(
+        file="requirements.txt",
+        line=1,
+        severity=Severity.HIGH,
+        message="2.32.0 removes `getheaders()`, which a pinned dependency calls.",
+        trigger="a pinned client calls `getheaders()` on every request",
+        evidence=[Evidence(file="requirements.txt", line=1, quote="requests==2.32.0")],
+    )
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=FindingsResponse(findings=[finding])
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"]) == 0
+
+    comments = mock_github_client.return_value.create_review.call_args.kwargs["comments"]
+    assert any("removes `getheaders()`" in c["body"] for c in comments)
