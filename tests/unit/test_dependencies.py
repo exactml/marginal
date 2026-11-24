@@ -868,3 +868,20 @@ def test_a_popular_package_stays_checked_after_an_outage(monkeypatch):
 def test_notes_match_a_tag_spelled_with_other_separators():
     bump = Change("pypi", "Flask_Login", False, "0.5", "0.6", "requirements.txt", 1, "x")
     assert deps._notes(bump, [{"tag_name": "flask-login-0.6.0", "body": "n"}]).endswith("n")
+
+
+def test_a_quoted_name_in_a_trailing_comment_is_not_a_package(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\ndependencies = [\n    "httpx>=0.27",  # was "reqeusts"\n]\n'
+    )
+    patch = '@@ -2,2 +2,3 @@\n dependencies = [\n+    "httpx>=0.27",  # was "reqeusts"\n ]\n'
+    changes = dependency_changes([_file("pyproject.toml", patch)], str(tmp_path))
+    assert [c.name for c in changes] == ["httpx"]
+
+
+def test_a_timestamp_without_an_offset_is_read_as_utc():
+    assert deps._parse_time("2026-11-20T10:00:00") == datetime(
+        2026, 11, 20, 10, tzinfo=timezone.utc
+    )
+    young = Package(exists=True, created=deps._parse_time("2026-11-20T10:00:00"))
+    assert _findings(_new("left-pad-ng"), young)[0].severity is Severity.MEDIUM

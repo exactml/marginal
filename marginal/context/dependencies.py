@@ -688,7 +688,8 @@ def _pyproject(lines: _Lines, text: str | None) -> list[tuple[int, str, str | No
     for number, line in lines.added:
         if line.strip() in in_dependencies:
             # Not `{include-group = "test"}`: an inline table names a group, not a package.
-            for basic, literal in _QUOTED.findall(_INLINE_TABLE.sub("", line)):
+            code = line.split("#", 1)[0]  # not a quoted name in a trailing comment
+            for basic, literal in _QUOTED.findall(_INLINE_TABLE.sub("", code)):
                 spec = _python_spec(basic or literal)
                 # `all = ["shop[dev]"]` is the project itself.
                 if spec and _normalize("pypi", spec[0]) != project:
@@ -812,9 +813,11 @@ def _github(urls: list[str]) -> str | None:
 
 def _parse_time(value: str) -> datetime | None:
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+    # Registries report UTC; one without an offset must still compare with `now`.
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 _REGISTRY_NAMES = {"pypi": "PyPI", "npm": "npm"}
