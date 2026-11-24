@@ -79,6 +79,12 @@ def test_init_creates_all_artifacts(tmp_path, capsys):
     assert "marginal is ready." in out
 
 
+def test_init_writes_dependency_checks_off(tmp_path):
+    main(["init", str(tmp_path)])
+    config = yaml.safe_load((tmp_path / ".marginal" / "config.yaml").read_text())
+    assert config["dependencies"] == {"check": False, "internal": []}
+
+
 def test_init_next_steps_name_both_providers_without_picking_one(tmp_path, capsys):
     main(["init", str(tmp_path)])
 
@@ -4075,11 +4081,15 @@ _REQUIREMENTS_PATCH = (
 )
 
 
-def _review_dependencies(tmp_path, monkeypatch, mock_github_client, mock_provider, config=""):
+def _review_dependencies(
+    tmp_path, monkeypatch, mock_github_client, mock_provider, config="", check=True
+):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".marginal").mkdir()
     (tmp_path / ".marginal" / "config.yaml").write_text(
-        "version: 1\nmodels:\n  reviewer:\n    provider: anthropic\n    model: m\n" + config
+        "version: 1\nmodels:\n  reviewer:\n    provider: anthropic\n    model: m\n"
+        + ("dependencies:\n  check: true\n" if check else "")
+        + config
     )
     lookups = []
 
@@ -4090,7 +4100,7 @@ def _review_dependencies(tmp_path, monkeypatch, mock_github_client, mock_provide
         return deps.Package(exists=True, repository="psf/requests")
 
     monkeypatch.setattr(deps, "lookup", fake_lookup)
-    monkeypatch.setattr(deps, "_source", lambda ecosystem, name, version: "psf/requests")
+    monkeypatch.setattr(deps, "_source", lambda ecosystem, name, new, old="": "psf/requests")
     monkeypatch.setattr(
         deps, "_releases", lambda repo: [{"tag_name": "v2.32.0", "body": "verify=False fix"}]
     )
@@ -4138,11 +4148,11 @@ def test_review_over_budget_still_posts_dependency_findings(
     assert "`reqeusts` isn't on PyPI" in comment["body"]
 
 
-def test_review_skips_dependency_checks_when_turned_off(
+def test_review_skips_dependency_checks_by_default(
     tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
 ):
     lookups = _review_dependencies(
-        tmp_path, monkeypatch, mock_github_client, mock_provider, "dependencies:\n  check: false\n"
+        tmp_path, monkeypatch, mock_github_client, mock_provider, check=False
     )
 
     assert main(["review", "--repo", "acme/widgets", "--pr", "42"]) == 0
@@ -4193,7 +4203,7 @@ def test_review_drops_release_notes_rather_than_the_review_when_over_budget(
     )
     (tmp_path / ".marginal" / "config.yaml").write_text(
         "version: 1\nmodels:\n  reviewer:\n    provider: anthropic\n    model: m\n"
-        f"review:\n  max_prompt_tokens: {without_notes + 50}\n"
+        f"review:\n  max_prompt_tokens: {without_notes + 50}\ndependencies:\n  check: true\n"
     )
 
     assert main(["review", "--repo", "acme/widgets", "--pr", "42"]) == 0

@@ -118,7 +118,9 @@ class DependenciesConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    check: bool = True
+    # Off by default: when on, the names of added and bumped packages go to
+    # PyPI, npm and GitHub, which a team should choose, not find out about.
+    check: bool = False
     # Your own packages, from a private index: glob patterns (`acme-*`) that
     # are never flagged as missing from the public registry, and are flagged
     # when a public package has the same name.

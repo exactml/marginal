@@ -238,8 +238,8 @@ def test_proposals_are_off_unless_enabled():
     assert parse_config("version: 1\nproposals:\n  enabled: true\n", "x").proposals.enabled is True
 
 
-def test_dependency_checks_are_on_with_no_internal_packages():
-    assert MarginalConfig().dependencies.check is True
+def test_dependency_checks_are_off_with_no_internal_packages():
+    assert MarginalConfig().dependencies.check is False
     assert MarginalConfig().dependencies.internal == []
     config = parse_config("version: 1\ndependencies:\n  internal: ['acme-*']\n", "x")
     assert config.dependencies.internal == ["acme-*"]
