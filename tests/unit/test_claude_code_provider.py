@@ -215,3 +215,29 @@ def test_account_terms_redact_whole_words_only_and_emails_ignore_case(tmp_path, 
     answer = asyncio.run(provider.generate("mail ops@shop.example"))
 
     assert answer == "Annexes and annotations stay; [REDACTED] leaks; Ops@Shop.example is quoted."
+
+
+def test_version_pins_stay_and_name_parts_go(tmp_path, monkeypatch):
+    config = tmp_path / "config"
+    config.mkdir()
+    account = {"emailAddress": "mark.stone@corp.example", "fullName": "Mark Stone"}
+    (config / ".claude.json").write_text(json.dumps({"oauthAccount": account}))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    said = "Thanks Mark: upgrade to requests@2.33.0 or @scope/pkg@1.0.0; mark it done."
+    provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result=said)))
+
+    answer = asyncio.run(provider.generate("review"))
+
+    assert (
+        answer == "Thanks [REDACTED]: upgrade to requests@2.33.0 or @scope/pkg@1.0.0; mark it done."
+    )
+
+
+@pytest.mark.parametrize("account", ["a string", ["a", "list"], None])
+def test_an_odd_account_in_the_config_never_breaks_a_review(tmp_path, monkeypatch, account):
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / ".claude.json").write_text(json.dumps({"oauthAccount": account}))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result="ok")))
+    assert asyncio.run(provider.generate("review")) == "ok"

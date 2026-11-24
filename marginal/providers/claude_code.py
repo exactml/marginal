@@ -37,7 +37,8 @@ _SYSTEM_PROMPT = "You are a code reviewer. Answer from the prompt alone."
 # every session, and no flag turns that off without dropping subscription
 # sign-in. Anything of the kind in the answer that isn't in the prompt can only
 # come from there, so it's removed before anything (a posted finding) carries it.
-_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+# A domain ends in letters, so `requests@2.32.0` or `pkg@1.0.0` is no address.
+_EMAIL = re.compile(r"[\w.+-]+@(?:[\w-]+\.)+[A-Za-z]{2,}(?!\w)")
 # Shorter account terms (a name like `Ann`) are left alone: as whole words
 # they'd still redact ordinary text.
 _MIN_TERM = 4
@@ -156,16 +157,21 @@ def _without_injected_emails(value: object, prompt: str) -> object:
     term identifying the signed-in user or machine, that isn't in `prompt`
     replaced by `[REDACTED]`."""
     lowered = prompt.lower()
-    terms = sorted((t for t in _account_terms() if t.lower() not in lowered), key=len, reverse=True)
-    # Whole words only, so a name never redacts part of another word.
-    alternatives = "|".join(map(re.escape, terms))
-    private = re.compile(rf"(?<!\w)(?:{alternatives})(?!\w)", re.IGNORECASE) if terms else None
+    whole, parts = _account_terms()
+    # Whole words only, so a term never redacts part of another word. Name parts
+    # match in their own case: `Mark` the name, not `mark` the word.
+    patterns = [
+        _words({t for t in whole if t.lower() not in lowered}, re.IGNORECASE),
+        _words({t for t in parts if t not in prompt}, 0),
+    ]
 
     def scrub(text: str) -> str:
         text = _EMAIL.sub(
             lambda m: m.group() if m.group().lower() in lowered else "[REDACTED]", text
         )
-        return private.sub("[REDACTED]", text) if private else text
+        for pattern in filter(None, patterns):
+            text = pattern.sub("[REDACTED]", text)
+        return text
 
     def walk(item: object) -> object:
         if isinstance(item, str):
@@ -179,18 +185,30 @@ def _without_injected_emails(value: object, prompt: str) -> object:
     return walk(value)
 
 
-def _account_terms() -> set[str]:
-    """What identifies the signed-in user: the account's email, its local part
-    and domain, and names, from Claude Code's config, plus the home directory
-    (not the bare user name: one like `dev` would mangle real findings)."""
-    terms = {str(Path.home())}
+def _words(terms: set[str], flags: int) -> re.Pattern[str] | None:
+    if not terms:
+        return None
+    alternatives = "|".join(map(re.escape, sorted(terms, key=len, reverse=True)))
+    return re.compile(rf"(?<!\w)(?:{alternatives})(?!\w)", flags)
+
+
+def _account_terms() -> tuple[set[str], set[str]]:
+    """What identifies the signed-in user, from Claude Code's config: whole
+    terms (the account's email, its local part and domain, its names, and the
+    home directory) and name parts (each word of a name).
+    Not the bare user name: one like `dev` would mangle real findings."""
     config = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home()) / ".claude.json"
     try:
-        account = json.loads(config.read_text()).get("oauthAccount") or {}
+        account = json.loads(config.read_text()).get("oauthAccount")
     except (OSError, ValueError, AttributeError):
-        account = {}
+        account = None
+    account = account if isinstance(account, dict) else {}
     email = str(account.get("emailAddress") or "")
-    if "@" in email:
-        terms |= {email, *email.split("@", 1)}
-    terms |= {str(account.get(key) or "") for key in ("fullName", "displayName")}
-    return {term for term in terms if len(term) >= _MIN_TERM}
+    local, _, domain = email.partition("@")
+    names = [str(account.get(key) or "") for key in ("fullName", "displayName")]
+    whole = {str(Path.home()), *names, *((email, local, domain) if domain else ())}
+    # Only names split into parts: their capitals keep `Mark` apart from `mark`,
+    # which a lowercase local part (`mark.stone`) wouldn't.
+    parts = {part for name in names for part in re.split(r"[\s._-]+", name)}
+    keep = lambda terms: {t for t in terms if len(t) >= _MIN_TERM}  # noqa: E731
+    return keep(whole), keep(parts)
