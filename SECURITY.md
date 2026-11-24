@@ -8,6 +8,9 @@ surface, so vulnerabilities in how it handles code, credentials, or model
 provider calls should be reported responsibly rather than filed as public
 issues.
 
+For how marginal maps to SOC 2 and ISO 27001 controls, and what your team
+stays responsible for, see [docs/compliance.md](docs/compliance.md).
+
 ## Reporting a Vulnerability
 
 **Do not open a public GitHub issue for a security vulnerability.**
