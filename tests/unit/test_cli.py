@@ -4149,3 +4149,26 @@ def test_review_skips_dependency_checks_when_turned_off(
     assert lookups == []
     prompt = mock_provider.return_value.generate_structured.call_args.args[0]
     assert "bumps the dependencies" not in prompt
+
+
+def test_review_posts_a_bump_finding_quoting_a_file_the_pr_doesnt_touch(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _review_dependencies(tmp_path, monkeypatch, mock_github_client, mock_provider)
+    (tmp_path / "app.py").write_text("import requests\n")
+    finding = _evidenced(
+        file="app.py",
+        line=1,
+        severity=Severity.MEDIUM,
+        message="2.32.0 changes how `requests` reuses verify=False across a Session.",
+        quote="import requests",
+        quote_line=1,
+    )
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=FindingsResponse(findings=[finding])
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"]) == 0
+
+    body = mock_github_client.return_value.create_review.call_args.args[1]
+    assert "2.32.0 changes how `requests` reuses verify=False" in body
