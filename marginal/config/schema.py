@@ -112,6 +112,19 @@ class ProposalsConfig(BaseModel):
     enabled: bool = False
 
 
+class DependenciesConfig(BaseModel):
+    """Checks on the packages a PR adds or bumps in `pyproject.toml`,
+    `requirements*.txt` or `package.json`, against their public registry."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    check: bool = True
+    # Your own packages, from a private index: glob patterns (`acme-*`) that
+    # are never flagged as missing from the public registry, and are flagged
+    # when a public package has the same name.
+    internal: list[str] = Field(default_factory=list)
+
+
 class ModelSpec(BaseModel):
     """A single model role assignment, parsed structurally only."""
 
@@ -160,6 +173,7 @@ class MarginalConfig(BaseModel):
     context: ContextConfig = Field(default_factory=ContextConfig)
     ownership: OwnershipConfig = Field(default_factory=OwnershipConfig)
     proposals: ProposalsConfig = Field(default_factory=ProposalsConfig)
+    dependencies: DependenciesConfig = Field(default_factory=DependenciesConfig)
     models: dict[str, ModelSpec] = Field(default_factory=dict)
     policies: list[str] = Field(default_factory=list)
     anti_policies: list[str] = Field(default_factory=list)
