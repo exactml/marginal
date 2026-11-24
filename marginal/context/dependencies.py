@@ -79,7 +79,7 @@ _BOUND = re.compile(r"(<=?|>=?|===?|~=|!=|\^|~)?\s*v?(\d+(?:\.\d+)*)")
 _GITHUB_REPO = re.compile(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[/#?]|$)")
 # requirements.txt, dev-requirements.txt, requirements/base.txt, pip-tools' .in files.
 _REQUIREMENTS_FILE = re.compile(
-    r"(?:^|/)(?:[\w.-]*requirements[\w.-]*|requirements/[\w./-]+)\.(?:txt|in)"
+    r"(?:^|/)(?:[\w.-]*requirements[\w.-]*|requirements/[\w./-]+)\.(?:txt|in)$"
 )
 # The repository npm gives a name it took over after removing a malicious package.
 _NPM_SECURITY_HOLDER = "npm/security-holder"
@@ -474,7 +474,8 @@ def _patch(patch: str) -> _Lines:
 def _python_spec(text: str) -> tuple[str, str | None] | None:
     """`(normalized name, version)` from a requirement; None for an option,
     a URL, a path or anything that names no package."""
-    text = text.split("#", 1)[0].strip()
+    # Not its options either: `--hash=sha256:...` holds numbers that aren't versions.
+    text = re.split(r"\s--?[A-Za-z]", text.split("#", 1)[0], maxsplit=1)[0].strip(" \\")
     if not text or text.startswith(("-", ".", "/")) or "://" in text or " @ " in text:
         return None
     match = _REQUIREMENT.match(text)

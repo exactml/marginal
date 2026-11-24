@@ -527,8 +527,18 @@ def test_requirements_files_in_common_layouts(tmp_path, path):
     assert change.name == "reqeusts"
 
 
-def test_other_text_files_are_not_requirements(tmp_path):
-    assert (
-        dependency_changes([_file("docs/notes.txt", "@@ -0,0 +1 @@\n+flask\n")], str(tmp_path))
-        == []
+@pytest.mark.parametrize(
+    "path", ["docs/notes.txt", "requirements.ini", "docs/requirements.index.md"]
+)
+def test_other_files_are_not_requirements(tmp_path, path):
+    assert dependency_changes([_file(path, "@@ -0,0 +1 @@\n+flask\n")], str(tmp_path)) == []
+
+
+def test_a_requirements_hash_option_is_not_a_version(tmp_path):
+    patch = (
+        "@@ -1 +1 @@\n"
+        "-requests==2.31.0 --hash=sha256:58cd2187c01e70e6e26505bca751777aa9f2ee0b7f43 \\\n"
+        "+requests==2.32.0 --hash=sha256:9f3a2b7741c6aa2e4d3e6b8a0c1f7e5d9b2a4c6e8f0a \\\n"
     )
+    [change] = dependency_changes([_file("requirements.txt", patch)], str(tmp_path))
+    assert (change.old, change.new) == ("2.31.0", "2.32.0")
