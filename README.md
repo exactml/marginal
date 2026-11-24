@@ -217,7 +217,7 @@ A pinned run also installs the exact dependency versions that release was tested
 | Event | `@v1`, no pin | `marginal-version: 0.3.1` |
 |---|---|---|
 | New feature release | Picked up on the next PR | Nothing changes |
-| Security fix release | Picked up on the next PR | Dependabot alert from the advisory; bump when ready |
+| Security fix release | Picked up on the next PR | A security advisory (watch the repo for security alerts); bump when ready |
 | Your planned upgrade | n/a | Read the Breaking Changes and Security sections of the releases in between, change one line |
 
 [SECURITY.md](SECURITY.md#pinned-versions) has the full policy.

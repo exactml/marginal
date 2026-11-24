@@ -230,7 +230,8 @@ free.
 
 If this release's **Security** section has entries, each fix also needs a
 GitHub Security Advisory against the `marginal-review` package on PyPI, with
-the affected range (`< <new>`) and `<new>` as the patched version, so a repo
-pinned to an affected version gets a Dependabot alert. Draft it with the
+the affected range (`< <new>`) and `<new>` as the patched version, so teams
+watching for security alerts (and repos listing `marginal-review` in a
+manifest, through Dependabot) are told. Draft it with the
 user (`https://github.com/exactml/marginal/security/advisories/new`); they
 publish it.

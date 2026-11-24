@@ -57,9 +57,12 @@ make that safe:
 
 - **You'll be told about security fixes.** Every security fix is published as
   a [GitHub Security Advisory](https://github.com/exactml/marginal/security/advisories)
-  against the `marginal-review` package, so a repo that pins an affected
-  version gets a Dependabot alert. The fix is also listed under **Security**
-  in [CHANGELOG.md](CHANGELOG.md) and the release notes.
+  against the `marginal-review` package, and listed under **Security** in
+  [CHANGELOG.md](CHANGELOG.md) and the release notes. To be notified, watch
+  this repository for security alerts (Watch -> Custom -> Security alerts).
+  Dependabot alerts only reach a repo that lists `marginal-review` in a
+  dependency manifest, such as a `requirements.txt`; it doesn't read the
+  `marginal-version:` input of a workflow.
 - **Breaking changes are never hidden.** Each one is listed under **Breaking
   Changes** and never ships in a patch release: it always comes with at least
   a minor version bump (`0.3.x` -> `0.4.0`).
