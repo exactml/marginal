@@ -549,15 +549,16 @@ def _usages(change: Change, repo_root: str) -> list[str]:
         name = _normalize("pypi", change.name)  # python_dateutil is python-dateutil
         module = _IMPORT_NAMES.get(name) or re.sub(r"[-.]", "_", name.removeprefix("python-"))
         uses = re.compile(rf"^\s*(?:import|from)\s+{re.escape(module)}\b", re.IGNORECASE)
-        needle = module
+        # Not the bare name: `attr` or `six` alone matches most lines of a big repo.
+        needles = [f"import {module}", f"from {module}"]
     else:
         uses = re.compile(
             rf"""(?:require\(|from\s+|import\s*\(?)\s*['"]{re.escape(change.name)}(?:/[^'"]*)?['"]"""
         )
-        needle = change.name
+        needles = [f"'{change.name}", f'"{change.name}']
     try:
         output = subprocess.run(
-            ["git", "grep", "-n", "-I", "-i", "-F", "-e", needle],
+            ["git", "grep", "-n", "-I", "-i", "-F", *(arg for n in needles for arg in ("-e", n))],
             cwd=repo_root,
             capture_output=True,
             text=True,
