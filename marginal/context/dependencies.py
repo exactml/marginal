@@ -88,6 +88,7 @@ _VERSION = re.compile(r"\d+(?:\.\d+)*")
 _BOUND = re.compile(r"(<=?|>=?|===?|~=|!=|\^|~)?\s*v?(\d+(?:\.\d+)*)(?:[-+._]?[A-Za-z][\w.+-]*)?")
 # What ends a release tag's package prefix: separators, then a `v` right before the version.
 _TAG_END = re.compile(r"[-_@/ ]*[vV]?$")
+_TAG_VERSION = re.compile(r"\d+(?:\.\d+)*(?=(?:[-+._]?[A-Za-z][\w.+-]*)?$)")
 _GITHUB_REPO = re.compile(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[/#?]|$)")
 # requirements.txt, dev-requirements.txt, requirements/base.txt, pip-tools' .in files.
 _REQUIREMENTS_FILE = re.compile(
@@ -288,21 +289,27 @@ def bumps_section(
     package. Empty when nothing is bumped. `internal` packages get no notes."""
     source = source or (lambda c: _source(c.ecosystem, c.name, c.new or ""))
     releases = releases or _releases
+    bumps = [c for c in changes if not c.is_new and c.old is not None and c.new is not None]
+
+    def gather(change: Change) -> tuple[str, list[str]]:
+        # The public package with an internal name isn't this one: never its notes.
+        repository = None if _is_internal(change, internal) else source(change)
+        notes = _notes(change, releases(repository)) if repository else ""
+        return notes, _usages(change, repo_root)
+
+    # In parallel, like the lookups: each bump makes up to three slow calls.
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        gathered = list(pool.map(gather, bumps))
     blocks, budget = [], _NOTES_CHARS_TOTAL
-    for change in changes:
-        if change.is_new or change.old is None or change.new is None:
-            continue
+    for change, (notes, usages) in zip(bumps, gathered, strict=True):
         if _is_internal(change, internal):
-            # The public package with this name isn't this one: never its notes.
-            notes, missing = "", "An internal package: no public release notes."
+            missing = "An internal package: no public release notes."
         elif budget > 0:
-            repository = source(change)
-            notes = _notes(change, releases(repository))[:budget] if repository else ""
+            notes = notes[:budget]
             budget -= len(notes)
             missing = "No upstream release notes found."
         else:
             notes, missing = "", "Release notes left out: this PR bumps too many packages."
-        usages = _usages(change, repo_root)
         blocks.append(
             f"--- {change.name} {change.old} -> {change.new} ({change.file}:{change.line}) ---\n"
             + ("Used at:\n" + "\n".join(usages) if usages else "No use of it found by name.")
@@ -468,7 +475,7 @@ def _notes(change: Change, releases: list[dict[str, object]]) -> str:
     picked = []
     for release in releases:
         tag = str(release.get("tag_name") or "")
-        match = _VERSION.search(tag)
+        match = _TAG_VERSION.search(tag)  # at the end: `client-s3@3.5.0` isn't version 3
         # `v2.0` -> "", `pkg-v2.0` -> "pkg", `dotenv@16.4.0` -> "dotenv" (its v kept).
         prefix = _TAG_END.sub("", tag[: match.start()]).lstrip("@").lower() if match else ""
         # A monorepo tags each package (`pkg@1.2.3`): keep only this one's.

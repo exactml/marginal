@@ -687,6 +687,9 @@ def test_skipped_dependencies_over_the_limit_are_reported(tmp_path, capsys, monk
         ("vite", "v5.1.0"),
         ("pkg", "pkg-v5.1.0"),
         ("@babel/core", "@babel/core@5.1.0"),
+        ("@aws-sdk/client-s3", "@aws-sdk/client-s3@5.1.0"),
+        ("web3", "web3@5.1.0"),
+        ("vite", "v5.1.0-rc1"),
     ],
 )
 def test_notes_keep_a_package_name_that_starts_or_ends_with_v(name, tag):
@@ -697,3 +700,19 @@ def test_notes_keep_a_package_name_that_starts_or_ends_with_v(name, tag):
 def test_notes_skip_another_packages_tag():
     bump = Change("npm", "vite", False, "5.0.0", "5.1.0", "package.json", 1, "x")
     assert deps._notes(bump, [{"tag_name": "vitest@5.1.0", "body": "notes"}]) == ""
+
+
+def test_bumps_section_gathers_notes_in_parallel(tmp_path):
+    import threading
+
+    barrier = threading.Barrier(3, timeout=5)
+
+    def source(change):
+        barrier.wait()  # only returns once all three run at the same time
+        return "a/b"
+
+    bumps = [Change("pypi", f"pkg{i}", False, "1.0", "2.0", "r.txt", i, "x") for i in range(3)]
+    section = bumps_section(
+        bumps, str(tmp_path), source=source, releases=lambda r: [{"tag_name": "v2.0", "body": "n"}]
+    )
+    assert section.count("## v2.0") == 3
