@@ -11,7 +11,7 @@ RULE = Knowledge(
 
 
 def test_knowledge_survives_the_round_trip_through_a_review_body():
-    body = f"### 🤖 marginal review\n\n{knowledge_marker([RULE])}"
+    body = f"### 👾 marginal review\n\n{knowledge_marker([RULE])}"
 
     assert "-->" not in knowledge_marker([RULE])[:-3]
     assert posted_knowledge([None, body]) == [RULE]

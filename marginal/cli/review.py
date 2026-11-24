@@ -46,7 +46,6 @@ from marginal.review.prompt import (
 from marginal.review.redact import redact_patches, redacted_filenames
 from marginal.review.render import (
     NO_REVIEWER_NOTICE,
-    REVIEW_HEADING,
     anchorable,
     budget_warning_lines,
     build_inline_comments,
@@ -56,6 +55,7 @@ from marginal.review.render import (
     header_lines,
     ignored_lines,
     is_ignored,
+    is_marginal_review,
     redaction_warning_lines,
     severity_labels,
     stale_severity_labels,
@@ -555,7 +555,7 @@ def _post_review(
             "neighbouring line)",
             file=sys.stderr,
         )
-    already_reviewed = any(REVIEW_HEADING in (r.get("body") or "") for r in reviews)
+    already_reviewed = any(is_marginal_review(r.get("body")) for r in reviews)
     if not (new_findings or not already_reviewed or over_budget):
         print(
             "marginal review: nothing new since marginal's last review on this PR, "

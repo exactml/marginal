@@ -28,7 +28,14 @@ _MAX_SPAN_DISTANCE = 10
 
 # Every review marginal posts opens with this, which is how a re-run spots
 # that it has already reviewed a PR.
-REVIEW_HEADING = "### 🤖 marginal review"
+REVIEW_HEADING = "### 👾 marginal review"
+# What reviews opened with before 0.4.0; those are still marginal's.
+_OLD_REVIEW_HEADINGS = ("### 🤖 marginal review",)
+
+
+def is_marginal_review(body: str | None) -> bool:
+    """Whether a PR review's `body` is one marginal posted, under any heading it has used."""
+    return any(heading in (body or "") for heading in (REVIEW_HEADING, *_OLD_REVIEW_HEADINGS))
 
 
 # Shown when no model reviewed the diff; without it, a fresh `marginal init`

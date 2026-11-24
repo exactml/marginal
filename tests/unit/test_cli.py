@@ -2,7 +2,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 
 import pytest
 import yaml
@@ -340,7 +340,7 @@ def test_review_prints_pr_summary_and_posts_nothing(
     assert args[0] == "acme/widgets"
 
     out = capsys.readouterr().out
-    assert "### 🤖 marginal review" in out
+    assert "### 👾 marginal review" in out
     assert "**PR #42: Fix flaky retry logic** · open · `abc123` → `def456` · 2 files changed" in out
     assert "- `marginal/retry.py`" in out
     assert "- `tests/test_retry.py`" in out
@@ -367,7 +367,7 @@ def test_review_default_output_is_byte_for_byte_markdown(
     assert out == (
         "\n".join(
             [
-                "### 🤖 marginal review",
+                "### 👾 marginal review",
                 "",
                 "**PR #42: Fix flaky retry logic** · open · `abc123` → `def456` · 2 files changed",
                 "",
@@ -596,7 +596,7 @@ def test_base_lines_collapses_the_file_list_behind_details():
         header_lines(42, _pull_request(), ["marginal/retry.py", "tests/test_retry.py"])
     )
 
-    assert "### 🤖 marginal review" in rendered
+    assert "### 👾 marginal review" in rendered
     assert (
         "**PR #42: Fix flaky retry logic** · open · `abc123` → `def456` · 2 files changed"
         in rendered
@@ -826,7 +826,7 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(
     # only rides along as an inline `comments` entry.
     expected_body = "\n".join(
         [
-            "### 🤖 marginal review",
+            "### 👾 marginal review",
             "",
             "**1 finding** · 🟠 1 high",
             "",
@@ -2087,7 +2087,7 @@ def test_review_format_json_prints_parseable_json_with_pr_metadata(
         "usage": {"model": None, "input_tokens": 0, "output_tokens": 0},
     }
     # The markdown summary is replaced, not appended to, under --format json.
-    assert "### 🤖 marginal review" not in out
+    assert "### 👾 marginal review" not in out
 
 
 def test_review_format_json_includes_surviving_findings(
@@ -3135,6 +3135,30 @@ def test_rerun_with_the_same_finding_reworded_posts_nothing(
     assert "nothing was posted" in err
 
 
+def test_rerun_counts_a_review_posted_under_the_old_heading(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    first = [_finding_at(2, "This sleep blocks the async retry loop.")]
+    assert (
+        _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, first, [])
+        == 0
+    )
+    first_post = client.create_review.call_args
+    # Reviews posted before 0.4.0 opened with 🤖.
+    old_post = call(first_post.args[0], first_post.args[1].replace("👾", "🤖"), **first_post.kwargs)
+    capsys.readouterr()
+
+    exit_code = _run_review_posting(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, first, [old_post]
+    )
+
+    assert exit_code == 0
+    client.create_review.assert_not_called()
+    assert "nothing was posted" in capsys.readouterr().err
+
+
 def test_rerun_after_a_rename_does_not_post_the_finding_again(
     tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
 ):
@@ -3663,7 +3687,7 @@ def test_review_with_no_findings_leads_with_no_issues_found(
     _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, [], [])
 
     body = mock_github_client.return_value.create_review.call_args.args[1]
-    assert body.startswith("### 🤖 marginal review\n\n✅ **No issues found**\n\n**PR #42")
+    assert body.startswith("### 👾 marginal review\n\n✅ **No issues found**\n\n**PR #42")
 
 
 def test_review_without_a_reviewer_model_gives_no_verdict(
