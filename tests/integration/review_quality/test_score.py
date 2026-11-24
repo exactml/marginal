@@ -450,3 +450,9 @@ def test_a_valid_extra_finding_is_counted_on_its_own():
 def test_a_clean_case_cant_have_valid_extras():
     with pytest.raises(ValidationError, match="nothing real to find"):
         bug_case(kind="clean", must_find=[], valid_extra=[{"file": "a.py", "lines": [1, 2]}])
+
+
+def test_repeats_on_a_valid_extra_are_duplicates():
+    case = bug_case(valid_extra=[{"file": "demo.py", "lines": [30, 35]}])
+    result = score_review(case, review(*[finding(file="demo.py", line=31)] * 3))
+    assert (result["valid_extra"], result["duplicates"]) == (1, 2)

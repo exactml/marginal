@@ -1366,6 +1366,10 @@ cases:
   - file: providers/cncf/kubernetes/src/airflow/providers/cncf/kubernetes/utils/pod_manager.py
     lines:
     - 1051
+    - 1066
+  - file: providers/cncf/kubernetes/src/airflow/providers/cncf/kubernetes/utils/pod_manager.py
+    lines:
+    - 1079
     - 1086
   must_propose:
   - kind: decision

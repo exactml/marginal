@@ -229,7 +229,9 @@ def score_review(case: Case, review: dict) -> dict:
     range; later findings there are duplicates, not false positives.
     """
     hit_by: list[dict | None] = [None] * len(case.must_find)
-    false_positives = duplicates = valid_extra = 0
+    false_positives = duplicates = 0
+    # Like a known bug, each verified extra counts once; repeats are duplicates.
+    extra_hit = [False] * len(case.valid_extra)
     unlabeled = []
     for finding in review["findings"]:
         file, line, end = finding["file"], _first_line(finding), finding.get("end_line")
@@ -240,8 +242,13 @@ def score_review(case: Case, review: dict) -> dict:
                 hit_by[free[0]] = finding
             else:
                 duplicates += 1
-        elif any(loc.contains(file, line, end) for loc in case.valid_extra):
-            valid_extra += 1
+        elif extras := [
+            i for i, loc in enumerate(case.valid_extra) if loc.contains(file, line, end)
+        ]:
+            if all(extra_hit[i] for i in extras):
+                duplicates += 1
+            else:
+                extra_hit[next(i for i in extras if not extra_hit[i])] = True
         elif case.kind == "clean" or any(
             loc.contains(file, line, end) for loc in case.must_not_flag
         ):
@@ -275,7 +282,7 @@ def score_review(case: Case, review: dict) -> dict:
             if f.get("evidence")
         ),
         "false_positives": false_positives,
-        "valid_extra": valid_extra,
+        "valid_extra": sum(extra_hit),
         "duplicates": duplicates,
         "unlabeled": unlabeled,
         "correct": not review["findings"] if case.kind == "clean" else bool(hits),
