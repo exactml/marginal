@@ -92,7 +92,10 @@ _BOUND = re.compile(r"(<=?|>=?|===?|~=|!=|\^|~)?\s*v?(\d+(?:\.\d+)*)(?:[-+._]?[A
 _TAG_END = re.compile(r"[-_@/ ]*[vV]?$")
 _TAG_VERSION = re.compile(r"\d+(?:\.\d+)*(?=(?:[-+._]?[A-Za-z][\w.+-]*)?$)")
 # Release-note headings for changes that can break a caller, and for banners.
-_BREAKING = re.compile(r"breaking|remov|deprecat|incompatib|backward|migrat|changed")
+# Not GitHub's generated `## What's Changed`, which lists every PR.
+_BREAKING = re.compile(
+    r"breaking|remov|deprecat|incompatib|backward|migrat|(?<!what's )(?<!whats )changed"
+)
 _BANNER = re.compile(r"fundrais|sponsor|donat|thank|contributors")
 # A Markdown heading: `## Removals`, not `#1234` or a comment in a code block.
 _HEADING = re.compile(r"^(#{1,6})\s+\S")
@@ -576,8 +579,14 @@ def _breaking_first(body: str) -> str:
             headings.append((number, len(match.group(1))))
     # Split only at the top level, so a `### HTTPResponse` stays under its
     # `## Breaking changes`.
-    top = min((level for _, level in headings), default=0)
+    levels = sorted({level for _, level in headings})
+    top = levels[0] if levels else 0
     starts = [number for number, level in headings if level == top]
+    # A lone title on the first line (`# urllib3 2.6.0`) heads the whole body:
+    # split at the level below it instead.
+    if starts == [0] and len(levels) > 1:
+        top = levels[1]
+        starts = [number for number, level in headings if level == top]
     bounds = [0, *[n for n in starts if n], len(lines)]
     blocks = ["\n".join(lines[a:b]).strip() for a, b in zip(bounds, bounds[1:], strict=False)]
 

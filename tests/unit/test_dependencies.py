@@ -924,3 +924,14 @@ def test_comments_in_code_blocks_and_issue_numbers_arent_headings():
     ordered = deps._breaking_first(body)
     assert ordered.startswith("## Removals")
     assert "```bash\n# install the extra\npip install x\n```\n#1234: fixed a crash" in ordered
+
+
+def test_whats_changed_is_not_a_breaking_section():
+    body = "## What's Changed\n" + "- a PR\n" * 50 + "\n## Breaking changes\n- removed x()\n"
+    assert deps._breaking_first(body).startswith("## Breaking changes")
+
+
+def test_a_title_heading_doesnt_stop_the_reordering():
+    body = "# urllib3 2.6.0\n\n## Sponsors\n- thanks\n\n## Removals\n- removed getheaders()\n"
+    ordered = deps._breaking_first(body)
+    assert ordered.index("## Removals") < ordered.index("## Sponsors")
