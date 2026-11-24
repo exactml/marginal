@@ -209,10 +209,17 @@ against frozen dependency versions and attaches `constraints.txt` to the
 release, and only then does the PyPI job run. Confirm both:
 
 ```bash
-RUN_ID=$(gh run list --workflow publish.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+# This release's run, not the last release's: match the tagged commit.
+git fetch -q --tags
+SHA=$(git rev-parse "v<new>^{commit}")
+RUN_ID=$(gh run list --workflow publish.yml --event release --commit "$SHA" \
+  --limit 1 --json databaseId --jq '.[0].databaseId')
 gh run watch "$RUN_ID"
 gh release view v<new> --json assets --jq '.assets[].name'   # lists constraints.txt
 ```
+
+An empty `RUN_ID` means GitHub hasn't queued the run yet: wait a few seconds
+and list again.
 
 If the `constraints` job failed, nothing reached PyPI: tell the user. A
 rerun (`gh run rerun "$RUN_ID"`) checks out the same tag, so it only helps a
