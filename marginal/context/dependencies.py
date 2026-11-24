@@ -72,12 +72,20 @@ _TOML_TABLE = re.compile(r"^\s*\[\[?([^\]]+)\]\]?")
 _TOML_ARRAY = re.compile(r"^\s*([\w.-]+)\s*=\s*\[")
 _TOML_NAME = re.compile(r"""^\s*name\s*=\s*["']([^"']+)["']""")
 _INLINE_TABLE = re.compile(r"\{[^}]*\}")
+# Poetry: `[tool.poetry.dependencies]`, `[tool.poetry.dev-dependencies]` and
+# `[tool.poetry.group.<name>.dependencies]`, one `name = spec` per line.
+_POETRY_TABLE = re.compile(
+    r"tool\.poetry\.(?:dev-)?dependencies|tool\.poetry\.group\.[\w-]+\.dependencies"
+)
+_POETRY_ENTRY = re.compile(r"""^\s*["']?([A-Za-z0-9][\w.-]*)["']?\s*=\s*(.+?)\s*$""")
 _NPM_ENTRY = re.compile(r'^\s*"((?:@[^"/]+/)?[^"]+)"\s*:\s*"([^"]*)"')
 # A version range never has a `:` or `/`; workspaces, paths, URLs and aliases do.
 _NPM_ELSEWHERE = re.compile(r"[:/]")
 _NPM_SECTIONS = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
 _VERSION = re.compile(r"\d+(?:\.\d+)*")
-_BOUND = re.compile(r"(<=?|>=?|===?|~=|!=|\^|~)?\s*v?(\d+(?:\.\d+)*)")
+# A label after the version (`+cu118`, `rc1`, `.post12`, `-beta.2`) belongs to
+# it, so its digits are never read as a version of their own.
+_BOUND = re.compile(r"(<=?|>=?|===?|~=|!=|\^|~)?\s*v?(\d+(?:\.\d+)*)(?:[-+._]?[A-Za-z][\w.+-]*)?")
 _GITHUB_REPO = re.compile(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[/#?]|$)")
 # requirements.txt, dev-requirements.txt, requirements/base.txt, pip-tools' .in files.
 _REQUIREMENTS_FILE = re.compile(
@@ -174,7 +182,14 @@ def dependency_changes(files: list[dict[str, object]], repo_root: str) -> list[C
     for change in changes.values():
         if counts[change.is_new] < (MAX_NEW_PACKAGES if change.is_new else MAX_BUMPS):
             kept.append(change)
-            counts[change.is_new] += 1
+        counts[change.is_new] += 1
+    skipped = max(0, counts[True] - MAX_NEW_PACKAGES) + max(0, counts[False] - MAX_BUMPS)
+    if skipped:
+        print(
+            f"marginal review: warning: {skipped} added or bumped dependenc(ies) not checked: "
+            f"over the limit of {MAX_NEW_PACKAGES} new and {MAX_BUMPS} bumped per review",
+            file=sys.stderr,
+        )
     return kept
 
 
@@ -543,7 +558,28 @@ def _python_removed(lines: _Lines, *, quoted: bool) -> dict[str, str | None]:
         )
         for spec in filter(None, map(_python_spec, specs)):
             removed[spec[0]] = spec[1]
+        poetry = _poetry_spec(text) if quoted else None
+        if poetry:
+            removed[poetry[0]] = poetry[1]
     return removed
+
+
+def _poetry_spec(line: str) -> tuple[str, str | None] | None:
+    """`(normalized name, version)` from a Poetry entry, `requests = "^2.31"`
+    or `requests = {version = "^2.31", extras = [...]}`; None for Python
+    itself and for path, git or URL entries."""
+    match = _POETRY_ENTRY.match(line.split("#", 1)[0])
+    if not match or match.group(1).lower() == "python":
+        return None
+    value = match.group(2)
+    if value.startswith("{"):
+        if re.search(r"\b(?:path|git|url)\s*=", value):
+            return None
+        version = re.search(r"""version\s*=\s*["']([^"']*)["']""", value)
+        spec = version.group(1) if version else ""
+    else:
+        spec = value.strip("\"' ")
+    return _normalize("pypi", match.group(1)), _version(spec)
 
 
 def _pyproject(lines: _Lines, text: str | None) -> list[tuple[int, str, str | None, str]]:
@@ -554,6 +590,7 @@ def _pyproject(lines: _Lines, text: str | None) -> list[tuple[int, str, str | No
     # Lines by text, not number: the checkout may be a merge commit whose
     # numbering differs from the patch's when the base also edited the file.
     in_dependencies: set[str] = set()
+    in_poetry: set[str] = set()
     table, array, project = "", None, None
     for raw in text.splitlines():
         line = raw.split("#", 1)[0]
@@ -572,6 +609,8 @@ def _pyproject(lines: _Lines, text: str | None) -> list[tuple[int, str, str | No
             or (table == "project" and array == "dependencies")
         ):
             in_dependencies.add(raw.strip())
+        elif _POETRY_TABLE.fullmatch(table) and _poetry_spec(raw):
+            in_poetry.add(raw.strip())
         if array and "]" in _QUOTED.sub("", line).split("[", 1)[-1]:
             array = None  # not a `]` inside a string, like the extras in `pkg[x]`
     found = []
@@ -582,6 +621,10 @@ def _pyproject(lines: _Lines, text: str | None) -> list[tuple[int, str, str | No
                 spec = _python_spec(basic or literal)
                 if spec and spec[0] != project:  # `all = ["shop[dev]"]` is shop itself
                     found.append((number, *spec, line))
+        elif line.strip() in in_poetry:
+            spec = _poetry_spec(line)
+            if spec and spec[0] != project:
+                found.append((number, *spec, line))
     return found
 
 

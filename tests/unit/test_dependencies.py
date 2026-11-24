@@ -519,6 +519,10 @@ def test_pyproject_lines_are_matched_by_text_when_the_checkout_is_shifted(tmp_pa
         ("~=2.32", "2.32"),
         ("!=1.5,>=1.4", "1.4"),
         ("1.2.0", "1.2.0"),
+        ("==2.1.0+cu118", "2.1.0"),
+        ("==2.0.0.post12", "2.0.0"),
+        ("^1.0.0-beta.2", "1.0.0"),
+        (">=2.0rc1", "2.0"),
         ("", None),
     ],
 )
@@ -642,3 +646,34 @@ def test_pin_styles(tmp_path, removed, added, is_new, old, new):
 def test_only_an_upper_bound_changed_is_not_a_bump(tmp_path):
     patch = "@@ -1 +1 @@\n-requests>=2.31,<3\n+requests>=2.31,<4\n"
     assert dependency_changes([_file("requirements.txt", patch)], str(tmp_path)) == []
+
+
+def test_poetry_dependencies_are_read(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.poetry]\nname = "shop"\n'
+        '[tool.poetry.dependencies]\npython = "^3.10"\nreqeusts = "^1.0"\n'
+        'requests = {version = "^2.32", extras = ["socks"]}\nlocal = {path = "../local"}\n'
+        '[tool.poetry.group.dev.dependencies]\npytset = "*"\n'
+        '[tool.black]\nline-length = "100"\n'
+    )
+    patch = (
+        '@@ -3,2 +3,5 @@\n python = "^3.10"\n+reqeusts = "^1.0"\n'
+        '-requests = "^2.31"\n+requests = {version = "^2.32", extras = ["socks"]}\n'
+        '+local = {path = "../local"}\n'
+        '@@ -7 +8 @@\n+pytset = "*"\n'
+        '@@ -9 +11 @@\n+line-length = "100"\n'
+    )
+    changes = dependency_changes([_file("pyproject.toml", patch)], str(tmp_path))
+    assert [(c.name, c.is_new, c.old, c.new) for c in changes] == [
+        ("reqeusts", True, None, "1.0"),
+        ("requests", False, "2.31", "2.32"),
+        ("pytset", True, None, None),
+    ]
+
+
+def test_skipped_dependencies_over_the_limit_are_reported(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(deps, "MAX_NEW_PACKAGES", 2)
+    patch = "@@ -0,0 +1,3 @@\n+aaa-one\n+bbb-two\n+reqeusts\n"
+    changes = dependency_changes([_file("requirements.txt", patch)], str(tmp_path))
+    assert len(changes) == 2
+    assert "1 added or bumped dependenc(ies) not checked" in capsys.readouterr().err
