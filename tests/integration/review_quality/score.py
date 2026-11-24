@@ -162,8 +162,8 @@ class Case(_Strict):
             raise ValueError(f"{self.id}: a clean case has nothing real to find")
         # An extra inside a known bug's lines could never be credited.
         for extra in self.valid_extra:
-            for entry in self.must_find:
-                if extra.contains(entry.file, entry.lines[0], entry.lines[1]):
+            for place in (p for entry in self.must_find for p in (entry, *entry.also)):
+                if extra.contains(place.file, place.lines[0], place.lines[1]):
                     raise ValueError(
                         f"{self.id}: valid_extra {extra.file}:{extra.lines} overlaps must_find"
                     )

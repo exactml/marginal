@@ -461,3 +461,14 @@ def test_repeats_on_a_valid_extra_are_duplicates():
 def test_a_valid_extra_cant_overlap_the_known_bug():
     with pytest.raises(ValidationError, match="overlaps must_find"):
         bug_case(valid_extra=[{"file": "app.py", "lines": [18, 25]}])
+
+
+def test_a_valid_extra_cant_overlap_a_known_bugs_other_place():
+    key = {
+        "file": "app.py",
+        "lines": [10, 20],
+        "severity": "high",
+        "also": [{"file": "dev.txt", "lines": [140, 140]}],
+    }
+    with pytest.raises(ValidationError, match="overlaps must_find"):
+        bug_case(must_find=[key], valid_extra=[{"file": "dev.txt", "lines": [138, 142]}])
