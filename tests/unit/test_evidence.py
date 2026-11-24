@@ -159,3 +159,29 @@ def test_decide_ranks_by_severity_then_verified_quotes_and_caps(tmp_path):
         (low, False),
     ]
     assert decisions[-1].reason == "over review.max_comments"
+
+
+def test_a_finding_numbered_a_line_off_moves_to_its_quote(tmp_path):
+    finding = _finding([("pk.py", 11, QUOTE)])
+    finding.line = 11
+
+    decide([finding], _view(tmp_path), max_comments=5)
+
+    assert (finding.line, finding.evidence[0].line) == (12, 12)
+    assert finding.checks.quotes == (True,)
+
+
+def test_a_finding_on_another_line_keeps_it_while_its_quote_moves(tmp_path):
+    finding = _finding([("pk.py", 11, QUOTE)])
+    finding.line = 10
+
+    decide([finding], _view(tmp_path), max_comments=5)
+
+    assert (finding.line, finding.evidence[0].line) == (10, 12)
+
+
+def test_locate_prefers_the_nearest_matching_line(tmp_path):
+    (tmp_path / "dup.py").write_text("x = 1\ny = 2\nx = 1\n")
+    assert _view(tmp_path, files=[]).locate("dup.py", 2, "x = 1") in (1, 3)
+    assert _view(tmp_path, files=[]).locate("dup.py", 3, "x = 1") == 3
+    assert _view(tmp_path, files=[]).locate("dup.py", 2, "z = 9") is None

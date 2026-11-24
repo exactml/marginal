@@ -67,14 +67,19 @@ class CodeView:
     def has_quote(self, file: str, line: int, quote: str) -> bool:
         """Whether `quote` is the line at `file:line`, give or take
         `QUOTE_LINE_TOLERANCE` lines, ignoring surrounding whitespace."""
+        return self.locate(file, line, quote) is not None
+
+    def locate(self, file: str, line: int, quote: str) -> int | None:
+        """Where `quote` really is, within `QUOTE_LINE_TOLERANCE` lines of
+        `file:line`, the nearest first; None if it isn't there."""
         wanted = _normalize(_first_line(quote))
         if not wanted:
-            return False
-        for number in range(line - QUOTE_LINE_TOLERANCE, line + QUOTE_LINE_TOLERANCE + 1):
-            text = self._line(file, number)
+            return None
+        for offset in sorted(range(-QUOTE_LINE_TOLERANCE, QUOTE_LINE_TOLERANCE + 1), key=abs):
+            text = self._line(file, line + offset)
             if text is not None and _quote_matches(wanted, _normalize(text)):
-                return True
-        return False
+                return line + offset
+        return None
 
     def in_diff(self, file: str, line: int) -> bool:
         return any(start <= line <= end for start, end in self._hunks.get(file, []))
@@ -131,6 +136,7 @@ def decide(findings: list[Finding], view: CodeView, *, max_comments: int) -> lis
     """
     passing, decisions = [], []
     for finding in findings:
+        _anchor(finding, view)
         finding._checks = check(finding, view)
         failure = _failure(finding._checks)
         if failure is None:
@@ -142,6 +148,19 @@ def decide(findings: list[Finding], view: CodeView, *, max_comments: int) -> lis
     for decision in posted[max_comments:]:
         decisions.append(Decision(decision.finding, posted=False, reason=OVER_MAX_COMMENTS))
     return posted[:max_comments] + decisions
+
+
+def _anchor(finding: Finding, view: CodeView) -> None:
+    """Move each quote a model numbered a line or two off to where it really
+    is, and the finding with it when it pointed at that quote, so a posted
+    comment lands on the quoted line (`urllib3==2.6.0` at 59, not 58)."""
+    for evidence in finding.evidence[:MAX_QUOTES]:
+        actual = view.locate(evidence.file, evidence.line, evidence.quote)
+        if actual is None or actual == evidence.line:
+            continue
+        if (finding.file, finding.line) == (evidence.file, evidence.line):
+            finding.line = actual
+        evidence.line = actual
 
 
 def _failure(checks: Checks) -> str | None:
