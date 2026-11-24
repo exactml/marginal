@@ -45,6 +45,7 @@ include = ["marginal*"]
 [tool.setuptools.package-data]
 "marginal" = ["skills/*/SKILL.md"]
 "marginal.review" = ["prompts/*.md"]
+"marginal.context" = ["popular/*.txt"]
 "marginal.oic.store" = ["migrations/*.py", "migrations/*.mako", "migrations/versions/*.py"]
 
 [tool.towncrier]

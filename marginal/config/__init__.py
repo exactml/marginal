@@ -4,6 +4,7 @@ from marginal.config.errors import ConfigError, ConfigParseError, ConfigValidati
 from marginal.config.loader import load_config
 from marginal.config.schema import (
     ContextConfig,
+    DependenciesConfig,
     MarginalConfig,
     ModelSpec,
     OwnershipConfig,
@@ -20,6 +21,7 @@ __all__ = [
     "ConfigParseError",
     "ConfigValidationError",
     "ContextConfig",
+    "DependenciesConfig",
     "MarginalConfig",
     "ModelSpec",
     "OwnershipConfig",

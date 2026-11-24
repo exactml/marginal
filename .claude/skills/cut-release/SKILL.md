@@ -45,6 +45,19 @@ towncrier build --draft --version next
 this is a real, externally-visible decision, not a mechanical default to
 apply silently.
 
+## Step 1b — Refresh the popular package lists
+
+Dependency checks flag a new package whose name is one typo from a popular
+one, using the lists in `marginal/context/popular/`. Refresh them so each
+release compares against current download counts:
+
+```bash
+python scripts/refresh_popular_packages.py
+git diff --stat marginal/context/popular/
+```
+
+Commit any change with the release in Step 4.
+
 ## Step 2 — Build CHANGELOG.md
 
 ```bash
@@ -76,7 +89,7 @@ Follow the naming pattern used by every prior release
 
 ```bash
 git checkout -b release/v<new>
-git add CHANGELOG.md changelog.d pyproject.toml .claude-plugin/plugin.json
+git add CHANGELOG.md changelog.d pyproject.toml .claude-plugin/plugin.json marginal/context/popular
 git commit -m "docs: Cut v<new> release notes
 
 Builds CHANGELOG.md's v<new> section from the changelog.d fragments and

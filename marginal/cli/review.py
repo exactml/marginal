@@ -18,6 +18,12 @@ from marginal.context import (
     load_base_policies,
     read_ci_conclusion,
 )
+from marginal.context.dependencies import (
+    bumps_section,
+    checked_note,
+    dependency_changes,
+    dependency_findings,
+)
 from marginal.context.knowledge import KNOWLEDGE_DIR, AcceptedClaim, load_accepted
 from marginal.context.local import LocalCheckout
 from marginal.github.client import GitHubClient
@@ -472,6 +478,17 @@ def _review_files(
             f"from {KNOWLEDGE_DIR}",
             file=sys.stderr,
         )
+    changes = dependency_changes(redacted, path) if config.dependencies.check else []
+    if changes:
+        print(
+            f"marginal review: checking {len(changes)} added or bumped dependenc(ies)",
+            file=sys.stderr,
+        )
+    dependency_issues = dependency_findings(changes, config.dependencies.internal)
+    # Checked against what the model was shown: the (redacted) diff and the
+    # caller context, plus the rest of each file from the checkout.
+    context = build_graph_context_section(graph_context, path) or ""
+    view = CodeView(path, redacted, context)
     try:
         response = asyncio.run(
             _generate_findings(
@@ -488,6 +505,8 @@ def _review_files(
                 ),
                 knowledge=config.proposals.enabled,
                 accepted=accepted,
+                dependency_note=checked_note(changes),
+                dependencies=bumps_section(changes, path, config.dependencies.internal),
             )
         )
     except PromptOverBudget as exc:
@@ -496,21 +515,21 @@ def _review_files(
             ".marginal/config.yaml or split the PR to review it",
             file=sys.stderr,
         )
-        return [], [], redacted_files, exc, []
+        # The dependency checks need no model, so they still post.
+        decisions = decide(dependency_issues, view, max_comments=config.review.max_comments)
+        return [d.finding for d in decisions if d.posted], [], redacted_files, exc, []
 
-    # Checked against what the model was shown: the (redacted) diff and the
-    # caller context, plus the rest of each file from the checkout.
-    context = build_graph_context_section(graph_context, path) or ""
-    view = CodeView(path, redacted, context)
     knowledge = [
         k
         for k in response.knowledge
         if config.proposals.enabled
         and view.has_quote(k.evidence.file, k.evidence.line, k.evidence.quote)
     ]
-    if not response.findings:
+    # decide() sorts by severity; on a tie the code findings, listed first, win a slot.
+    findings = [*response.findings, *dependency_issues]
+    if not findings:
         return [], [], redacted_files, None, knowledge
-    decisions = decide(response.findings, view, max_comments=config.review.max_comments)
+    decisions = decide(findings, view, max_comments=config.review.max_comments)
     dropped = [d for d in decisions if not d.posted]
     if dropped:
         reasons = Counter(d.reason for d in dropped)
@@ -682,6 +701,8 @@ async def _generate_findings(
     ci_conclusion: str | None = None,
     knowledge: bool = False,
     accepted: list[AcceptedClaim] | None = None,
+    dependencies: str = "",
+    dependency_note: str = "",
 ) -> FindingsResponse:
     """Generate a bounded list of unvalidated `Finding`s, and any business
     `Knowledge` the diff states, from `model_spec` over
@@ -693,18 +714,35 @@ async def _generate_findings(
     prompt is estimated over `max_prompt_tokens`. The check runs on the final
     prompt string, so every section the builder adds counts toward the cap.
     """
-    prompt = build_finding_prompt(
-        files,
-        policies,
-        graph_context,
-        repo_root,
-        replies,
-        anti_policies,
-        ci_conclusion,
-        knowledge,
-        accepted,
-    )
+
+    def build(dependencies: str) -> str:
+        # The note stays when the notes are dropped, so the model never repeats a check.
+        section = "\n\n".join(filter(None, [dependency_note, dependencies]))
+        return build_finding_prompt(
+            files,
+            policies,
+            graph_context,
+            repo_root,
+            replies,
+            anti_policies,
+            ci_conclusion,
+            knowledge,
+            accepted,
+            section,
+        )
+
+    prompt = build(dependencies)
     estimated_tokens = estimate_tokens(prompt)
+    if estimated_tokens > max_prompt_tokens and dependencies:
+        # Release notes are extra context: drop them before giving up the review.
+        prompt = build("")
+        estimated_tokens = estimate_tokens(prompt)
+        if estimated_tokens <= max_prompt_tokens:
+            print(
+                "marginal review: left out the bumped dependencies' release notes "
+                "to stay under review.max_prompt_tokens",
+                file=sys.stderr,
+            )
     if estimated_tokens > max_prompt_tokens:
         raise PromptOverBudget(
             f"the review prompt is an estimated {estimated_tokens:,} tokens, over "

@@ -15,6 +15,7 @@ from marginal.cli.review import run_review
 from marginal.config import MarginalConfig, load_config
 from marginal.config.schema import ModelSpec
 from marginal.context import build_graph_context
+from marginal.context import dependencies as deps
 from marginal.github.errors import (
     GitHubAPIError,
     GitHubAuthenticationError,
@@ -76,6 +77,12 @@ def test_init_creates_all_artifacts(tmp_path, capsys):
     assert "✓ Created .marginal/policies/README.md" in out
     assert "✓ Created .github/workflows/marginal.yml" in out
     assert "marginal is ready." in out
+
+
+def test_init_writes_dependency_checks_off(tmp_path):
+    main(["init", str(tmp_path)])
+    config = yaml.safe_load((tmp_path / ".marginal" / "config.yaml").read_text())
+    assert config["dependencies"] == {"check": False, "internal": []}
 
 
 def test_init_next_steps_name_both_providers_without_picking_one(tmp_path, capsys):
@@ -4065,3 +4072,190 @@ def test_review_with_proposals_off_asks_for_and_posts_no_knowledge(
 
     assert KNOWLEDGE_INSTRUCTIONS not in provider.generate_structured.call_args.args[0]
     assert posted_knowledge([client.create_review.call_args.args[1]]) == []
+
+
+# -- dependency checks (marginal.context.dependencies)
+
+_REQUIREMENTS_PATCH = (
+    "@@ -1,2 +1,3 @@\n-requests==2.31.0\n+requests==2.32.0\n+reqeusts==1.0\n flask\n"
+)
+
+
+def _review_dependencies(
+    tmp_path, monkeypatch, mock_github_client, mock_provider, config="", check=True
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".marginal").mkdir()
+    (tmp_path / ".marginal" / "config.yaml").write_text(
+        "version: 1\nmodels:\n  reviewer:\n    provider: anthropic\n    model: m\n"
+        + ("dependencies:\n  check: true\n" if check else "")
+        + config
+    )
+    lookups = []
+
+    def fake_lookup(ecosystem, name):
+        lookups.append(name)
+        if name == "reqeusts":
+            return deps.Package(exists=False)
+        return deps.Package(exists=True, repository="psf/requests")
+
+    monkeypatch.setattr(deps, "lookup", fake_lookup)
+    monkeypatch.setattr(deps, "_source", lambda ecosystem, name, new, old="": "psf/requests")
+    monkeypatch.setattr(
+        deps, "_releases", lambda repo: [{"tag_name": "v2.32.0", "body": "verify=False fix"}]
+    )
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "requirements.txt", "patch": _REQUIREMENTS_PATCH}
+    ]
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=FindingsResponse(findings=[])
+    )
+    return lookups
+
+
+def test_review_posts_a_missing_dependency_and_shows_a_bumps_notes(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _review_dependencies(tmp_path, monkeypatch, mock_github_client, mock_provider)
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"]) == 0
+
+    prompt = mock_provider.return_value.generate_structured.call_args.args[0]
+    assert "--- requests 2.31.0 -> 2.32.0 (requirements.txt:1) ---" in prompt
+    assert "verify=False fix" in prompt
+    [comment] = mock_github_client.return_value.create_review.call_args.kwargs["comments"]
+    assert comment["path"] == "requirements.txt" and comment["line"] == 2
+    assert "`reqeusts` isn't on PyPI. Did you mean `requests`?" in comment["body"]
+
+
+def test_review_over_budget_still_posts_dependency_findings(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _review_dependencies(
+        tmp_path,
+        monkeypatch,
+        mock_github_client,
+        mock_provider,
+        "review:\n  max_prompt_tokens: 1\n",
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"]) == 0
+
+    mock_provider.return_value.generate_structured.assert_not_called()
+    [comment] = mock_github_client.return_value.create_review.call_args.kwargs["comments"]
+    assert "`reqeusts` isn't on PyPI" in comment["body"]
+
+
+def test_review_skips_dependency_checks_by_default(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    lookups = _review_dependencies(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, check=False
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42"]) == 0
+
+    assert lookups == []
+    prompt = mock_provider.return_value.generate_structured.call_args.args[0]
+    assert "bumps the dependencies" not in prompt
+
+
+def test_review_posts_a_bump_finding_quoting_a_file_the_pr_doesnt_touch(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _review_dependencies(tmp_path, monkeypatch, mock_github_client, mock_provider)
+    (tmp_path / "app.py").write_text("import requests\n")
+    finding = _evidenced(
+        file="app.py",
+        line=1,
+        severity=Severity.MEDIUM,
+        message="2.32.0 changes how `requests` reuses verify=False across a Session.",
+        quote="import requests",
+        quote_line=1,
+    )
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=FindingsResponse(findings=[finding])
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"]) == 0
+
+    body = mock_github_client.return_value.create_review.call_args.args[1]
+    assert "2.32.0 changes how `requests` reuses verify=False" in body
+
+
+def test_review_drops_release_notes_rather_than_the_review_when_over_budget(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _review_dependencies(tmp_path, monkeypatch, mock_github_client, mock_provider)
+    monkeypatch.setattr(
+        deps, "_releases", lambda repo: [{"tag_name": "v2.32.0", "body": "notes " * 2000}]
+    )
+    without_notes = estimate_tokens(
+        build_finding_prompt(
+            redact_patches([{"filename": "requirements.txt", "patch": _REQUIREMENTS_PATCH}]),
+            [],
+            [],
+            ".",
+            dependencies=deps.checked_note(
+                deps.dependency_changes(
+                    [{"filename": "requirements.txt", "patch": _REQUIREMENTS_PATCH}], str(tmp_path)
+                )
+            ),
+        )
+    )
+    (tmp_path / ".marginal" / "config.yaml").write_text(
+        "version: 1\nmodels:\n  reviewer:\n    provider: anthropic\n    model: m\n"
+        f"review:\n  max_prompt_tokens: {without_notes + 50}\ndependencies:\n  check: true\n"
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42"]) == 0
+
+    prompt = mock_provider.return_value.generate_structured.call_args.args[0]
+    assert "bumps the dependencies" not in prompt
+    assert "marginal already checked these packages" in prompt
+    assert "left out the bumped dependencies' release notes" in capsys.readouterr().err
+
+
+def test_review_tells_the_model_the_registry_checks_ran_even_with_no_bump(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _review_dependencies(tmp_path, monkeypatch, mock_github_client, mock_provider)
+    mock_github_client.return_value.get_pull_request_files.return_value = [
+        {"filename": "requirements.txt", "patch": "@@ -1 +1,2 @@\n flask\n+reqeusts==1.0\n"}
+    ]
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42"]) == 0
+
+    prompt = mock_provider.return_value.generate_structured.call_args.args[0]
+    assert "marginal already checked these packages against their registry" in prompt
+    assert "`reqeusts`" in prompt
+    assert "bumps the dependencies" not in prompt
+
+
+def test_review_gives_code_findings_the_comment_slot_on_a_severity_tie(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _review_dependencies(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, "review:\n  max_comments: 1\n"
+    )
+    (tmp_path / "app.py").write_text("import requests\n")
+    finding = _evidenced(
+        file="app.py",
+        line=1,
+        severity=Severity.HIGH,
+        message="A code finding of the same severity.",
+        quote="import requests",
+    )
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=FindingsResponse(findings=[finding])
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"]) == 0
+
+    body = mock_github_client.return_value.create_review.call_args.args[1]
+    comments = mock_github_client.return_value.create_review.call_args.kwargs["comments"]
+    posted = body + "".join(c["body"] for c in comments)
+    assert "A code finding of the same severity." in posted
+    assert "`reqeusts` isn't on PyPI" not in posted

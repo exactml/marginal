@@ -77,10 +77,12 @@ def build_finding_prompt(
     ci_conclusion: str | None = None,
     knowledge: bool = False,
     accepted: list[AcceptedClaim] | None = None,
+    dependencies: str = "",
 ) -> str:
     """The reviewer prompt. `files` must already be `redact_patches` output.
     With `knowledge`, it also asks for the business rules and decisions the
-    diff states; `accepted` are the ones the team already accepted."""
+    diff states; `accepted` are the ones the team already accepted.
+    `dependencies` is the section on bumped packages, if any."""
     diff = "\n\n".join(f"--- {file['filename']} ---\n{file['patch']}" for file in files)
     sections = [FINDING_PROMPT_INSTRUCTIONS]
     if knowledge:
@@ -115,6 +117,8 @@ def build_finding_prompt(
         sections.append(graph_section)
     if replies:
         sections.append(build_replies_section(replies))
+    if dependencies:
+        sections.append(dependencies)
     sections.append(diff)
     return "\n\n".join(sections)
 
