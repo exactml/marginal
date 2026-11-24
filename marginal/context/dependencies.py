@@ -45,8 +45,11 @@ NEW_PACKAGE_DAYS = 30
 # always a real project (`nose2` next to `nose`): of 80 established PyPI
 # packages a lookalike check flagged, none was under a year old.
 LOOKALIKE_MAX_DAYS = 365
-# Bounds on what one review fetches and adds to the prompt.
-MAX_CHANGES = 20
+# Bounds on what one review fetches and adds to the prompt. New packages
+# get the higher one: each costs one registry request, and they're the check
+# a PR padded with bumps would try to slip a package past.
+MAX_NEW_PACKAGES = 100
+MAX_BUMPS = 20
 _NOTES_CHARS_PER_RELEASE = 1500
 _NOTES_CHARS_PER_PACKAGE = 4000
 # About 4k tokens, so a grouped update bumping many packages can't push the
@@ -65,6 +68,8 @@ _REQUIREMENT = re.compile(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*
 _QUOTED = re.compile(r""""([^"]*)"|'([^']*)'""")
 _TOML_TABLE = re.compile(r"^\s*\[\[?([^\]]+)\]\]?")
 _TOML_ARRAY = re.compile(r"^\s*([\w.-]+)\s*=\s*\[")
+_TOML_NAME = re.compile(r"""^\s*name\s*=\s*["']([^"']+)["']""")
+_INLINE_TABLE = re.compile(r"\{[^}]*\}")
 _NPM_ENTRY = re.compile(r'^\s*"((?:@[^"/]+/)?[^"]+)"\s*:\s*"([^"]*)"')
 # A version range never has a `:` or `/`; workspaces, paths, URLs and aliases do.
 _NPM_ELSEWHERE = re.compile(r"[:/]")
@@ -144,11 +149,12 @@ def dependency_changes(files: list[dict[str, object]], repo_root: str) -> list[C
         if name == "package.json":
             ecosystem, added, removed = "npm", _npm(lines, text), _npm_removed(lines)
         elif name == "pyproject.toml":
-            ecosystem, added, removed = "pypi", _pyproject(lines, text), _python_removed(lines)
+            ecosystem, added = "pypi", _pyproject(lines, text)
+            removed = _python_removed(lines, quoted=True)
         elif _REQUIREMENTS_FILE.fullmatch(name):
             ecosystem = "pypi"
             added = [(n, *spec, t) for n, t in lines.added if (spec := _python_spec(t))]
-            removed = _python_removed(lines)
+            removed = _python_removed(lines, quoted=False)
         else:
             continue
         for number, package, version, line in added:
@@ -158,7 +164,12 @@ def dependency_changes(files: list[dict[str, object]], repo_root: str) -> list[C
                 continue  # the line changed, the version didn't
             change = Change(ecosystem, package, is_new, old, version, path, number, line.strip())
             changes.setdefault((ecosystem, package), change)
-    return list(changes.values())[:MAX_CHANGES]
+    kept, counts = [], {True: 0, False: 0}
+    for change in changes.values():
+        if counts[change.is_new] < (MAX_NEW_PACKAGES if change.is_new else MAX_BUMPS):
+            kept.append(change)
+            counts[change.is_new] += 1
+    return kept
 
 
 def dependency_findings(
@@ -469,13 +480,19 @@ def _python_spec(text: str) -> tuple[str, str | None] | None:
     return _normalize("pypi", match.group(1)), version.group() if version else None
 
 
-def _python_removed(lines: _Lines) -> dict[str, str | None]:
+def _python_removed(lines: _Lines, *, quoted: bool) -> dict[str, str | None]:
+    """Requirements on removed lines: each quoted string in a `pyproject.toml`
+    line, or the whole line of a requirements file, whose marker
+    (`; sys_platform == "win32"`) may hold quotes of its own."""
     removed = {}
     for text in lines.removed:
-        for basic, literal in _QUOTED.findall(text) or [("", text)]:
-            spec = _python_spec(basic or literal)
-            if spec:
-                removed[spec[0]] = spec[1]
+        specs = (
+            [b or lit for b, lit in _QUOTED.findall(_INLINE_TABLE.sub("", text))]
+            if quoted
+            else [text]
+        )
+        for spec in filter(None, map(_python_spec, specs)):
+            removed[spec[0]] = spec[1]
     return removed
 
 
@@ -485,13 +502,16 @@ def _pyproject(lines: _Lines, text: str | None) -> list[tuple[int, str, str | No
     if text is None:
         return []
     in_dependencies: set[int] = set()
-    table, array = "", None
+    table, array, project = "", None, None
     for number, raw in enumerate(text.splitlines(), 1):
         line = raw.split("#", 1)[0]
         header = _TOML_TABLE.match(line)
         if header:
             table, array = header.group(1).strip(), None
             continue
+        own_name = _TOML_NAME.match(line)
+        if own_name and table == "project":
+            project = _normalize("pypi", own_name.group(1))
         opened = _TOML_ARRAY.match(line)
         if opened:
             array = opened.group(1)
@@ -505,9 +525,10 @@ def _pyproject(lines: _Lines, text: str | None) -> list[tuple[int, str, str | No
     found = []
     for number, line in lines.added:
         if number in in_dependencies:
-            for basic, literal in _QUOTED.findall(line):
+            # Not `{include-group = "test"}`: an inline table names a group, not a package.
+            for basic, literal in _QUOTED.findall(_INLINE_TABLE.sub("", line)):
                 spec = _python_spec(basic or literal)
-                if spec:
+                if spec and spec[0] != project:  # `all = ["shop[dev]"]` is shop itself
                     found.append((number, *spec, line))
     return found
 
@@ -519,11 +540,12 @@ def _npm(lines: _Lines, text: str | None) -> list[tuple[int, str, str | None, st
     except ValueError:
         return []
     sections = [data.get(s) for s in _NPM_SECTIONS if isinstance(data, dict)]
-    declared = {k: v for s in sections if isinstance(s, dict) for k, v in s.items()}
+    # A name can be in two sections with different ranges (dev and peer).
+    declared = {(k, v) for s in sections if isinstance(s, dict) for k, v in s.items()}
     found = []
     for number, line in lines.added:
         match = _NPM_ENTRY.match(line)
-        if match and declared.get(match.group(1)) == match.group(2) and _from_registry(match):
+        if match and (match.group(1), match.group(2)) in declared and _from_registry(match):
             version = _VERSION.search(match.group(2))
             found.append((number, match.group(1), version.group() if version else None, line))
     return found

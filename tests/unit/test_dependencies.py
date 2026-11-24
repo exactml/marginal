@@ -440,3 +440,42 @@ def test_an_internal_bump_gets_no_public_notes(tmp_path):
         releases=lambda r: pytest.fail("fetched notes"),
     )
     assert "An internal package: no public release notes." in section
+
+
+def test_new_packages_are_checked_after_many_bumps(tmp_path):
+    bumps = "".join(f"-pkg{i}==1.0\n+pkg{i}==2.0\n" for i in range(deps.MAX_BUMPS + 5))
+    patch = f"@@ -1,{deps.MAX_BUMPS + 5} +1,{deps.MAX_BUMPS + 6} @@\n{bumps}+reqeusts==1.0\n"
+    changes = dependency_changes([_file("requirements.txt", patch)], str(tmp_path))
+    assert sum(not c.is_new for c in changes) == deps.MAX_BUMPS
+    assert changes[-1].name == "reqeusts" and changes[-1].is_new
+
+
+def test_pyproject_skips_the_project_itself_and_included_groups(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "Shop"\n[project.optional-dependencies]\nall = ["shop[dev]"]\n'
+        '[dependency-groups]\nci = [{include-group = "test"}, "pytset"]\n'
+    )
+    patch = (
+        '@@ -3,0 +4 @@\n+all = ["shop[dev]"]\n'
+        '@@ -5,0 +6 @@\n+ci = [{include-group = "test"}, "pytset"]\n'
+    )
+    changes = dependency_changes([_file("pyproject.toml", patch)], str(tmp_path))
+    assert [c.name for c in changes] == ["pytset"]
+
+
+def test_a_requirement_with_a_quoted_marker_is_a_bump(tmp_path):
+    patch = (
+        "@@ -1 +1 @@\n"
+        '-pywin32==305; sys_platform == "win32"\n'
+        '+pywin32==306; sys_platform == "win32"\n'
+    )
+    [change] = dependency_changes([_file("requirements.txt", patch)], str(tmp_path))
+    assert (change.name, change.is_new, change.old, change.new) == ("pywin32", False, "305", "306")
+
+
+def test_package_json_reads_a_name_declared_in_two_sections(tmp_path):
+    data = {"devDependencies": {"react": "^19.0.0"}, "peerDependencies": {"react": "^18 || ^19"}}
+    (tmp_path / "package.json").write_text(json.dumps(data, indent=2))
+    patch = '@@ -2 +2 @@\n-    "react": "^18.3.0"\n+    "react": "^19.0.0"\n'
+    [change] = dependency_changes([_file("package.json", patch)], str(tmp_path))
+    assert (change.name, change.old, change.new) == ("react", "18.3.0", "19.0.0")
