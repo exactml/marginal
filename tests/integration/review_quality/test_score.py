@@ -456,3 +456,8 @@ def test_repeats_on_a_valid_extra_are_duplicates():
     case = bug_case(valid_extra=[{"file": "demo.py", "lines": [30, 35]}])
     result = score_review(case, review(*[finding(file="demo.py", line=31)] * 3))
     assert (result["valid_extra"], result["duplicates"]) == (1, 2)
+
+
+def test_a_valid_extra_cant_overlap_the_known_bug():
+    with pytest.raises(ValidationError, match="overlaps must_find"):
+        bug_case(valid_extra=[{"file": "app.py", "lines": [18, 25]}])

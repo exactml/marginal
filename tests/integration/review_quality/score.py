@@ -160,6 +160,13 @@ class Case(_Strict):
             )
         if self.kind == "clean" and self.valid_extra:
             raise ValueError(f"{self.id}: a clean case has nothing real to find")
+        # An extra inside a known bug's lines could never be credited.
+        for extra in self.valid_extra:
+            for entry in self.must_find:
+                if extra.contains(entry.file, entry.lines[0], entry.lines[1]):
+                    raise ValueError(
+                        f"{self.id}: valid_extra {extra.file}:{extra.lines} overlaps must_find"
+                    )
         broken = [seed for seed in self.accepted if seed.broken]
         if self.kind == "reversal" and len(broken) != 1:
             raise ValueError(f"{self.id}: a reversal case needs one broken accepted claim")
