@@ -35,7 +35,9 @@ towncrier build --draft --version next
   that means bumping the *minor* (`0.1.x` -> `0.2.0`), not the patch -- the
   project doesn't yet promise patch-level compatibility guarantees, but a
   breaking change is still worth signaling above a patch bump.
-- Otherwise, bump the patch (`0.1.3` -> `0.1.4`).
+- Otherwise, bump the patch (`0.1.3` -> `0.1.4`), even when there's a
+  `changelog.d/*.security.md` fragment: a security fix never forces a bump on
+  its own, so pinned teams can take it as a patch.
 - If `changelog.d/` has no fragments at all, there's nothing to release --
   say so and stop.
 
@@ -49,7 +51,7 @@ apply silently.
 towncrier build --version <new> --date <YYYY-MM-DD> --yes
 ```
 
-This inserts a `## marginal v<new>, <YYYY-MM-DD>` section (all five category
+This inserts a `## marginal v<new>, <YYYY-MM-DD>` section (all six category
 headers, empty ones included) directly under the
 `<!-- towncrier release notes start -->` marker at the top of
 `CHANGELOG.md`, then `git rm`s the consumed fragments and stages
@@ -199,3 +201,25 @@ Structure the notes body as:
 draft) without the user explicitly confirming first.** State plainly that
 doing so triggers an immediate, irreversible PyPI publish, and wait for a
 clear go-ahead before flipping it live.
+
+## Step 9 — Check constraints.txt, and file advisories for security fixes
+
+Publishing runs `publish.yml`: its `constraints` job tests the release
+against frozen dependency versions and attaches `constraints.txt` to the
+release, and only then does the PyPI job run. Confirm both:
+
+```bash
+RUN_ID=$(gh run list --workflow publish.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+gh run watch "$RUN_ID"
+gh release view v<new> --json assets --jq '.assets[].name'   # lists constraints.txt
+```
+
+If the `constraints` job failed, nothing reached PyPI: tell the user, fix the
+cause, and re-run the workflow (`gh run rerun "$RUN_ID"`).
+
+If this release's **Security** section has entries, each fix also needs a
+GitHub Security Advisory against the `marginal-review` package on PyPI, with
+the affected range (`< <new>`) and `<new>` as the patched version, so a repo
+pinned to an affected version gets a Dependabot alert. Draft it with the
+user (`https://github.com/exactml/marginal/security/advisories/new`); they
+publish it.
