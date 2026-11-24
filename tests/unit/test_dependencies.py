@@ -23,7 +23,7 @@ OLD = Package(exists=True, created=NOW - timedelta(days=3000))
 
 @pytest.fixture(autouse=True)
 def _fresh_cache():
-    deps._lookup.cache_clear()
+    deps._looked_up.clear()
     deps._source.cache_clear()
     deps._unreachable.clear()
 
@@ -772,3 +772,30 @@ def test_checked_note_names_only_the_packages_that_were_checked():
     )
     assert "`reqeusts`" in note and "zz-down" not in note
     assert deps.checked_note([unreachable], fetch=lambda e, n: None) == ""
+
+
+def test_a_release_note_lookup_error_skips_only_that_package(monkeypatch):
+    monkeypatch.setattr(requests, "get", lambda *a, **kw: _Response(503))
+    assert deps._source("pypi", "pkg", "2") is None
+    assert "pypi" not in deps._unreachable
+
+
+def test_checked_packages_stay_checked_after_an_outage(monkeypatch):
+    monkeypatch.setattr(requests, "get", lambda url, **kw: _Response(404))
+    assert lookup("pypi", "zz-first") == Package(exists=False)
+
+    def down(url, **kw):
+        raise requests.ConnectionError("down")
+
+    monkeypatch.setattr(requests, "get", down)
+    assert lookup("pypi", "zz-second") is None
+    note = deps.checked_note([_new("zz-first"), _new("zz-second")])
+    assert "`zz-first`" in note and "zz-second" not in note
+
+
+def test_usages_match_a_name_written_with_underscores(tmp_path):
+    root = _git_repo(tmp_path, {"app.py": "from dateutil import parser\n"})
+    bump = Change("pypi", "python_dateutil", False, "2.8", "2.9", "requirements.txt", 1, "x")
+    assert "app.py:1: from dateutil import parser" in bumps_section(
+        [bump], root, source=lambda c: None
+    )

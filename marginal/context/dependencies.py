@@ -120,6 +120,8 @@ _IMPORT_NAMES = {
 # Registries (and "github") that failed once in this run: skipped for the
 # rest of it, so an outage costs one timeout, not one per package.
 _unreachable: set[str] = set()
+# Every lookup's answer in this run, None included.
+_looked_up: dict[tuple[str, str], Package | None] = {}
 
 
 @dataclass(frozen=True)
@@ -369,16 +371,19 @@ def lookalike(ecosystem: str, name: str) -> str | None:
 def lookup(ecosystem: str, name: str) -> Package | None:
     """What PyPI or npm says about `name`, or None if it couldn't be asked."""
     pattern = _PYPI_NAME if ecosystem == "pypi" else _NPM_NAME
-    if not pattern.fullmatch(name) or ecosystem in _unreachable:
-        return None  # an invalid name never goes in a URL; nothing installs it either
+    if not pattern.fullmatch(name):
+        return None  # never goes in a URL; nothing installs it by this name either
+    if ecosystem in _unreachable:
+        return _looked_up.get((ecosystem, name))  # what it answered before the outage
     if _normalize(ecosystem, name) in _popular_names(ecosystem):
         # Exists and is established, so no check can flag it, and its full
         # record is the kind that runs to megabytes (typescript: 16 MB).
         return Package(exists=True)
-    return _lookup(ecosystem, name)
+    if (ecosystem, name) not in _looked_up:
+        _looked_up[(ecosystem, name)] = _lookup(ecosystem, name)
+    return _looked_up[(ecosystem, name)]
 
 
-@cache
 def _lookup(ecosystem: str, name: str) -> Package | None:
     url = (
         f"https://pypi.org/pypi/{name}/json"
@@ -443,13 +448,11 @@ def _source(ecosystem: str, name: str, new: str, old: str = "") -> str | None:
                 continue
             response.raise_for_status()
             data = response.json()
-        except ValueError:
-            return None
-        except requests.Timeout:
-            # Only this package's (possibly huge) record was slow: no notes for it.
+        except (requests.HTTPError, requests.Timeout, ValueError):
+            # This package's record was slow, rate-limited or broken: no notes for it.
             return None
         except requests.RequestException:
-            _unreachable.add(ecosystem)
+            _unreachable.add(ecosystem)  # a failed connection: the registry is down
             return None
         if ecosystem == "npm":
             return _npm_repository(data)
@@ -523,7 +526,7 @@ def _notes(change: Change, releases: list[dict[str, object]]) -> str:
 def _usages(change: Change, repo_root: str) -> list[str]:
     """`file:line: text` for lines that import the package, from git grep."""
     if change.ecosystem == "pypi":
-        name = change.name.lower()
+        name = _normalize("pypi", change.name)  # python_dateutil is python-dateutil
         module = _IMPORT_NAMES.get(name) or re.sub(r"[-.]", "_", name.removeprefix("python-"))
         uses = re.compile(rf"^\s*(?:import|from)\s+{re.escape(module)}\b", re.IGNORECASE)
         needle = module
