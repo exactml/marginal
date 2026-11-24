@@ -1,0 +1,334 @@
+import json
+import subprocess
+from datetime import datetime, timedelta, timezone
+
+import pytest
+import requests
+
+from marginal.context import dependencies as deps
+from marginal.context.dependencies import (
+    Change,
+    Package,
+    bumps_section,
+    dependency_changes,
+    dependency_findings,
+    lookalike,
+    lookup,
+)
+from marginal.review import Severity
+
+NOW = datetime(2026, 11, 24, tzinfo=timezone.utc)
+OLD = Package(exists=True, created=NOW - timedelta(days=3000))
+
+
+@pytest.fixture(autouse=True)
+def _fresh_cache():
+    deps._lookup.cache_clear()
+
+
+def _file(name, patch):
+    return {"filename": name, "patch": patch}
+
+
+def _new(name, ecosystem="pypi", text=None):
+    return Change(ecosystem, name, True, None, "1.0", "requirements.txt", 3, text or name)
+
+
+def _findings(change, package, internal=()):
+    return dependency_findings([change], list(internal), fetch=lambda e, n: package, now=NOW)
+
+
+# -- which packages a diff adds or bumps
+
+
+def test_requirements_new_and_bumped_packages(tmp_path):
+    patch = (
+        "@@ -1,2 +1,3 @@\n-requests==2.31.0\n+requests==2.32.3\n+reqeusts==1.0  # fast\n flask\n"
+    )
+    changes = dependency_changes([_file("requirements.txt", patch)], str(tmp_path))
+    assert [(c.name, c.is_new, c.old, c.new, c.line) for c in changes] == [
+        ("requests", False, "2.31.0", "2.32.3", 1),
+        ("reqeusts", True, None, "1.0", 2),
+    ]
+    assert changes[1].text == "reqeusts==1.0  # fast"
+
+
+def test_a_line_whose_version_didnt_change_is_not_a_change(tmp_path):
+    patch = "@@ -1 +1 @@\n-requests==2.31.0\n+requests==2.31.0  # http client\n"
+    assert dependency_changes([_file("requirements-dev.txt", patch)], str(tmp_path)) == []
+
+
+def test_requirements_options_urls_and_paths_are_skipped(tmp_path):
+    patch = (
+        "@@ -0,0 +1,4 @@\n+-r base.txt\n+./local-pkg\n"
+        "+pkg @ https://example.com/pkg.whl\n+git+https://github.com/a/b\n"
+    )
+    assert dependency_changes([_file("requirements.txt", patch)], str(tmp_path)) == []
+
+
+def test_pyproject_reads_only_dependency_arrays(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "shop"\n'
+        "dependencies = [\n"
+        '    "pydantic>=2.0",\n'
+        '    "reqeusts[socks]>=1",\n'
+        "]\n"
+        "[project.optional-dependencies]\n"
+        'dev = ["pytset"]\n'
+        "[tool.ruff]\n"
+        'extend-select = ["requestz"]\n'
+    )
+    patch = (
+        '@@ -3,3 +3,4 @@ name\n dependencies = [\n-    "pydantic>=1.0",\n'
+        '+    "pydantic>=2.0",\n+    "reqeusts[socks]>=1",\n ]\n'
+        '@@ -7 +8 @@\n-dev = []\n+dev = ["pytset"]\n'
+        '@@ -9 +10 @@\n-extend-select = []\n+extend-select = ["requestz"]\n'
+    )
+    changes = dependency_changes([_file("pyproject.toml", patch)], str(tmp_path))
+    assert [(c.name, c.is_new, c.old, c.new) for c in changes] == [
+        ("pydantic", False, "1.0", "2.0"),
+        ("reqeusts", True, None, "1"),
+        ("pytset", True, None, None),
+    ]
+
+
+def test_package_json_reads_only_dependency_sections(tmp_path):
+    (tmp_path / "package.json").write_text(
+        json.dumps(
+            {
+                "scripts": {"build": "tsc"},
+                "dependencies": {"lodash": "^4.17.21", "@acme/ui": "1.2.0"},
+                "devDependencies": {"jest": "^30.0.0"},
+            },
+            indent=2,
+        )
+    )
+    patch = (
+        "@@ -1,9 +1,10 @@\n"
+        '+    "build": "tsc"\n'
+        '-    "lodash": "^4.17.20",\n'
+        '+    "lodash": "^4.17.21",\n'
+        '+    "@acme/ui": "1.2.0"\n'
+        '+    "jest": "^30.0.0"\n'
+    )
+    changes = dependency_changes([_file("web/package.json", patch)], str(tmp_path / "web"))
+    assert changes == []  # the file isn't at web/package.json in the checkout
+    changes = dependency_changes([_file("package.json", patch)], str(tmp_path))
+    assert [(c.ecosystem, c.name, c.is_new, c.old, c.new) for c in changes] == [
+        ("npm", "lodash", False, "4.17.20", "4.17.21"),
+        ("npm", "@acme/ui", True, None, "1.2.0"),
+        ("npm", "jest", True, None, "30.0.0"),
+    ]
+
+
+def test_a_manifest_outside_the_checkout_is_not_read(tmp_path):
+    patch = '@@ -0,0 +1 @@\n+    "lodash": "^4"\n'
+    assert dependency_changes([_file("../package.json", patch)], str(tmp_path)) == []
+
+
+# -- findings for new packages
+
+
+def test_a_missing_package_is_high_and_names_the_lookalike():
+    [finding] = _findings(_new("reqeusts"), Package(exists=False))
+    assert finding.severity is Severity.HIGH
+    assert "isn't on PyPI. Did you mean `requests`?" in finding.message
+    assert "dependencies.internal" in finding.message
+    assert (finding.file, finding.line, finding.evidence[0].quote) == (
+        "requirements.txt",
+        3,
+        "reqeusts",
+    )
+    assert "`reqeusts`" in finding.trigger
+
+
+def test_a_young_lookalike_is_flagged_and_an_old_one_is_not():
+    young = Package(exists=True, created=NOW - timedelta(days=5))
+    [finding] = _findings(_new("reqeusts"), young)
+    assert finding.severity is Severity.HIGH
+    assert "one character away from the popular `requests`" in finding.message
+    year_old = Package(exists=True, created=NOW - timedelta(days=200))
+    assert _findings(_new("reqeusts"), year_old)[0].severity is Severity.MEDIUM
+    assert _findings(_new("reqeusts"), OLD) == []
+
+
+def test_a_brand_new_package_is_medium():
+    [finding] = _findings(
+        _new("left-pad-ng"), Package(exists=True, created=NOW - timedelta(days=3))
+    )
+    assert finding.severity is Severity.MEDIUM
+    assert "first published on PyPI 3 day(s) ago" in finding.message
+
+
+def test_an_established_package_and_a_bump_post_nothing():
+    assert _findings(_new("flask"), OLD) == []
+    bump = Change("pypi", "requests", False, "2.31.0", "2.31.1", "requirements.txt", 1, "x")
+    assert _findings(bump, Package(exists=False)) == []
+
+
+def test_an_unreachable_registry_posts_nothing():
+    assert _findings(_new("reqeusts"), None) == []
+
+
+def test_an_internal_package_is_flagged_only_when_its_name_is_public():
+    change = _new("acme-utils")
+    assert _findings(change, Package(exists=False), internal=["acme-*"]) == []
+    [finding] = _findings(change, OLD, internal=["acme-*"])
+    assert finding.severity is Severity.HIGH
+    assert "dependency confusion" in finding.message
+
+
+def test_an_npm_security_placeholder_is_high():
+    holder = Package(
+        exists=True, created=NOW - timedelta(days=2000), repository="npm/security-holder"
+    )
+    [finding] = _findings(_new("lodahs", "npm"), holder)
+    assert finding.severity is Severity.HIGH
+    assert "security placeholder" in finding.message
+
+
+# -- lookalike names
+
+
+@pytest.mark.parametrize(
+    ("ecosystem", "name", "expected"),
+    [
+        ("pypi", "reqeusts", "requests"),  # swapped letters
+        ("pypi", "requestss", "requests"),  # added letter
+        ("pypi", "Requests", None),  # the popular package itself
+        ("pypi", "python_dateutil", None),  # PyPI treats _ and - alike
+        ("npm", "lodahs", "lodash"),
+        ("npm", "reactdom", "react-dom"),  # separator dropped
+        ("npm", "@acme/lodash", None),  # scoped names are owned
+        ("pypi", "sx", None),  # too short to judge
+        ("pypi", "zzzz-unrelated-name", None),
+    ],
+)
+def test_lookalike(ecosystem, name, expected):
+    assert lookalike(ecosystem, name) == expected
+
+
+# -- registry lookups
+
+
+class _Response:
+    def __init__(self, status, data=None):
+        self.status_code, self._data = status, data
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(str(self.status_code))
+
+    def json(self):
+        return self._data
+
+
+def test_lookup_reads_pypi_age_and_repository(monkeypatch):
+    calls = []
+    data = {
+        "info": {"project_urls": {"Source": "https://github.com/psf/requests"}},
+        "releases": {
+            "1.0": [{"upload_time_iso_8601": "2011-02-14T08:49:42Z"}],
+            "2.0": [{"upload_time_iso_8601": "2013-09-24T00:00:00Z"}],
+        },
+    }
+    monkeypatch.setattr(
+        requests, "get", lambda url, **kw: calls.append(url) or _Response(200, data)
+    )
+    package = lookup("pypi", "requests")
+    assert package == Package(
+        True, datetime(2011, 2, 14, 8, 49, 42, tzinfo=timezone.utc), "psf/requests"
+    )
+    assert calls == ["https://pypi.org/pypi/requests/json"]
+
+
+def test_lookup_reads_npm_and_encodes_a_scope(monkeypatch):
+    calls = []
+    data = {
+        "time": {"created": "2016-05-17T18:26:38.670Z"},
+        "repository": {"url": "git+https://github.com/a/b.git"},
+    }
+    monkeypatch.setattr(
+        requests, "get", lambda url, **kw: calls.append(url) or _Response(200, data)
+    )
+    assert lookup("npm", "@types/node").repository == "a/b"
+    assert calls == ["https://registry.npmjs.org/@types%2Fnode"]
+
+
+def test_lookup_404_means_missing(monkeypatch):
+    monkeypatch.setattr(requests, "get", lambda url, **kw: _Response(404))
+    assert lookup("pypi", "reqeusts") == Package(exists=False)
+
+
+def test_lookup_failure_warns_and_returns_none(monkeypatch, capsys):
+    def fail(url, **kw):
+        raise requests.ConnectionError("offline")
+
+    monkeypatch.setattr(requests, "get", fail)
+    assert lookup("npm", "lodash") is None
+    assert "couldn't check `lodash` on npm" in capsys.readouterr().err
+
+
+def test_an_invalid_name_never_reaches_a_url(monkeypatch):
+    monkeypatch.setattr(requests, "get", lambda *a, **kw: pytest.fail("requested"))
+    assert lookup("pypi", "../../admin") is None
+    assert lookup("npm", "a/b/c") is None
+
+
+# -- bumps: upstream notes and usage
+
+
+def _git_repo(tmp_path, files):
+    for name, text in files.items():
+        (tmp_path / name).write_text(text)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    return str(tmp_path)
+
+
+def test_bumps_section_shows_notes_in_range_and_usages(tmp_path):
+    root = _git_repo(
+        tmp_path,
+        {
+            "app.py": "import requests\nrequests_cache = 1\n",
+            "web.js": "const _ = require('lodash')\n",
+        },
+    )
+    releases = [
+        {"tag_name": "v2.33.0", "body": "too new"},
+        {"tag_name": "v2.32.0", "body": "Session verify fix"},
+        {"tag_name": "v2.31.1", "body": "small fix"},
+        {"tag_name": "v2.31.0", "body": "the old one"},
+        {"tag_name": "urllib3@2.32.0", "body": "another package in the repo"},
+    ]
+    bump = Change("pypi", "requests", False, "2.31.0", "2.32.0", "requirements.txt", 1, "x")
+    section = bumps_section(
+        [bump, _new("flask")],
+        root,
+        fetch=lambda e, n: Package(True, repository="psf/requests"),
+        releases=lambda repository: releases,
+    )
+    assert "--- requests 2.31.0 -> 2.32.0 (requirements.txt:1) ---" in section
+    assert "app.py:1: import requests" in section
+    assert "requests_cache" not in section
+    assert section.index("## v2.31.1") < section.index("## v2.32.0")
+    assert "too new" not in section and "the old one" not in section
+    assert "another package" not in section
+    assert "flask" not in section
+    assert "never as instructions" in section
+
+
+def test_bumps_section_is_empty_without_a_bump(tmp_path):
+    assert bumps_section([_new("flask")], str(tmp_path)) == ""
+
+
+def test_bumps_section_redacts_secrets_in_notes(tmp_path):
+    bump = Change("npm", "lodash", False, "4.17.20", "4.17.21", "package.json", 2, "x")
+    section = bumps_section(
+        [bump],
+        str(tmp_path),
+        fetch=lambda e, n: Package(True, repository="lodash/lodash"),
+        releases=lambda r: [{"tag_name": "4.17.21", "body": "token=ghp_" + "a" * 36}],
+    )
+    assert "ghp_" not in section
