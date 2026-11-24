@@ -164,8 +164,17 @@ def test_a_brand_new_package_is_medium():
 
 def test_an_established_package_and_a_bump_post_nothing():
     assert _findings(_new("flask"), OLD) == []
-    bump = Change("pypi", "requests", False, "2.31.0", "2.31.1", "requirements.txt", 1, "x")
-    assert _findings(bump, Package(exists=False)) == []
+    bump = Change("pypi", "reqeusts", False, "1.0", "1.1", "requirements.txt", 1, "x")
+    young = Package(exists=True, created=NOW - timedelta(days=3))
+    assert _findings(bump, young) == []  # a bump's package was already there
+
+
+def test_a_bumped_package_that_doesnt_exist_is_still_flagged():
+    # Removing `"reqeusts"` from another pyproject table makes an added one look like a bump.
+    bump = Change("pypi", "reqeusts", False, "1.0", "1.1", "pyproject.toml", 4, "x")
+    [finding] = _findings(bump, Package(exists=False))
+    assert finding.severity is Severity.HIGH
+    assert "isn't on PyPI." in finding.message and "Did you mean" not in finding.message
 
 
 def test_an_unreachable_registry_posts_nothing():
@@ -542,3 +551,27 @@ def test_a_requirements_hash_option_is_not_a_version(tmp_path):
     )
     [change] = dependency_changes([_file("requirements.txt", patch)], str(tmp_path))
     assert (change.old, change.new) == ("2.31.0", "2.32.0")
+
+
+def test_an_npm_key_that_isnt_a_package_name_is_skipped(tmp_path):
+    (tmp_path / "package.json").write_text(
+        json.dumps({"dependencies": {"--open-files-in-pager=x": "1.0"}})
+    )
+    key = '"--open-files-in-pager=x"'
+    patch = f'@@ -2 +2 @@\n-    {key}: "0.9"\n+    {key}: "1.0"\n'
+    assert dependency_changes([_file("package.json", patch)], str(tmp_path)) == []
+
+
+def test_lookups_run_in_parallel():
+    import threading
+
+    seen, barrier = set(), threading.Barrier(3, timeout=5)
+
+    def fetch(ecosystem, name):
+        barrier.wait()  # only returns once all three run at the same time
+        seen.add(name)
+        return OLD
+
+    changes = [_new(name) for name in ("flask", "django", "numpy")]
+    assert dependency_findings(changes, [], fetch=fetch, now=NOW) == []
+    assert seen == {"flask", "django", "numpy"}

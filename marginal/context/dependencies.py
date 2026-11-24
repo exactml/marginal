@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from fnmatch import fnmatch
@@ -183,15 +184,17 @@ def dependency_findings(
     fetch: Callable[[str, str], Package | None] | None = None,
     now: datetime | None = None,
 ) -> list[Finding]:
-    """A finding for each new package that doesn't exist on its registry,
-    looks like a popular package, or is days old; and for an `internal`
-    package whose name is also taken on the public registry."""
+    """A finding for each package that doesn't exist on its registry, is an
+    npm security placeholder, or is `internal` but also public; and for each
+    new one that looks like a popular package or is days old."""
     fetch = fetch or lookup
     now = now or datetime.now(timezone.utc)
+    # In parallel, so a slow registry costs one wait, not one per package.
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        packages = list(pool.map(lambda c: fetch(c.ecosystem, c.name), changes))
     findings = []
-    for change in changes:
-        package = fetch(change.ecosystem, change.name) if change.is_new else None
-        # None: not new, or the registry couldn't be reached (already warned).
+    for change, package in zip(changes, packages, strict=True):
+        # None: the registry couldn't be reached (already warned).
         verdict = _verdict(change, package, internal, now) if package else None
         if verdict:
             severity, message = verdict
@@ -227,7 +230,8 @@ def _verdict(
             "name, usually because it was malicious, and reserved the name. It installs "
             "nothing useful, so check which package was meant."
         )
-    similar = lookalike(change.ecosystem, change.name)
+    # A bump's package was already there: only a new one can be a fresh lookalike.
+    similar = lookalike(change.ecosystem, change.name) if change.is_new else None
     if not package.exists:
         hint = f" Did you mean `{similar}`?" if similar else ""
         return Severity.HIGH, (
@@ -236,6 +240,8 @@ def _verdict(
             "install. If it's your own package from a private index, add it to "
             "`dependencies.internal` in `.marginal/config.yaml`."
         )
+    if not change.is_new:
+        return None
     age = (now - package.created).days if package.created else None
     new = age is not None and age < NEW_PACKAGE_DAYS
     published = f" It was first published {age} day(s) ago." if age is not None else ""
@@ -433,7 +439,7 @@ def _usages(change: Change, repo_root: str) -> list[str]:
         needle = change.name
     try:
         output = subprocess.run(
-            ["git", "grep", "-n", "-I", "-i", "-F", needle],
+            ["git", "grep", "-n", "-I", "-i", "-F", "-e", needle],
             cwd=repo_root,
             capture_output=True,
             text=True,
@@ -551,7 +557,12 @@ def _npm(lines: _Lines, text: str | None) -> list[tuple[int, str, str | None, st
     found = []
     for number, line in lines.added:
         match = _NPM_ENTRY.match(line)
-        if match and (match.group(1), match.group(2)) in declared and _from_registry(match):
+        if (
+            match
+            and (match.group(1), match.group(2)) in declared
+            and _NPM_NAME.fullmatch(match.group(1))
+            and _from_registry(match)
+        ):
             found.append((number, match.group(1), _version(match.group(2)), line))
     return found
 
