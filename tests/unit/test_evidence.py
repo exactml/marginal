@@ -185,3 +185,22 @@ def test_locate_prefers_the_nearest_matching_line(tmp_path):
     assert _view(tmp_path, files=[]).locate("dup.py", 2, "x = 1") in (1, 3)
     assert _view(tmp_path, files=[]).locate("dup.py", 3, "x = 1") == 3
     assert _view(tmp_path, files=[]).locate("dup.py", 2, "z = 9") is None
+
+
+def test_a_finding_already_on_a_quote_stays_when_another_quote_moves(tmp_path):
+    finding = _finding([("pk.py", 12, QUOTE), ("pk.py", 12, "value = self._get_pk_val(meta)")])
+
+    decide([finding], _view(tmp_path), max_comments=5)
+
+    assert finding.line == 12
+    assert [e.line for e in finding.evidence] == [12, 11]
+
+
+def test_a_finding_on_a_diff_line_isnt_moved_out_of_the_diff(tmp_path):
+    (tmp_path / "pk.py").write_text("\n" * 12 + "x = 1\nnot_in_diff = True\n")
+    finding = _finding([("pk.py", 12, "not_in_diff = True")])
+
+    decide([finding], _view(tmp_path), max_comments=5)
+
+    assert finding.line == 12  # stays inline; the quote alone moves
+    assert finding.evidence[0].line == 14

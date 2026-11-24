@@ -153,13 +153,26 @@ def decide(findings: list[Finding], view: CodeView, *, max_comments: int) -> lis
 def _anchor(finding: Finding, view: CodeView) -> None:
     """Move each quote a model numbered a line or two off to where it really
     is, and the finding with it when it pointed at that quote, so a posted
-    comment lands on the quoted line (`urllib3==2.6.0` at 59, not 58)."""
-    for evidence in finding.evidence[:MAX_QUOTES]:
-        actual = view.locate(evidence.file, evidence.line, evidence.quote)
+    comment lands on the quoted line (`urllib3==2.6.0` at 59, not 58).
+
+    The finding stays put when a quote really is on its line, and when moving
+    would take it from a diff line to one outside the diff (an inline comment
+    there becomes a summary entry)."""
+    quotes = finding.evidence[:MAX_QUOTES]
+    found = [view.locate(e.file, e.line, e.quote) for e in quotes]
+    on_its_line = any(
+        (e.file, actual) == (finding.file, finding.line)
+        for e, actual in zip(quotes, found, strict=True)
+    )
+    for evidence, actual in zip(quotes, found, strict=True):
         if actual is None or actual == evidence.line:
             continue
-        if (finding.file, finding.line) == (evidence.file, evidence.line):
-            finding.line = actual
+        claimed = (finding.file, finding.line) == (evidence.file, evidence.line)
+        keeps_inline = view.in_diff(finding.file, actual) or not view.in_diff(
+            finding.file, finding.line or 0
+        )
+        if claimed and not on_its_line and keeps_inline:
+            finding.line, on_its_line = actual, True
         evidence.line = actual
 
 
