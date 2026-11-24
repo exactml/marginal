@@ -525,7 +525,8 @@ def _review_files(
         if config.proposals.enabled
         and view.has_quote(k.evidence.file, k.evidence.line, k.evidence.quote)
     ]
-    findings = [*dependency_issues, *response.findings]
+    # decide() sorts by severity; on a tie the code findings, listed first, win a slot.
+    findings = [*response.findings, *dependency_issues]
     if not findings:
         return [], [], redacted_files, None, knowledge
     decisions = decide(findings, view, max_comments=config.review.max_comments)

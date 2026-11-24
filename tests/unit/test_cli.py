@@ -4217,3 +4217,30 @@ def test_review_tells_the_model_the_registry_checks_ran_even_with_no_bump(
     prompt = mock_provider.return_value.generate_structured.call_args.args[0]
     assert deps.CHECKED_NOTE in prompt
     assert "bumps the dependencies" not in prompt
+
+
+def test_review_gives_code_findings_the_comment_slot_on_a_severity_tie(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _review_dependencies(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, "review:\n  max_comments: 1\n"
+    )
+    (tmp_path / "app.py").write_text("import requests\n")
+    finding = _evidenced(
+        file="app.py",
+        line=1,
+        severity=Severity.HIGH,
+        message="A code finding of the same severity.",
+        quote="import requests",
+    )
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=FindingsResponse(findings=[finding])
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"]) == 0
+
+    body = mock_github_client.return_value.create_review.call_args.args[1]
+    comments = mock_github_client.return_value.create_review.call_args.kwargs["comments"]
+    posted = body + "".join(c["body"] for c in comments)
+    assert "A code finding of the same severity." in posted
+    assert "`reqeusts` isn't on PyPI" not in posted
