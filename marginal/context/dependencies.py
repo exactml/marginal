@@ -86,6 +86,8 @@ _VERSION = re.compile(r"\d+(?:\.\d+)*")
 # A label after the version (`+cu118`, `rc1`, `.post12`, `-beta.2`) belongs to
 # it, so its digits are never read as a version of their own.
 _BOUND = re.compile(r"(<=?|>=?|===?|~=|!=|\^|~)?\s*v?(\d+(?:\.\d+)*)(?:[-+._]?[A-Za-z][\w.+-]*)?")
+# What ends a release tag's package prefix: separators, after an optional `v`.
+_TAG_END = re.compile(r"[-_@/ ]*[vV]?[-_@/ ]*$")
 _GITHUB_REPO = re.compile(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[/#?]|$)")
 # requirements.txt, dev-requirements.txt, requirements/base.txt, pip-tools' .in files.
 _REQUIREMENTS_FILE = re.compile(
@@ -467,7 +469,8 @@ def _notes(change: Change, releases: list[dict[str, object]]) -> str:
     for release in releases:
         tag = str(release.get("tag_name") or "")
         match = _VERSION.search(tag)
-        prefix = tag[: match.start()].strip("vV-_@/ ").lower() if match else ""
+        # `v2.0` -> "", `pkg-v2.0` -> "pkg", `dotenv@16.4.0` -> "dotenv" (its v kept).
+        prefix = _TAG_END.sub("", tag[: match.start()]).lstrip("@").lower() if match else ""
         # A monorepo tags each package (`pkg@1.2.3`): keep only this one's.
         names = ("", change.name.split("/")[-1].lower(), change.name.lstrip("@").lower())
         if not match or prefix not in names:

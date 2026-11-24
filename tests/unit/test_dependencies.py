@@ -677,3 +677,23 @@ def test_skipped_dependencies_over_the_limit_are_reported(tmp_path, capsys, monk
     changes = dependency_changes([_file("requirements.txt", patch)], str(tmp_path))
     assert len(changes) == 2
     assert "1 added or bumped dependenc(ies) not checked" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("name", "tag"),
+    [
+        ("dotenv", "dotenv@5.1.0"),
+        ("vite", "vite@5.1.0"),
+        ("vite", "v5.1.0"),
+        ("pkg", "pkg-v5.1.0"),
+        ("@babel/core", "@babel/core@5.1.0"),
+    ],
+)
+def test_notes_keep_a_package_name_that_starts_or_ends_with_v(name, tag):
+    bump = Change("npm", name, False, "5.0.0", "5.1.0", "package.json", 1, "x")
+    assert deps._notes(bump, [{"tag_name": tag, "body": "notes"}]).endswith("notes")
+
+
+def test_notes_skip_another_packages_tag():
+    bump = Change("npm", "vite", False, "5.0.0", "5.1.0", "package.json", 1, "x")
+    assert deps._notes(bump, [{"tag_name": "vitest@5.1.0", "body": "notes"}]) == ""
