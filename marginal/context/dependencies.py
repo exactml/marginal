@@ -66,6 +66,8 @@ _QUOTED = re.compile(r""""([^"]*)"|'([^']*)'""")
 _TOML_TABLE = re.compile(r"^\s*\[\[?([^\]]+)\]\]?")
 _TOML_ARRAY = re.compile(r"^\s*([\w.-]+)\s*=\s*\[")
 _NPM_ENTRY = re.compile(r'^\s*"((?:@[^"/]+/)?[^"]+)"\s*:\s*"([^"]*)"')
+# A version range never has a `:` or `/`; workspaces, paths, URLs and aliases do.
+_NPM_ELSEWHERE = re.compile(r"[:/]")
 _NPM_SECTIONS = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
 _VERSION = re.compile(r"\d+(?:\.\d+)*")
 _GITHUB_REPO = re.compile(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[/#?]|$)")
@@ -506,10 +508,16 @@ def _npm(lines: _Lines, text: str | None) -> list[tuple[int, str, str | None, st
     found = []
     for number, line in lines.added:
         match = _NPM_ENTRY.match(line)
-        if match and declared.get(match.group(1)) == match.group(2):
+        if match and declared.get(match.group(1)) == match.group(2) and _from_registry(match):
             version = _VERSION.search(match.group(2))
             found.append((number, match.group(1), version.group() if version else None, line))
     return found
+
+
+def _from_registry(entry: re.Match[str]) -> bool:
+    """Whether an npm entry's value is a version range on the public registry,
+    not a workspace, path, git URL or alias (`npm:other@1`) installed from elsewhere."""
+    return not _NPM_ELSEWHERE.search(entry.group(2))
 
 
 def _npm_removed(lines: _Lines) -> dict[str, str | None]:
@@ -566,7 +574,11 @@ def _one_edit_apart(a: str, b: str) -> bool:
 
 
 def _version_key(version: str | None) -> tuple[int, ...]:
-    return tuple(int(part) for part in (version or "0").split(".") if part.isdigit())
+    """Comparable, with trailing zeros dropped: a spec's `2.32` is tag `2.32.0`."""
+    key = [int(part) for part in (version or "0").split(".") if part.isdigit()]
+    while key and key[-1] == 0:
+        key.pop()
+    return tuple(key)
 
 
 def _github(urls: list[str]) -> str | None:

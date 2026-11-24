@@ -388,3 +388,23 @@ def test_bumps_section_caps_the_notes_it_adds(tmp_path):
     )
     assert section.count("x" * 1500) <= deps._NOTES_CHARS_TOTAL // 1500
     assert "Release notes left out: this PR bumps too many packages." in section
+
+
+def test_notes_compare_versions_without_trailing_zeros():
+    bump = Change("pypi", "requests", False, "2.31", "2.32", "requirements.txt", 1, "x")
+    releases = [{"tag_name": "v2.32.0", "body": "target"}, {"tag_name": "v2.31.0", "body": "old"}]
+    assert deps._notes(bump, releases) == "## v2.32.0\ntarget"
+
+
+def test_npm_entries_installed_from_elsewhere_are_skipped(tmp_path):
+    local = {
+        "@acme/ui": "workspace:*",
+        "theme": "file:../theme",
+        "fork": "github:me/fork",
+        "aliased": "npm:lodash@4",
+        "lodash": "^4.17.21",
+    }
+    (tmp_path / "package.json").write_text(json.dumps({"dependencies": local}, indent=2))
+    patch = "@@ -0,0 +1,5 @@\n" + "".join(f'+    "{k}": "{v}",\n' for k, v in local.items())
+    changes = dependency_changes([_file("package.json", patch)], str(tmp_path))
+    assert [c.name for c in changes] == ["lodash"]
