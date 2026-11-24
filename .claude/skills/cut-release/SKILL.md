@@ -214,8 +214,12 @@ gh run watch "$RUN_ID"
 gh release view v<new> --json assets --jq '.assets[].name'   # lists constraints.txt
 ```
 
-If the `constraints` job failed, nothing reached PyPI: tell the user, fix the
-cause, and re-run the workflow (`gh run rerun "$RUN_ID"`).
+If the `constraints` job failed, nothing reached PyPI: tell the user. A
+rerun (`gh run rerun "$RUN_ID"`) checks out the same tag, so it only helps a
+flaky failure. For a real one, fix it on `master`, then delete the release and
+its tag (`gh release delete v<new> --cleanup-tag`) and cut the same version
+again from Step 7: PyPI never received it, so the version number is still
+free.
 
 If this release's **Security** section has entries, each fix also needs a
 GitHub Security Advisory against the `marginal-review` package on PyPI, with
