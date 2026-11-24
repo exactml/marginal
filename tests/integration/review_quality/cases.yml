@@ -1293,3 +1293,37 @@ cases:
     - 1064
     statement: Periodic async log reads skip log lines from the current second to avoid duplicates on the
       next read, because the Kubernetes API only accepts since_seconds, not an exact timestamp.
+- id: urllib3-bump-removes-getheaders-elasticsearch-calls
+  upstream: hypothesis/bouncer
+  base: 20f23aad2385d968e30188b8a44a7f3f5575b815
+  head: f961a1360a5b2719f2dfeda16cbedc8829fded49
+  kind: dependency
+  merged: '2025-12-09'
+  source: https://github.com/hypothesis/bouncer/pull/928
+  evidence: https://github.com/hypothesis/bouncer/pull/930
+  why: urllib3 2.6.0 removed HTTPResponse.getheaders(), which the pinned elasticsearch 6.3.1 calls on every
+    request, so the status endpoint returned 500 until the bump was reverted the same day.
+  must_find:
+  - file: requirements/requirements.txt
+    lines:
+    - 59
+    - 59
+    severity: high
+  must_not_flag: []
+- id: fused-requirement-names-a-package-that-doesnt-exist
+  upstream: microsoft/Biodiversity
+  base: 14699d22062a9ba665d3a430ab801540eda267cf
+  head: 3df34b5ddf5734c945f5986fbcdf0dcdf7b9ceb8
+  kind: dependency
+  merged: '2025-07-04'
+  source: https://github.com/microsoft/Biodiversity/commit/3df34b5ddf5734c945f5986fbcdf0dcdf7b9ceb8
+  evidence: https://github.com/microsoft/Biodiversity/pull/603
+  why: A merge fused `pycocotools` and `timm` into one requirement, `pycocotoolstimm`, which isn't on PyPI,
+    so installing the requirements fails.
+  must_find:
+  - file: requirements.txt
+    lines:
+    - 16
+    - 16
+    severity: high
+  must_not_flag: []
