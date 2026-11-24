@@ -374,12 +374,12 @@ def lookup(ecosystem: str, name: str) -> Package | None:
     pattern = _PYPI_NAME if ecosystem == "pypi" else _NPM_NAME
     if not pattern.fullmatch(name):
         return None  # never goes in a URL; nothing installs it by this name either
-    if ecosystem in _unreachable:
-        return _looked_up.get((ecosystem, name))  # what it answered before the outage
     if _normalize(ecosystem, name) in _popular_names(ecosystem):
         # Exists and is established, so no check can flag it, and its full
         # record is the kind that runs to megabytes (typescript: 16 MB).
         return Package(exists=True)
+    if ecosystem in _unreachable:
+        return _looked_up.get((ecosystem, name))  # what it answered before the outage
     if (ecosystem, name) not in _looked_up:
         _looked_up[(ecosystem, name)] = _lookup(ecosystem, name)
     return _looked_up[(ecosystem, name)]
@@ -534,8 +534,9 @@ def _notes(change: Change, releases: list[dict[str, object]]) -> str:
         # `v2.0` -> "", `pkg-v2.0` -> "pkg", `dotenv@16.4.0` -> "dotenv" (its v kept).
         prefix = _TAG_END.sub("", tag[: match.start()]).lstrip("@").lower() if match else ""
         # A monorepo tags each package (`pkg@1.2.3`): keep only this one's.
-        names = ("", change.name.split("/")[-1].lower(), change.name.lstrip("@").lower())
-        if not match or prefix not in names:
+        names = {"", change.name.split("/")[-1], change.name.lstrip("@")}
+        same = {_normalize(change.ecosystem, n) for n in names}  # flask_login is flask-login
+        if not match or _normalize(change.ecosystem, prefix) not in same:
             continue
         version = _version_key(match.group())
         if old < version <= new and not release.get("draft"):

@@ -844,3 +844,14 @@ def test_a_pypi_project_with_no_files_is_missing(monkeypatch):
     data = {"info": {}, "releases": {"0.0.0": []}}
     monkeypatch.setattr(requests, "get", lambda url, **kw: _Response(200, data))
     assert lookup("pypi", "zz-empty") == Package(exists=False)
+
+
+def test_a_popular_package_stays_checked_after_an_outage(monkeypatch):
+    deps._unreachable.add("pypi")
+    assert lookup("pypi", "requests") == Package(exists=True)
+    assert "`requests`" in deps.checked_note([_new("requests")])
+
+
+def test_notes_match_a_tag_spelled_with_other_separators():
+    bump = Change("pypi", "Flask_Login", False, "0.5", "0.6", "requirements.txt", 1, "x")
+    assert deps._notes(bump, [{"tag_name": "flask-login-0.6.0", "body": "n"}]).endswith("n")
