@@ -4188,6 +4188,7 @@ def test_review_drops_release_notes_rather_than_the_review_when_over_budget(
             [],
             [],
             ".",
+            dependencies=deps.CHECKED_NOTE,
         )
     )
     (tmp_path / ".marginal" / "config.yaml").write_text(
@@ -4199,4 +4200,20 @@ def test_review_drops_release_notes_rather_than_the_review_when_over_budget(
 
     prompt = mock_provider.return_value.generate_structured.call_args.args[0]
     assert "bumps the dependencies" not in prompt
+    assert deps.CHECKED_NOTE in prompt
     assert "left out the bumped dependencies' release notes" in capsys.readouterr().err
+
+
+def test_review_tells_the_model_the_registry_checks_ran_even_with_no_bump(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _review_dependencies(tmp_path, monkeypatch, mock_github_client, mock_provider)
+    mock_github_client.return_value.get_pull_request_files.return_value = [
+        {"filename": "requirements.txt", "patch": "@@ -1 +1,2 @@\n flask\n+reqeusts==1.0\n"}
+    ]
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42"]) == 0
+
+    prompt = mock_provider.return_value.generate_structured.call_args.args[0]
+    assert deps.CHECKED_NOTE in prompt
+    assert "bumps the dependencies" not in prompt

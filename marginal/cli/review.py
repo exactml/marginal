@@ -18,7 +18,12 @@ from marginal.context import (
     load_base_policies,
     read_ci_conclusion,
 )
-from marginal.context.dependencies import bumps_section, dependency_changes, dependency_findings
+from marginal.context.dependencies import (
+    CHECKED_NOTE,
+    bumps_section,
+    dependency_changes,
+    dependency_findings,
+)
 from marginal.context.knowledge import KNOWLEDGE_DIR, AcceptedClaim, load_accepted
 from marginal.context.local import LocalCheckout
 from marginal.github.client import GitHubClient
@@ -500,6 +505,7 @@ def _review_files(
                 ),
                 knowledge=config.proposals.enabled,
                 accepted=accepted,
+                dependency_note=CHECKED_NOTE if changes else "",
                 dependencies=bumps_section(changes, path, config.dependencies.internal),
             )
         )
@@ -695,6 +701,7 @@ async def _generate_findings(
     knowledge: bool = False,
     accepted: list[AcceptedClaim] | None = None,
     dependencies: str = "",
+    dependency_note: str = "",
 ) -> FindingsResponse:
     """Generate a bounded list of unvalidated `Finding`s, and any business
     `Knowledge` the diff states, from `model_spec` over
@@ -708,6 +715,8 @@ async def _generate_findings(
     """
 
     def build(dependencies: str) -> str:
+        # The note stays when the notes are dropped, so the model never repeats a check.
+        section = "\n\n".join(filter(None, [dependency_note, dependencies]))
         return build_finding_prompt(
             files,
             policies,
@@ -718,7 +727,7 @@ async def _generate_findings(
             ci_conclusion,
             knowledge,
             accepted,
-            dependencies,
+            section,
         )
 
     prompt = build(dependencies)
