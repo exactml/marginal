@@ -13,9 +13,11 @@ change behavior the code relies on, which the diff doesn't show either.
 
 ## Decision
 
-For each package a PR adds or bumps in `pyproject.toml`, `requirements*.txt`
+For each package a PR adds or bumps in `pyproject.toml`, a requirements file
 or `package.json`, the review asks the package's public registry (PyPI or
-npm), with **no model call**:
+npm), with **no model call**. A package in the bundled top-5000 list is
+never looked up: it exists and is established, and its full record can run
+to megabytes.
 
 | Check | Finding |
 |---|---|
