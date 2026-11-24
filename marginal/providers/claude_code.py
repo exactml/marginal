@@ -38,7 +38,9 @@ _SYSTEM_PROMPT = "You are a code reviewer. Answer from the prompt alone."
 # sign-in. Anything of the kind in the answer that isn't in the prompt can only
 # come from there, so it's removed before anything (a posted finding) carries it.
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
-_MIN_TERM = 3
+# Shorter account terms (a name like `Ann`) are left alone: as whole words
+# they'd still redact ordinary text.
+_MIN_TERM = 4
 
 
 class ClaudeCodeProvider(ModelProvider):
@@ -155,10 +157,14 @@ def _without_injected_emails(value: object, prompt: str) -> object:
     replaced by `[REDACTED]`."""
     lowered = prompt.lower()
     terms = sorted((t for t in _account_terms() if t.lower() not in lowered), key=len, reverse=True)
-    private = re.compile("|".join(map(re.escape, terms)), re.IGNORECASE) if terms else None
+    # Whole words only, so a name never redacts part of another word.
+    alternatives = "|".join(map(re.escape, terms))
+    private = re.compile(rf"(?<!\w)(?:{alternatives})(?!\w)", re.IGNORECASE) if terms else None
 
     def scrub(text: str) -> str:
-        text = _EMAIL.sub(lambda m: m.group() if m.group() in prompt else "[REDACTED]", text)
+        text = _EMAIL.sub(
+            lambda m: m.group() if m.group().lower() in lowered else "[REDACTED]", text
+        )
         return private.sub("[REDACTED]", text) if private else text
 
     def walk(item: object) -> object:

@@ -201,3 +201,17 @@ def test_the_signed_in_account_and_machine_are_removed_from_the_answer(tmp_path,
 
     assert "Jo Doe" not in answer and "jo.doe" not in answer and str(Path.home()) not in answer
     assert "corp.example" in answer  # named in the prompt, so it stays
+
+
+def test_account_terms_redact_whole_words_only_and_emails_ignore_case(tmp_path, monkeypatch):
+    config = tmp_path / "config"
+    config.mkdir()
+    account = {"emailAddress": "anne@corp.example", "fullName": "Ann"}
+    (config / ".claude.json").write_text(json.dumps({"oauthAccount": account}))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    said = "Annexes and annotations stay; anne leaks; Ops@Shop.example is quoted."
+    provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result=said)))
+
+    answer = asyncio.run(provider.generate("mail ops@shop.example"))
+
+    assert answer == "Annexes and annotations stay; [REDACTED] leaks; Ops@Shop.example is quoted."
