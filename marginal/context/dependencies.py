@@ -183,12 +183,14 @@ def dependency_changes(files: list[dict[str, object]], repo_root: str) -> list[C
         else:
             continue
         for number, package, version, line in added:
-            is_new = package not in removed
-            old = removed.get(package)
+            # Compared normalized (`Reqeusts_Lib` is `reqeusts-lib`), shown as written.
+            key = _normalize(ecosystem, package)
+            is_new = key not in removed
+            old = removed.get(key)
             if not is_new and old == version:
                 continue  # the line changed, the version didn't
             change = Change(ecosystem, package, is_new, old, version, path, number, line.strip())
-            changes.setdefault((ecosystem, package), change)
+            changes.setdefault((ecosystem, key), change)
     kept, counts = [], {True: 0, False: 0}
     for change in changes.values():
         if counts[change.is_new] < (MAX_NEW_PACKAGES if change.is_new else MAX_BUMPS):
@@ -295,7 +297,7 @@ def bumps_section(
     """A prompt section for the packages `changes` bump: what changed upstream
     between the two versions, and the lines in the repository that use the
     package. Empty when nothing is bumped. `internal` packages get no notes."""
-    source = source or (lambda c: _source(c.ecosystem, c.name, c.new or ""))
+    source = source or (lambda c: _source(c.ecosystem, c.name, c.new or "", c.old or ""))
     releases = releases or _releases
     bumps = [c for c in changes if not c.is_new and c.old is not None and c.new is not None]
 
@@ -405,16 +407,19 @@ def _lookup(ecosystem: str, name: str) -> Package | None:
 
 
 @cache
-def _source(ecosystem: str, name: str, version: str) -> str | None:
+def _source(ecosystem: str, name: str, new: str, old: str = "") -> str | None:
     """The GitHub repository of `name`, from a small record: npm's latest
-    version, or PyPI's record for `version` (with `.0` added if needed)."""
-    if ecosystem in _unreachable or not _VERSION.fullmatch(version):
+    version, or PyPI's record for the new or old version (a spec's bound,
+    with `.0` added if needed). The full PyPI record, which can run to
+    megabytes, is the last resort."""
+    if ecosystem in _unreachable:
         return None
-    urls = (
-        [f"https://registry.npmjs.org/{quote(name, safe='@')}/latest"]
-        if ecosystem == "npm"
-        else [f"https://pypi.org/pypi/{name}/{v}/json" for v in (version, f"{version}.0")]
-    )
+    if ecosystem == "npm":
+        urls = [f"https://registry.npmjs.org/{quote(name, safe='@')}/latest"]
+    else:
+        versions = [v for v in (new, f"{new}.0", old, f"{old}.0") if _VERSION.fullmatch(v)]
+        urls = [f"https://pypi.org/pypi/{name}/{v}/json" for v in dict.fromkeys(versions)]
+        urls.append(f"https://pypi.org/pypi/{name}/json")
     for url in urls:
         try:
             response = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
@@ -423,6 +428,9 @@ def _source(ecosystem: str, name: str, version: str) -> str | None:
             response.raise_for_status()
             data = response.json()
         except ValueError:
+            return None
+        except requests.Timeout:
+            # Only this package's (possibly huge) record was slow: no notes for it.
             return None
         except requests.RequestException:
             _unreachable.add(ecosystem)
@@ -558,7 +566,7 @@ def _python_spec(text: str) -> tuple[str, str | None] | None:
     match = _REQUIREMENT.match(text)
     if not match:
         return None
-    return _normalize("pypi", match.group(1)), _version(match.group(2))
+    return match.group(1), _version(match.group(2))
 
 
 def _python_removed(lines: _Lines, *, quoted: bool) -> dict[str, str | None]:
@@ -573,10 +581,10 @@ def _python_removed(lines: _Lines, *, quoted: bool) -> dict[str, str | None]:
             else [text]
         )
         for spec in filter(None, map(_python_spec, specs)):
-            removed[spec[0]] = spec[1]
+            removed[_normalize("pypi", spec[0])] = spec[1]
         poetry = _poetry_spec(text) if quoted else None
         if poetry:
-            removed[poetry[0]] = poetry[1]
+            removed[_normalize("pypi", poetry[0])] = poetry[1]
     return removed
 
 
@@ -595,7 +603,7 @@ def _poetry_spec(line: str) -> tuple[str, str | None] | None:
         spec = version.group(1) if version else ""
     else:
         spec = value.strip("\"' ")
-    return _normalize("pypi", match.group(1)), _version(spec)
+    return match.group(1), _version(spec)
 
 
 def _pyproject(lines: _Lines, text: str | None) -> list[tuple[int, str, str | None, str]]:
@@ -635,11 +643,12 @@ def _pyproject(lines: _Lines, text: str | None) -> list[tuple[int, str, str | No
             # Not `{include-group = "test"}`: an inline table names a group, not a package.
             for basic, literal in _QUOTED.findall(_INLINE_TABLE.sub("", line)):
                 spec = _python_spec(basic or literal)
-                if spec and spec[0] != project:  # `all = ["shop[dev]"]` is shop itself
+                # `all = ["shop[dev]"]` is the project itself.
+                if spec and _normalize("pypi", spec[0]) != project:
                     found.append((number, *spec, line))
         elif line.strip() in in_poetry:
             spec = _poetry_spec(line)
-            if spec and spec[0] != project:
+            if spec and _normalize("pypi", spec[0]) != project:
                 found.append((number, *spec, line))
     return found
 
@@ -677,7 +686,7 @@ def _npm_removed(lines: _Lines) -> dict[str, str | None]:
     for text in lines.removed:
         match = _NPM_ENTRY.match(text)
         if match:
-            removed[match.group(1)] = _version(match.group(2))
+            removed[match.group(1).lower()] = _version(match.group(2))
     return removed
 
 

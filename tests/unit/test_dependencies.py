@@ -716,3 +716,38 @@ def test_bumps_section_gathers_notes_in_parallel(tmp_path):
         bumps, str(tmp_path), source=source, releases=lambda r: [{"tag_name": "v2.0", "body": "n"}]
     )
     assert section.count("## v2.0") == 3
+
+
+def test_a_pypi_name_keeps_its_spelling_and_matches_normalized(tmp_path):
+    patch = "@@ -1 +1,2 @@\n-Flask_Login==0.5\n+flask-login==0.6\n+Reqeusts_Lib==1.0\n"
+    changes = dependency_changes([_file("requirements.txt", patch)], str(tmp_path))
+    assert [(c.name, c.is_new, c.old) for c in changes] == [
+        ("flask-login", False, "0.5"),
+        ("Reqeusts_Lib", True, None),
+    ]
+
+
+def test_release_notes_fall_back_to_the_old_version_then_the_full_record(monkeypatch):
+    calls = []
+
+    def get(url, **kw):
+        calls.append(url)
+        if url.endswith("/pkg/json"):
+            return _Response(
+                200, {"info": {"project_urls": {"Source": "https://github.com/o/pkg"}}}
+            )
+        return _Response(404)
+
+    monkeypatch.setattr(requests, "get", get)
+    assert deps._source("pypi", "pkg", "2", "1") == "o/pkg"
+    assert calls[-1] == "https://pypi.org/pypi/pkg/json"
+    assert "https://pypi.org/pypi/pkg/1.0/json" in calls
+
+
+def test_a_slow_full_record_skips_only_that_package(monkeypatch):
+    def slow(url, **kw):
+        raise requests.Timeout("16 MB")
+
+    monkeypatch.setattr(requests, "get", slow)
+    assert deps._source("pypi", "huge", "2") is None
+    assert "pypi" not in deps._unreachable
