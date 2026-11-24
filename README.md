@@ -31,40 +31,65 @@ marginal is built around a different bet: **context beats volume**. One well-evi
 ## How it works
 
 ```text
-         pull request (GitHub Actions)
-                      |
-                      v
-        +---------------------------+
-        |     diff (lockfiles and   |
-        |   ignore_paths left out,  |
-        |    secrets redacted)      |
-        +-------------+-------------+
-                      |
-        +-------------+-------------+
-        |             |             |
-        v             v             v
-   Code graph      Policies    Earlier replies
- (callers outside  & anti-     on marginal's
-   the diff)       policies    own comments
-        |             |             |
-        +-------------+-------------+
-                      |
-                      v
-            Your model (BYOK or local)
-                      |
-                      v
-   evidence check · comment cap · dedup
-                      |
-                      v
-       inline comments + summary on the PR
+           pull request (GitHub Actions)
+                        |
+                        v
+          +---------------------------+
+          |     diff (lockfiles and   |
+          |   ignore_paths left out,  |
+          |    secrets redacted)      |
+          +-------------+-------------+
+                        |
+     +-------------+----+--------+---------------+
+     |             |             |               |
+     v             v             v               v
+ Code graph    Policies &    Accepted       Earlier replies
+ (callers      anti-         knowledge      on marginal's
+ outside the   policies      (repo/ and     own comments
+ diff)                       paths/)
+     |             |             |               |
+     +-------------+----+--------+---------------+
+                        |
+                        v
+             Your model (BYOK or local)
+                        |
+                        v
+       evidence check · comment cap · dedup
+                        |
+                        v
+        inline comments + summary on the PR
 ```
 
-marginal builds one prompt from the diff and the context around it and asks your model for structured findings. Each finding has to show its work: the trigger that makes it go wrong, and the exact lines it rests on. marginal checks those lines against your code, with no second model call, and posts only the findings whose evidence holds. On later pushes it checks its earlier findings again and resolves the ones the new code fixed.
+marginal builds one prompt from the diff and the context around it: the callers of the code it changes, and your policies and accepted knowledge, both read from the PR's base commit so a PR can't change what it's reviewed against. It asks your model for structured findings. Each finding has to show its work: the trigger that makes it go wrong, and the exact lines it rests on. marginal checks those lines against your code, with no second model call, and posts only the findings whose evidence holds. On later pushes it checks its earlier findings again and resolves the ones the new code fixed.
+
+### How knowledge grows
+
+```text
+  merged PR
+      |
+      v
+  marginal propose          the rules and decisions the PR states, from its
+      |                     review and maintainer replies (proposals.enabled)
+      v
+  rolling knowledge PR      "marginal: knowledge to review" (permissions.write.push):
+      |                     keep a file to accept it, edit it, or delete it to reject it
+      v  merge
+  .marginal/knowledge/
+    repo/                   repo-wide: loaded on every review
+    paths/                  mirrors your code: loaded when a PR touches that area
+    rejected/               never loaded; keeps a rejected claim from coming back
+      |
+      v
+  every later review reads it from its base commit
+```
+
+Each merged PR proposes what it decided; the team accepts it the way it accepts code, in a pull request. From then on, a PR that breaks an accepted rule or quietly reverses a decision gets a finding that names the PR it came from. See [Accepted knowledge](#accepted-knowledge).
 
 ## What it reviews for
 
 - **Context over diff** — when a PR changes a function, marginal finds its callers outside the diff and shows them to the model, so a change that breaks one of them is flagged with that caller as evidence. (The caller index covers Python today.)
 - **Your team's rules** — Markdown policies in `.marginal/policies/` are checked against every diff, and anti-policies list the deliberate tradeoffs marginal must never re-litigate.
+- **Decisions your team already made** — rules and decisions accepted from earlier pull requests live in `.marginal/knowledge/`, and a PR that breaks one, or quietly reverses it, gets a finding that names where it came from. Merged PRs propose new ones for the team to review.
 - **Findings that show their work** — each posted finding quotes the lines it rests on and names its trigger, in a folded "Why marginal flagged this" block. A finding whose quote isn't in your code, or whose trigger names no real code, is dropped, not posted.
 - **Quiet by design** — evidence-checked findings and a comment cap, no repeated findings across pushes, findings closed once a later push fixes them, and a maintainer's reply taken into account on the next review.
 - **Team-friendly defaults** — drafts, bot PRs, and PRs labelled `skip-review` are skipped, and lockfiles and minified assets never reach the model.
@@ -216,8 +241,8 @@ _marginal is under active, in-the-open development. Jump into [Issues](https://g
 
 | Package | What it is |
 |---|---|
-| [`marginal-review`](https://pypi.org/project/marginal-review/) | This repo, on PyPI. The `marginal` CLI: `init`, `review`, `compact`, `doctor`. Install with `pip install marginal-review`. |
-| [`marginal-action`](https://github.com/exactml/marginal-action) | The GitHub Action that installs `marginal-review` and runs `marginal review --comment` on each pull request. `marginal init` sets it up for you. |
+| [`marginal-review`](https://pypi.org/project/marginal-review/) | This repo, on PyPI. The `marginal` CLI: `init`, `review`, `compact`, `propose`, `doctor`. Install with `pip install marginal-review`. |
+| [`marginal-action`](https://github.com/exactml/marginal-action) | The GitHub Action that installs `marginal-review`, runs `marginal review --comment` on each pull request, and `marginal propose --comment` once it merges. `marginal init` sets it up for you. |
 | [`marginal-client`](https://github.com/exactml/marginal-client) | A small sample app set up with `marginal init`, where marginal's latest `master` reviews real pull requests before each release. Its PRs show what marginal's reviews look like. |
 
 ## Configuration
