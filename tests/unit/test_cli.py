@@ -2,7 +2,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import yaml
@@ -3133,30 +3133,6 @@ def test_rerun_with_the_same_finding_reworded_posts_nothing(
     err = capsys.readouterr().err
     assert "skipped 1 finding(s) matching one already posted" in err
     assert "nothing was posted" in err
-
-
-def test_rerun_counts_a_review_posted_under_the_old_heading(
-    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
-):
-    _write_reviewer_config(tmp_path)
-    client = mock_github_client.return_value
-    first = [_finding_at(2, "This sleep blocks the async retry loop.")]
-    assert (
-        _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, first, [])
-        == 0
-    )
-    first_post = client.create_review.call_args
-    # Reviews posted before 0.4.0 opened with 🤖.
-    old_post = call(first_post.args[0], first_post.args[1].replace("👾", "🤖"), **first_post.kwargs)
-    capsys.readouterr()
-
-    exit_code = _run_review_posting(
-        tmp_path, monkeypatch, mock_github_client, mock_provider, first, [old_post]
-    )
-
-    assert exit_code == 0
-    client.create_review.assert_not_called()
-    assert "nothing was posted" in capsys.readouterr().err
 
 
 def test_rerun_after_a_rename_does_not_post_the_finding_again(

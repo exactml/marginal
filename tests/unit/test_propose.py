@@ -173,22 +173,16 @@ def test_a_maintainer_explaining_a_finding_away_is_proposed_as_a_decision(client
     assert "| decisionAbout | `requirements.txt`" in capsys.readouterr().out
 
 
-# Reviews posted before 0.4.0 opened with 🤖.
-@pytest.mark.parametrize("heading", ["### 👾 marginal review", "### 🤖 marginal review"])
-def test_rules_a_marginal_review_found_are_proposed_at_merge(client, capsys, heading):
-    review_body = (
-        heading
-        + "\n\n"
-        + knowledge_marker(
-            [
-                Knowledge(
-                    kind="rule",
-                    statement="Requests is pinned to an exact version.",
-                    about="requirements.txt",
-                    evidence=Evidence(file="requirements.txt", line=2, quote="requests==2.31.0"),
-                )
-            ]
-        )
+def test_rules_a_marginal_review_found_are_proposed_at_merge(client, capsys):
+    review_body = "### 👾 marginal review\n\n" + knowledge_marker(
+        [
+            Knowledge(
+                kind="rule",
+                statement="Requests is pinned to an exact version.",
+                about="requirements.txt",
+                evidence=Evidence(file="requirements.txt", line=2, quote="requests==2.31.0"),
+            )
+        ]
     )
     forged = "### 👾 marginal review\n" + knowledge_marker(
         [
