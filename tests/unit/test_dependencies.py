@@ -905,3 +905,22 @@ def test_bumps_section_allows_indirect_use_through_a_pinned_dependency(tmp_path)
     bump = Change("pypi", "urllib3", False, "2.5.0", "2.6.0", "requirements.txt", 59, "x")
     section = bumps_section([bump], str(tmp_path), source=lambda c: None)
     assert "`# via` comment" in section and "quote the bumped manifest line" in section
+
+
+def test_release_note_subsections_stay_with_their_section():
+    body = (
+        "## Security\n- a fix\n\n## Breaking changes\n### `HTTPResponse`\n- dropped getheaders()\n"
+    )
+    ordered = deps._breaking_first(body)
+    assert ordered.index("## Breaking changes") < ordered.index("### `HTTPResponse`")
+    assert ordered.index("dropped getheaders()") < ordered.index("## Security")
+
+
+def test_comments_in_code_blocks_and_issue_numbers_arent_headings():
+    body = (
+        "## Features\n- new thing\n```bash\n# install the extra\npip install x\n```\n"
+        "#1234: fixed a crash\n\n## Removals\n- removed y()\n"
+    )
+    ordered = deps._breaking_first(body)
+    assert ordered.startswith("## Removals")
+    assert "```bash\n# install the extra\npip install x\n```\n#1234: fixed a crash" in ordered

@@ -89,11 +89,13 @@ _VERSION = re.compile(r"\d+(?:\.\d+)*")
 # it, so its digits are never read as a version of their own.
 _BOUND = re.compile(r"(<=?|>=?|===?|~=|!=|\^|~)?\s*v?(\d+(?:\.\d+)*)(?:[-+._]?[A-Za-z][\w.+-]*)?")
 # What ends a release tag's package prefix: separators, then a `v` right before the version.
+_TAG_END = re.compile(r"[-_@/ ]*[vV]?$")
+_TAG_VERSION = re.compile(r"\d+(?:\.\d+)*(?=(?:[-+._]?[A-Za-z][\w.+-]*)?$)")
 # Release-note headings for changes that can break a caller, and for banners.
 _BREAKING = re.compile(r"breaking|remov|deprecat|incompatib|backward|migrat|changed")
 _BANNER = re.compile(r"fundrais|sponsor|donat|thank|contributors")
-_TAG_END = re.compile(r"[-_@/ ]*[vV]?$")
-_TAG_VERSION = re.compile(r"\d+(?:\.\d+)*(?=(?:[-+._]?[A-Za-z][\w.+-]*)?$)")
+# A Markdown heading: `## Removals`, not `#1234` or a comment in a code block.
+_HEADING = re.compile(r"^(#{1,6})\s+\S")
 _GITHUB_REPO = re.compile(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[/#?]|$)")
 # requirements.txt, dev-requirements.txt, requirements/base.txt, pip-tools' .in files.
 _REQUIREMENTS_FILE = re.compile(
@@ -565,15 +567,23 @@ def _breaking_first(body: str) -> str:
     rest, and banners (fundraising, sponsors) last. urllib3 2.6.0 lists its
     `getheaders()` removal after a fundraising banner and a security section,
     2,227 characters in."""
-    sections: list[list[str]] = [[]]
-    for line in body.splitlines():
-        if line.startswith("#") and sections[-1]:
-            sections.append([])
-        sections[-1].append(line)
-    blocks = ["\n".join(section).strip() for section in sections]
+    lines = body.splitlines()
+    fenced, headings = False, []
+    for number, line in enumerate(lines):
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        elif not fenced and (match := _HEADING.match(line)):
+            headings.append((number, len(match.group(1))))
+    # Split only at the top level, so a `### HTTPResponse` stays under its
+    # `## Breaking changes`.
+    top = min((level for _, level in headings), default=0)
+    starts = [number for number, level in headings if level == top]
+    bounds = [0, *[n for n in starts if n], len(lines)]
+    blocks = ["\n".join(lines[a:b]).strip() for a, b in zip(bounds, bounds[1:], strict=False)]
 
     def rank(block: str) -> int:
-        heading = block.splitlines()[0].lower() if block.startswith("#") else ""
+        first = block.splitlines()[0]
+        heading = first.lower() if _HEADING.match(first) else ""
         if _BREAKING.search(heading):
             return 0
         if "security" in heading:
