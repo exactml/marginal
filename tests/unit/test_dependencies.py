@@ -24,6 +24,7 @@ OLD = Package(exists=True, created=NOW - timedelta(days=3000))
 @pytest.fixture(autouse=True)
 def _fresh_cache():
     deps._lookup.cache_clear()
+    deps._unreachable.clear()
 
 
 def _file(name, patch):
@@ -332,3 +333,58 @@ def test_bumps_section_redacts_secrets_in_notes(tmp_path):
         releases=lambda r: [{"tag_name": "4.17.21", "body": "token=ghp_" + "a" * 36}],
     )
     assert "ghp_" not in section
+
+
+def test_internal_patterns_match_however_the_name_is_spelled():
+    change = _new("acme-utils")  # PyPI names arrive normalized
+    assert _findings(change, OLD, internal=["Acme_*"])[0].severity is Severity.HIGH
+    assert "dependency confusion" in _findings(change, OLD, internal=["acme.utils"])[0].message
+
+
+def test_an_unreachable_registry_is_asked_once(monkeypatch):
+    calls = []
+
+    def fail(url, **kw):
+        calls.append(url)
+        raise requests.Timeout("slow")
+
+    monkeypatch.setattr(requests, "get", fail)
+    assert lookup("pypi", "flask") is None
+    assert lookup("pypi", "django") is None
+    assert len(calls) == 1
+
+
+def test_a_funding_link_is_not_the_repository(monkeypatch):
+    urls = {"Funding": "https://github.com/sponsors/someone", "Source": "https://github.com/a/b"}
+    data = {"info": {"project_urls": urls}, "releases": {}}
+    monkeypatch.setattr(requests, "get", lambda url, **kw: _Response(200, data))
+    assert lookup("pypi", "b").repository == "a/b"
+
+
+def test_usages_know_common_import_names(tmp_path):
+    root = _git_repo(tmp_path, {"app.py": "import yaml\nfrom PIL import Image\n"})
+    section = bumps_section(
+        [
+            Change("pypi", "pyyaml", False, "6.0", "6.0.2", "requirements.txt", 1, "x"),
+            Change("pypi", "pillow", False, "10.0", "11.0", "requirements.txt", 2, "x"),
+        ],
+        root,
+        fetch=lambda e, n: None,
+    )
+    assert "app.py:1: import yaml" in section
+    assert "app.py:2: from PIL import Image" in section
+
+
+def test_bumps_section_caps_the_notes_it_adds(tmp_path):
+    bumps = [
+        Change("pypi", f"pkg{i}", False, "1.0", "2.0", "requirements.txt", i, "x")
+        for i in range(10)
+    ]
+    section = bumps_section(
+        bumps,
+        str(tmp_path),
+        fetch=lambda e, n: Package(True, repository="a/b"),
+        releases=lambda r: [{"tag_name": "v2.0", "body": "x" * 5000}],
+    )
+    assert section.count("x" * 1500) <= deps._NOTES_CHARS_TOTAL // 1500
+    assert "Release notes left out: this PR bumps too many packages." in section

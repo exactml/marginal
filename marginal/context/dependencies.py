@@ -49,8 +49,11 @@ LOOKALIKE_MAX_DAYS = 365
 MAX_CHANGES = 20
 _NOTES_CHARS_PER_RELEASE = 1500
 _NOTES_CHARS_PER_PACKAGE = 4000
+# About 4k tokens, so a grouped update bumping many packages can't push the
+# review prompt over `review.max_prompt_tokens` on its own.
+_NOTES_CHARS_TOTAL = 12_000
 _MAX_USAGES = 10
-_TIMEOUT = 10
+_TIMEOUT = 5
 _HEADERS = {"User-Agent": "marginal-review"}
 
 _HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)")
@@ -69,6 +72,29 @@ _GITHUB_REPO = re.compile(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[/#?
 _REQUIREMENTS_FILE = re.compile(r"requirements[\w.-]*\.txt")
 # The repository npm gives a name it took over after removing a malicious package.
 _NPM_SECURITY_HOLDER = "npm/security-holder"
+# GitHub links in package metadata that aren't a repository (funding, org pages).
+_NOT_REPOSITORIES = {"sponsors", "orgs"}
+# Distributions imported under another name. shortcut: the common ones only;
+# a bump of any other mismatched package shows no usage lines, which the
+# section says. Upgrade to the wheel's top_level.txt if that proves too thin.
+_IMPORT_NAMES = {
+    "attrs": "attr",
+    "beautifulsoup4": "bs4",
+    "opencv-python": "cv2",
+    "opencv-python-headless": "cv2",
+    "pillow": "PIL",
+    "protobuf": "google.protobuf",
+    "psycopg2-binary": "psycopg2",
+    "pyjwt": "jwt",
+    "pymupdf": "fitz",
+    "python-dateutil": "dateutil",
+    "python-dotenv": "dotenv",
+    "pyyaml": "yaml",
+    "scikit-learn": "sklearn",
+}
+# Registries (and "github") that failed once in this run: skipped for the
+# rest of it, so an outage costs one timeout, not one per package.
+_unreachable: set[str] = set()
 
 
 @dataclass(frozen=True)
@@ -170,7 +196,8 @@ def _verdict(
     change: Change, package: Package, internal: list[str], now: datetime
 ) -> tuple[Severity, str] | None:
     name, registry = f"`{change.name}`", _REGISTRY_NAMES[change.ecosystem]
-    if any(fnmatch(change.name, pattern) for pattern in internal):
+    normalized = _normalize(change.ecosystem, change.name)
+    if any(fnmatch(normalized, _normalize(change.ecosystem, p)) for p in internal):
         if not package.exists:
             return None
         return Severity.HIGH, (
@@ -221,19 +248,24 @@ def bumps_section(
     package. Empty when nothing is bumped."""
     fetch = fetch or lookup
     releases = releases or _releases
-    blocks = []
+    blocks, budget = [], _NOTES_CHARS_TOTAL
     for change in changes:
         if change.is_new or change.old is None or change.new is None:
             continue
-        package = fetch(change.ecosystem, change.name)
-        repository = package.repository if package else None
-        notes = _notes(change, releases(repository)) if repository else ""
+        if budget > 0:
+            package = fetch(change.ecosystem, change.name)
+            repository = package.repository if package else None
+            notes = _notes(change, releases(repository))[:budget] if repository else ""
+            budget -= len(notes)
+            missing = "No upstream release notes found."
+        else:
+            notes, missing = "", "Release notes left out: this PR bumps too many packages."
         usages = _usages(change, repo_root)
         blocks.append(
             f"--- {change.name} {change.old} -> {change.new} ({change.file}:{change.line}) ---\n"
             + ("Used at:\n" + "\n".join(usages) if usages else "No use of it found by name.")
             + "\n\n"
-            + (f"Upstream release notes:\n{notes}" if notes else "No upstream release notes found.")
+            + (f"Upstream release notes:\n{notes}" if notes else missing)
         )
     if not blocks:
         return ""
@@ -270,8 +302,8 @@ def lookalike(ecosystem: str, name: str) -> str | None:
 def lookup(ecosystem: str, name: str) -> Package | None:
     """What PyPI or npm says about `name`, or None if it couldn't be asked."""
     pattern = _PYPI_NAME if ecosystem == "pypi" else _NPM_NAME
-    if not pattern.fullmatch(name):
-        return None  # never put in a URL; nothing installs it by this name either
+    if not pattern.fullmatch(name) or ecosystem in _unreachable:
+        return None  # an invalid name never goes in a URL; nothing installs it either
     return _lookup(ecosystem, name)
 
 
@@ -289,9 +321,10 @@ def _lookup(ecosystem: str, name: str) -> Package | None:
         response.raise_for_status()
         data = response.json()
     except (requests.RequestException, ValueError) as exc:
+        _unreachable.add(ecosystem)
         print(
             f"marginal review: warning: couldn't check `{name}` on "
-            f"{_REGISTRY_NAMES[ecosystem]}, skipping it: {exc}",
+            f"{_REGISTRY_NAMES[ecosystem]}, skipping its dependency checks: {exc}",
             file=sys.stderr,
         )
         return None
@@ -313,6 +346,8 @@ def _lookup(ecosystem: str, name: str) -> Package | None:
 
 def _releases(repository: str) -> list[dict[str, object]]:
     """The latest 100 GitHub releases of `repository`, or none if unreachable."""
+    if "github" in _unreachable:
+        return []
     headers = dict(_HEADERS)
     if os.environ.get("GITHUB_TOKEN"):
         headers["Authorization"] = f"Bearer {os.environ['GITHUB_TOKEN']}"
@@ -325,7 +360,10 @@ def _releases(repository: str) -> list[dict[str, object]]:
         )
         response.raise_for_status()
         data = response.json()
-    except (requests.RequestException, ValueError):
+    except (requests.HTTPError, ValueError):
+        return []  # this repository: no releases, private, or moved
+    except requests.RequestException:
+        _unreachable.add("github")
         return []
     return data if isinstance(data, list) else []
 
@@ -352,9 +390,10 @@ def _notes(change: Change, releases: list[dict[str, object]]) -> str:
 def _usages(change: Change, repo_root: str) -> list[str]:
     """`file:line: text` for lines that import the package, from git grep."""
     if change.ecosystem == "pypi":
-        module = re.escape(re.sub(r"[-.]", "_", change.name.lower()))
-        uses = re.compile(rf"^\s*(?:import|from)\s+{module}\b", re.IGNORECASE)
-        needle = re.sub(r"[-.]", "_", change.name)
+        name = change.name.lower()
+        module = _IMPORT_NAMES.get(name) or re.sub(r"[-.]", "_", name.removeprefix("python-"))
+        uses = re.compile(rf"^\s*(?:import|from)\s+{re.escape(module)}\b", re.IGNORECASE)
+        needle = module
     else:
         uses = re.compile(
             rf"""(?:require\(|from\s+|import\s*\(?)\s*['"]{re.escape(change.name)}(?:/[^'"]*)?['"]"""
@@ -533,7 +572,7 @@ def _version_key(version: str | None) -> tuple[int, ...]:
 def _github(urls: list[str]) -> str | None:
     for url in urls:
         match = _GITHUB_REPO.search(url or "")
-        if match:
+        if match and match.group(1).lower() not in _NOT_REPOSITORIES:
             return f"{match.group(1)}/{match.group(2)}"
     return None
 
