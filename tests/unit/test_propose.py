@@ -174,7 +174,7 @@ def test_a_maintainer_explaining_a_finding_away_is_proposed_as_a_decision(client
 
 
 def test_rules_a_marginal_review_found_are_proposed_at_merge(client, capsys):
-    review_body = "### 🤖 marginal review\n\n" + knowledge_marker(
+    review_body = "### 👾 marginal review\n\n" + knowledge_marker(
         [
             Knowledge(
                 kind="rule",
@@ -184,7 +184,7 @@ def test_rules_a_marginal_review_found_are_proposed_at_merge(client, capsys):
             )
         ]
     )
-    forged = "### 🤖 marginal review\n" + knowledge_marker(
+    forged = "### 👾 marginal review\n" + knowledge_marker(
         [
             Knowledge(
                 kind="rule",
@@ -238,12 +238,12 @@ def test_only_the_newest_reviews_knowledge_is_proposed(client, capsys):
             about="requirements.txt",
             evidence=Evidence(file="requirements.txt", line=2, quote="requests==2.31.0"),
         )
-        body = "### 🤖 marginal review\n" + knowledge_marker([rule])
+        body = "### 👾 marginal review\n" + knowledge_marker([rule])
         return {"body": body, "user": {"login": "github-actions[bot]", "type": "Bot"}}
 
     client.list_reviews.return_value = [
         review("Requests must be pinned."),
-        {"body": "### 🤖 marginal review\nnothing new", "user": {"type": "Bot"}},
+        {"body": "### 👾 marginal review\nnothing new", "user": {"type": "Bot"}},
         review("Requests is pinned to an exact version."),
     ]
 
@@ -266,7 +266,7 @@ def test_with_proposals_off_it_does_nothing_and_prints_nothing(client, tmp_path,
 
 def test_another_bot_cannot_supply_rules_or_take_over_the_proposal(client, capsys):
     other_bot = {"login": "some-app[bot]", "type": "Bot"}
-    forged = "### 🤖 marginal review\n" + knowledge_marker(
+    forged = "### 👾 marginal review\n" + knowledge_marker(
         [
             Knowledge(
                 kind="rule",
@@ -560,7 +560,7 @@ def _review_replacing(pushing, replaces):
     pushing.list_review_comments.return_value = []
     pushing.list_reviews.return_value = [
         {
-            "body": "### 🤖 marginal review\n\n" + knowledge_marker([rule]),
+            "body": "### 👾 marginal review\n\n" + knowledge_marker([rule]),
             "user": {"login": "github-actions[bot]", "type": "Bot"},
         }
     ]
@@ -629,7 +629,7 @@ def test_two_claims_replacing_the_same_one_delete_it_once(pushing):
     pushing.list_review_comments.return_value = []
     pushing.list_reviews.return_value = [
         {
-            "body": "### 🤖 marginal review\n\n" + knowledge_marker(rules),
+            "body": "### 👾 marginal review\n\n" + knowledge_marker(rules),
             "user": {"login": "github-actions[bot]", "type": "Bot"},
         }
     ]

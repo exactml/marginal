@@ -28,7 +28,7 @@ _MAX_SPAN_DISTANCE = 10
 
 # Every review marginal posts opens with this, which is how a re-run spots
 # that it has already reviewed a PR.
-REVIEW_HEADING = "### 🤖 marginal review"
+REVIEW_HEADING = "### 👾 marginal review"
 
 
 # Shown when no model reviewed the diff; without it, a fresh `marginal init`
