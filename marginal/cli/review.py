@@ -18,6 +18,7 @@ from marginal.context import (
     load_base_policies,
     read_ci_conclusion,
 )
+from marginal.context.dependencies import bumps_section, dependency_changes, dependency_findings
 from marginal.context.knowledge import KNOWLEDGE_DIR, AcceptedClaim, load_accepted
 from marginal.context.local import LocalCheckout
 from marginal.github.client import GitHubClient
@@ -472,6 +473,17 @@ def _review_files(
             f"from {KNOWLEDGE_DIR}",
             file=sys.stderr,
         )
+    changes = dependency_changes(redacted, path) if config.dependencies.check else []
+    if changes:
+        print(
+            f"marginal review: checking {len(changes)} added or bumped dependenc(ies)",
+            file=sys.stderr,
+        )
+    dependency_issues = dependency_findings(changes, config.dependencies.internal)
+    # Checked against what the model was shown: the (redacted) diff and the
+    # caller context, plus the rest of each file from the checkout.
+    context = build_graph_context_section(graph_context, path) or ""
+    view = CodeView(path, redacted, context)
     try:
         response = asyncio.run(
             _generate_findings(
@@ -488,6 +500,7 @@ def _review_files(
                 ),
                 knowledge=config.proposals.enabled,
                 accepted=accepted,
+                dependencies=bumps_section(changes, path),
             )
         )
     except PromptOverBudget as exc:
@@ -496,21 +509,20 @@ def _review_files(
             ".marginal/config.yaml or split the PR to review it",
             file=sys.stderr,
         )
-        return [], [], redacted_files, exc, []
+        # The dependency checks need no model, so they still post.
+        decisions = decide(dependency_issues, view, max_comments=config.review.max_comments)
+        return [d.finding for d in decisions if d.posted], [], redacted_files, exc, []
 
-    # Checked against what the model was shown: the (redacted) diff and the
-    # caller context, plus the rest of each file from the checkout.
-    context = build_graph_context_section(graph_context, path) or ""
-    view = CodeView(path, redacted, context)
     knowledge = [
         k
         for k in response.knowledge
         if config.proposals.enabled
         and view.has_quote(k.evidence.file, k.evidence.line, k.evidence.quote)
     ]
-    if not response.findings:
+    findings = [*dependency_issues, *response.findings]
+    if not findings:
         return [], [], redacted_files, None, knowledge
-    decisions = decide(response.findings, view, max_comments=config.review.max_comments)
+    decisions = decide(findings, view, max_comments=config.review.max_comments)
     dropped = [d for d in decisions if not d.posted]
     if dropped:
         reasons = Counter(d.reason for d in dropped)
@@ -682,6 +694,7 @@ async def _generate_findings(
     ci_conclusion: str | None = None,
     knowledge: bool = False,
     accepted: list[AcceptedClaim] | None = None,
+    dependencies: str = "",
 ) -> FindingsResponse:
     """Generate a bounded list of unvalidated `Finding`s, and any business
     `Knowledge` the diff states, from `model_spec` over
@@ -703,6 +716,7 @@ async def _generate_findings(
         ci_conclusion,
         knowledge,
         accepted,
+        dependencies,
     )
     estimated_tokens = estimate_tokens(prompt)
     if estimated_tokens > max_prompt_tokens:

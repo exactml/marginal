@@ -15,6 +15,7 @@ from marginal.cli.review import run_review
 from marginal.config import MarginalConfig, load_config
 from marginal.config.schema import ModelSpec
 from marginal.context import build_graph_context
+from marginal.context import dependencies as deps
 from marginal.github.errors import (
     GitHubAPIError,
     GitHubAuthenticationError,
@@ -4065,3 +4066,86 @@ def test_review_with_proposals_off_asks_for_and_posts_no_knowledge(
 
     assert KNOWLEDGE_INSTRUCTIONS not in provider.generate_structured.call_args.args[0]
     assert posted_knowledge([client.create_review.call_args.args[1]]) == []
+
+
+# -- dependency checks (marginal.context.dependencies)
+
+_REQUIREMENTS_PATCH = (
+    "@@ -1,2 +1,3 @@\n-requests==2.31.0\n+requests==2.32.0\n+reqeusts==1.0\n flask\n"
+)
+
+
+def _review_dependencies(tmp_path, monkeypatch, mock_github_client, mock_provider, config=""):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".marginal").mkdir()
+    (tmp_path / ".marginal" / "config.yaml").write_text(
+        "version: 1\nmodels:\n  reviewer:\n    provider: anthropic\n    model: m\n" + config
+    )
+    lookups = []
+
+    def fake_lookup(ecosystem, name):
+        lookups.append(name)
+        if name == "reqeusts":
+            return deps.Package(exists=False)
+        return deps.Package(exists=True, repository="psf/requests")
+
+    monkeypatch.setattr(deps, "lookup", fake_lookup)
+    monkeypatch.setattr(
+        deps, "_releases", lambda repo: [{"tag_name": "v2.32.0", "body": "verify=False fix"}]
+    )
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "requirements.txt", "patch": _REQUIREMENTS_PATCH}
+    ]
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=FindingsResponse(findings=[])
+    )
+    return lookups
+
+
+def test_review_posts_a_missing_dependency_and_shows_a_bumps_notes(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _review_dependencies(tmp_path, monkeypatch, mock_github_client, mock_provider)
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"]) == 0
+
+    prompt = mock_provider.return_value.generate_structured.call_args.args[0]
+    assert "--- requests 2.31.0 -> 2.32.0 (requirements.txt:1) ---" in prompt
+    assert "verify=False fix" in prompt
+    [comment] = mock_github_client.return_value.create_review.call_args.kwargs["comments"]
+    assert comment["path"] == "requirements.txt" and comment["line"] == 2
+    assert "`reqeusts` isn't on PyPI. Did you mean `requests`?" in comment["body"]
+
+
+def test_review_over_budget_still_posts_dependency_findings(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    _review_dependencies(
+        tmp_path,
+        monkeypatch,
+        mock_github_client,
+        mock_provider,
+        "review:\n  max_prompt_tokens: 1\n",
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"]) == 0
+
+    mock_provider.return_value.generate_structured.assert_not_called()
+    [comment] = mock_github_client.return_value.create_review.call_args.kwargs["comments"]
+    assert "`reqeusts` isn't on PyPI" in comment["body"]
+
+
+def test_review_skips_dependency_checks_when_turned_off(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    lookups = _review_dependencies(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, "dependencies:\n  check: false\n"
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42"]) == 0
+
+    assert lookups == []
+    prompt = mock_provider.return_value.generate_structured.call_args.args[0]
+    assert "bumps the dependencies" not in prompt
