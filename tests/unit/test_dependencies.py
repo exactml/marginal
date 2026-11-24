@@ -24,6 +24,7 @@ OLD = Package(exists=True, created=NOW - timedelta(days=3000))
 @pytest.fixture(autouse=True)
 def _fresh_cache():
     deps._lookup.cache_clear()
+    deps._source.cache_clear()
     deps._unreachable.clear()
 
 
@@ -246,11 +247,11 @@ def test_lookup_reads_pypi_age_and_repository(monkeypatch):
     monkeypatch.setattr(
         requests, "get", lambda url, **kw: calls.append(url) or _Response(200, data)
     )
-    package = lookup("pypi", "requests")
+    package = lookup("pypi", "zz-made-up")
     assert package == Package(
         True, datetime(2011, 2, 14, 8, 49, 42, tzinfo=timezone.utc), "psf/requests"
     )
-    assert calls == ["https://pypi.org/pypi/requests/json"]
+    assert calls == ["https://pypi.org/pypi/zz-made-up/json"]
 
 
 def test_lookup_reads_npm_and_encodes_a_scope(monkeypatch):
@@ -262,8 +263,8 @@ def test_lookup_reads_npm_and_encodes_a_scope(monkeypatch):
     monkeypatch.setattr(
         requests, "get", lambda url, **kw: calls.append(url) or _Response(200, data)
     )
-    assert lookup("npm", "@types/node").repository == "a/b"
-    assert calls == ["https://registry.npmjs.org/@types%2Fnode"]
+    assert lookup("npm", "@acme/zz").repository == "a/b"
+    assert calls == ["https://registry.npmjs.org/@acme%2Fzz"]
 
 
 def test_lookup_404_means_missing(monkeypatch):
@@ -276,8 +277,8 @@ def test_lookup_failure_warns_and_returns_none(monkeypatch, capsys):
         raise requests.ConnectionError("offline")
 
     monkeypatch.setattr(requests, "get", fail)
-    assert lookup("npm", "lodash") is None
-    assert "couldn't check `lodash` on npm" in capsys.readouterr().err
+    assert lookup("npm", "zz-made-up") is None
+    assert "couldn't check `zz-made-up` on npm" in capsys.readouterr().err
 
 
 def test_an_invalid_name_never_reaches_a_url(monkeypatch):
@@ -316,7 +317,7 @@ def test_bumps_section_shows_notes_in_range_and_usages(tmp_path):
     section = bumps_section(
         [bump, _new("flask")],
         root,
-        fetch=lambda e, n: Package(True, repository="psf/requests"),
+        source=lambda c: "psf/requests",
         releases=lambda repository: releases,
     )
     assert "--- requests 2.31.0 -> 2.32.0 (requirements.txt:1) ---" in section
@@ -338,7 +339,7 @@ def test_bumps_section_redacts_secrets_in_notes(tmp_path):
     section = bumps_section(
         [bump],
         str(tmp_path),
-        fetch=lambda e, n: Package(True, repository="lodash/lodash"),
+        source=lambda c: "lodash/lodash",
         releases=lambda r: [{"tag_name": "4.17.21", "body": "token=ghp_" + "a" * 36}],
     )
     assert "ghp_" not in section
@@ -358,8 +359,8 @@ def test_an_unreachable_registry_is_asked_once(monkeypatch):
         raise requests.Timeout("slow")
 
     monkeypatch.setattr(requests, "get", fail)
-    assert lookup("pypi", "flask") is None
-    assert lookup("pypi", "django") is None
+    assert lookup("pypi", "zz-one") is None
+    assert lookup("pypi", "zz-two") is None
     assert len(calls) == 1
 
 
@@ -378,7 +379,7 @@ def test_usages_know_common_import_names(tmp_path):
             Change("pypi", "pillow", False, "10.0", "11.0", "requirements.txt", 2, "x"),
         ],
         root,
-        fetch=lambda e, n: None,
+        source=lambda c: None,
     )
     assert "app.py:1: import yaml" in section
     assert "app.py:2: from PIL import Image" in section
@@ -392,7 +393,7 @@ def test_bumps_section_caps_the_notes_it_adds(tmp_path):
     section = bumps_section(
         bumps,
         str(tmp_path),
-        fetch=lambda e, n: Package(True, repository="a/b"),
+        source=lambda c: "a/b",
         releases=lambda r: [{"tag_name": "v2.0", "body": "x" * 5000}],
     )
     assert section.count("x" * 1500) <= deps._NOTES_CHARS_TOTAL // 1500
@@ -445,7 +446,7 @@ def test_an_internal_bump_gets_no_public_notes(tmp_path):
         [bump],
         str(tmp_path),
         ["acme-*"],
-        fetch=lambda e, n: pytest.fail("looked up"),
+        source=lambda c: pytest.fail("looked up"),
         releases=lambda r: pytest.fail("fetched notes"),
     )
     assert "An internal package: no public release notes." in section
@@ -575,3 +576,62 @@ def test_lookups_run_in_parallel():
     changes = [_new(name) for name in ("flask", "django", "numpy")]
     assert dependency_findings(changes, [], fetch=fetch, now=NOW) == []
     assert seen == {"flask", "django", "numpy"}
+
+
+def test_a_popular_package_is_never_downloaded(monkeypatch):
+    monkeypatch.setattr(requests, "get", lambda *a, **kw: pytest.fail("downloaded"))
+    assert lookup("npm", "typescript") == Package(exists=True)
+    assert lookup("pypi", "Boto3") == Package(exists=True)
+
+
+def test_an_unpublished_npm_package_is_missing(monkeypatch):
+    data = {"time": {"created": "2020-01-01T00:00:00Z", "unpublished": {"time": "2024-01-01"}}}
+    monkeypatch.setattr(requests, "get", lambda url, **kw: _Response(200, data))
+    assert lookup("npm", "zz-gone") == Package(exists=False)
+
+
+def test_release_notes_find_the_repository_from_a_small_record(monkeypatch):
+    calls = []
+
+    def get(url, **kw):
+        calls.append(url)
+        if url.endswith("/2.32/json"):
+            return _Response(404)
+        return _Response(
+            200, {"info": {"project_urls": {"Source": "https://github.com/psf/requests"}}}
+        )
+
+    monkeypatch.setattr(requests, "get", get)
+    assert deps._source("pypi", "requests", "2.32") == "psf/requests"
+    assert calls == [
+        "https://pypi.org/pypi/requests/2.32/json",
+        "https://pypi.org/pypi/requests/2.32.0/json",
+    ]
+    monkeypatch.setattr(
+        requests,
+        "get",
+        lambda url, **kw: calls.append(url) or _Response(200, {"repository": "github:x/y"}),
+    )
+    deps._source("npm", "@types/node", "20.0.0")
+    assert calls[-1] == "https://registry.npmjs.org/@types%2Fnode/latest"
+
+
+@pytest.mark.parametrize(
+    ("removed", "added", "is_new", "old", "new"),
+    [
+        (None, "requests", True, None, None),  # new, no pin: still checked by name
+        (None, "requests>=2", True, None, "2"),  # new, soft pin
+        ("requests", "requests==2.32.0", False, None, "2.32.0"),  # pinned an unpinned one
+        ("requests==2.32.0", "requests", False, "2.32.0", None),  # unpinned a pinned one
+        ("requests>=2.31", "requests~=2.32", False, "2.31", "2.32"),  # soft to soft
+    ],
+)
+def test_pin_styles(tmp_path, removed, added, is_new, old, new):
+    patch = "@@ -1 +1 @@\n" + (f"-{removed}\n" if removed else "") + f"+{added}\n"
+    [change] = dependency_changes([_file("requirements.txt", patch)], str(tmp_path))
+    assert (change.is_new, change.old, change.new) == (is_new, old, new)
+
+
+def test_only_an_upper_bound_changed_is_not_a_bump(tmp_path):
+    patch = "@@ -1 +1 @@\n-requests>=2.31,<3\n+requests>=2.31,<4\n"
+    assert dependency_changes([_file("requirements.txt", patch)], str(tmp_path)) == []

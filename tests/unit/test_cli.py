@@ -4090,6 +4090,7 @@ def _review_dependencies(tmp_path, monkeypatch, mock_github_client, mock_provide
         return deps.Package(exists=True, repository="psf/requests")
 
     monkeypatch.setattr(deps, "lookup", fake_lookup)
+    monkeypatch.setattr(deps, "_source", lambda ecosystem, name, version: "psf/requests")
     monkeypatch.setattr(
         deps, "_releases", lambda repo: [{"tag_name": "v2.32.0", "body": "verify=False fix"}]
     )

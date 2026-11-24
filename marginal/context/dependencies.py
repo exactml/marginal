@@ -263,13 +263,13 @@ def bumps_section(
     repo_root: str,
     internal: Sequence[str] = (),
     *,
-    fetch: Callable[[str, str], Package | None] | None = None,
+    source: Callable[[Change], str | None] | None = None,
     releases: Callable[[str], list[dict[str, object]]] | None = None,
 ) -> str:
     """A prompt section for the packages `changes` bump: what changed upstream
     between the two versions, and the lines in the repository that use the
     package. Empty when nothing is bumped. `internal` packages get no notes."""
-    fetch = fetch or lookup
+    source = source or (lambda c: _source(c.ecosystem, c.name, c.new or ""))
     releases = releases or _releases
     blocks, budget = [], _NOTES_CHARS_TOTAL
     for change in changes:
@@ -279,8 +279,7 @@ def bumps_section(
             # The public package with this name isn't this one: never its notes.
             notes, missing = "", "An internal package: no public release notes."
         elif budget > 0:
-            package = fetch(change.ecosystem, change.name)
-            repository = package.repository if package else None
+            repository = source(change)
             notes = _notes(change, releases(repository))[:budget] if repository else ""
             budget -= len(notes)
             missing = "No upstream release notes found."
@@ -330,6 +329,10 @@ def lookup(ecosystem: str, name: str) -> Package | None:
     pattern = _PYPI_NAME if ecosystem == "pypi" else _NPM_NAME
     if not pattern.fullmatch(name) or ecosystem in _unreachable:
         return None  # an invalid name never goes in a URL; nothing installs it either
+    if _normalize(ecosystem, name) in _popular_names(ecosystem):
+        # Exists and is established, so no check can flag it, and its full
+        # record is the kind that runs to megabytes (typescript: 16 MB).
+        return Package(exists=True)
     return _lookup(ecosystem, name)
 
 
@@ -364,10 +367,47 @@ def _lookup(ecosystem: str, name: str) -> Package | None:
         info = data.get("info") or {}
         urls = [*(info.get("project_urls") or {}).values(), info.get("home_page") or ""]
         return Package(True, _parse_time(min(uploads)) if uploads else None, _github(urls))
+    times = data.get("time") or {}
+    if "unpublished" in times and not data.get("versions"):
+        return Package(exists=False)  # unpublished: the name can be registered again
+    created = times.get("created")
+    return Package(True, _parse_time(created) if created else None, _npm_repository(data))
+
+
+@cache
+def _source(ecosystem: str, name: str, version: str) -> str | None:
+    """The GitHub repository of `name`, from a small record: npm's latest
+    version, or PyPI's record for `version` (with `.0` added if needed)."""
+    if ecosystem in _unreachable or not _VERSION.fullmatch(version):
+        return None
+    urls = (
+        [f"https://registry.npmjs.org/{quote(name, safe='@')}/latest"]
+        if ecosystem == "npm"
+        else [f"https://pypi.org/pypi/{name}/{v}/json" for v in (version, f"{version}.0")]
+    )
+    for url in urls:
+        try:
+            response = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
+            if response.status_code == 404:
+                continue
+            response.raise_for_status()
+            data = response.json()
+        except ValueError:
+            return None
+        except requests.RequestException:
+            _unreachable.add(ecosystem)
+            return None
+        if ecosystem == "npm":
+            return _npm_repository(data)
+        info = data.get("info") or {}
+        return _github([*(info.get("project_urls") or {}).values(), info.get("home_page") or ""])
+    return None
+
+
+def _npm_repository(data: dict[str, object]) -> str | None:
     repository = data.get("repository")
     url = repository.get("url") if isinstance(repository, dict) else repository
-    created = (data.get("time") or {}).get("created")
-    return Package(True, _parse_time(created) if created else None, _github([url or ""]))
+    return _github([str(url or "")])
 
 
 def _is_internal(change: Change, internal: Sequence[str]) -> bool:
@@ -596,6 +636,11 @@ def _read(repo_root: str, path: str) -> str | None:
 def _normalize(ecosystem: str, name: str) -> str:
     """PyPI treats `-`, `_` and `.` as one character, case-insensitively (PEP 503)."""
     return re.sub(r"[-_.]+", "-", name.lower()) if ecosystem == "pypi" else name.lower()
+
+
+@cache
+def _popular_names(ecosystem: str) -> frozenset[str]:
+    return frozenset(_popular(ecosystem))
 
 
 @cache
