@@ -173,18 +173,23 @@ def test_the_reviewer_runs_without_auto_memory_in_an_empty_directory(tmp_path, m
     assert not os.path.exists(call["cwd"])  # a temporary directory, removed after
 
 
-def test_an_email_the_prompt_never_had_is_removed_from_the_answer(tmp_path):
-    finding = dict(_FINDINGS["findings"][0], message="Ask someone@employer.example, or a@b.io.")
+def test_only_the_accounts_email_is_removed_not_other_address_shaped_text(tmp_path, monkeypatch):
+    config = tmp_path / "config"
+    config.mkdir()
+    account = {"emailAddress": "jo.doe@corp.example"}
+    (config / ".claude.json").write_text(json.dumps({"oauthAccount": account}))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    message = "Ask jo.doe@corp.example; use x@self.weight and git@github.com:o/r."
+    finding = dict(_FINDINGS["findings"][0], message=message)
     provider = ClaudeCodeProvider(
-        "opus",
-        executable=_fake_claude(
-            tmp_path, _answer({"findings": [finding]}, result="from someone@employer.example")
-        ),
+        "opus", executable=_fake_claude(tmp_path, _answer({"findings": [finding]}))
     )
 
-    result = asyncio.run(provider.generate_structured("mail a@b.io", schema=FindingsResponse))
+    result = asyncio.run(provider.generate_structured("review", schema=FindingsResponse))
 
-    assert result.findings[0].message == "Ask [REDACTED], or a@b.io."  # a@b.io was in the prompt
+    assert result.findings[0].message == (
+        "Ask [REDACTED]; use x@self.weight and git@github.com:o/r."
+    )
 
 
 def test_the_signed_in_account_and_machine_are_removed_from_the_answer(tmp_path, monkeypatch):

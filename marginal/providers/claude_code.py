@@ -36,10 +36,9 @@ _BILLED_ACCOUNT_ENV_PREFIX = "CLAUDE_CODE_USE_"
 _SYSTEM_PROMPT = "You are a code reviewer. Answer from the prompt alone."
 # Claude Code adds the signed-in account's email and the machine's paths to
 # every session, and no flag turns that off without dropping subscription
-# sign-in. Anything of the kind in the answer that isn't in the prompt can only
-# come from there, so it's removed before anything (a posted finding) carries it.
-# A domain ends in letters, so `requests@2.32.0` or `pkg@1.0.0` is no address.
-_EMAIL = re.compile(r"[\w.+-]+@(?:[\w-]+\.)+[A-Za-z]{2,}(?!\w)")
+# sign-in. The account's own terms in the answer that aren't in the prompt can
+# only come from there, so they're removed before a posted finding carries
+# them. Other address-shaped text (`git@github.com`, `x@self.weight`) stays.
 # Shorter account terms (a name like `Ann`) are left alone: as whole words
 # they'd still redact ordinary text.
 _MIN_TERM = 4
@@ -155,10 +154,8 @@ class ClaudeCodeProvider(ModelProvider):
 
 
 def _without_injected_emails(value: object, prompt: str) -> object:
-    """`value` (the answer, at any depth) with every email address, and every
-    term identifying the signed-in user or machine, that isn't in `prompt`
-    replaced by `[REDACTED]`."""
-    lowered = prompt.lower()
+    """`value` (the answer, at any depth) with every term identifying the
+    signed-in user or machine that isn't in `prompt` replaced by `[REDACTED]`."""
     whole, parts = _account_terms()
     # Whole words only, so a term never redacts part of another word, and kept
     # only when the prompt has it as a word too (not `Mark` inside `Markdown`).
@@ -169,9 +166,6 @@ def _without_injected_emails(value: object, prompt: str) -> object:
     ]
 
     def scrub(text: str) -> str:
-        text = _EMAIL.sub(
-            lambda m: m.group() if m.group().lower() in lowered else "[REDACTED]", text
-        )
         for pattern in filter(None, patterns):
             text = pattern.sub("[REDACTED]", text)
         return text
