@@ -1,0 +1,8 @@
+repo: marginal
+kind: decision
+statement: 'Correct, and deliberate for this PR: #294 asks for the count to come from
+  marginal''s earlier reviews by heading, so the cap counts posted reviews.'
+about: marginal/cli/review.py
+source: marginal/cli/review.py:641
+pr: 304
+author: exactml
