@@ -1229,12 +1229,19 @@ def test_review_with_comment_reviews_a_pr_no_skip_rule_matches(
 _BOT = {"login": "github-actions[bot]", "type": "Bot"}
 
 
-def _run_capped_review(tmp_path, monkeypatch, mock_github_client, mock_provider, reviews):
-    """Run `review --comment` with `review.max_reviews_per_pr: 2` over `reviews`."""
+_WRITER = {"login": "maintainer", "type": "User"}
+
+
+def _run_capped_review(
+    tmp_path, monkeypatch, mock_github_client, mock_provider, reviews, max_reviews=2
+):
+    """Run `review --comment` with `review.max_reviews_per_pr` over `reviews`."""
     monkeypatch.chdir(tmp_path)
     _write_reviewer_config(tmp_path)
     config_path = tmp_path / ".marginal" / "config.yaml"
-    config_path.write_text(config_path.read_text() + "review:\n  max_reviews_per_pr: 2\n")
+    config_path.write_text(
+        config_path.read_text() + f"review:\n  max_reviews_per_pr: {max_reviews}\n"
+    )
     client = mock_github_client.return_value
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = [{"filename": "a.py", "patch": "+x"}]
@@ -1332,6 +1339,44 @@ def test_review_limit_counts_model_reviews_that_posted_nothing(
 
     assert exit_code == 0
     mock_provider.return_value.generate_structured.assert_not_called()
+
+
+def test_review_count_goes_into_an_older_summary_when_the_newest_cant_be_edited(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    """The newest summary may be a writer's own-token run, which this token can't edit."""
+    client = mock_github_client.return_value
+    client.get_permission.return_value = "write"
+    client.update_review.side_effect = [GitHubAPIError(403, "forbidden"), {}]
+    reviews = [
+        {"id": 7, "body": f"{REVIEW_HEADING}\n\nfirst\n{calls_marker(1)}", "user": _BOT},
+        {"id": 8, "body": f"{REVIEW_HEADING}\n\nby hand", "user": _WRITER},
+    ]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews, max_reviews=5
+    )
+
+    assert exit_code == 0
+    assert [c.args[1] for c in client.update_review.call_args_list] == [8, 7]
+    assert client.update_review.call_args.args[2].endswith(calls_marker(2))
+
+
+def test_review_limit_counts_only_recorded_calls_once_any_summary_has_one(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    """Over-budget or no-reviewer summaries carry no count, and called no model."""
+    reviews = [
+        {"id": 7, "body": f"{REVIEW_HEADING}\n\nfirst\n{calls_marker(1)}", "user": _BOT},
+        {"id": 8, "body": f"{REVIEW_HEADING}\n\nover budget", "user": _BOT},
+    ]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_called_once()
 
 
 def test_review_count_that_cant_be_recorded_does_not_fail_the_review(
