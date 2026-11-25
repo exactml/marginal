@@ -44,7 +44,6 @@ from marginal.review.redact import redact_patches, redacted_filenames
 from marginal.review.render import (
     NO_REVIEWER_NOTICE,
     REVIEW_HEADING,
-    REVIEW_LIMIT_MARKER,
     build_inline_comments,
     calls_marker,
     coverage_warning_lines,
@@ -53,6 +52,7 @@ from marginal.review.render import (
     is_ignored,
     missing_patch_filenames,
     redaction_warning_lines,
+    review_limit_marker,
     review_limit_notice,
     verdict_line,
     why_lines,
@@ -1285,7 +1285,7 @@ def test_review_at_the_review_limit_posts_one_notice_without_calling_the_model(
     body = client.create_review.call_args.args[1]
     assert "Review limit reached" in body
     assert "review.max_reviews_per_pr" in body
-    assert REVIEW_LIMIT_MARKER in body
+    assert review_limit_marker(2) in body
     assert "review.max_reviews_per_pr (2)" in capsys.readouterr().err
 
 
@@ -1306,6 +1306,26 @@ def test_review_past_the_review_limit_does_not_repeat_the_notice(
     mock_provider.return_value.generate_structured.assert_not_called()
     mock_github_client.return_value.create_review.assert_not_called()
     assert "no model called" in capsys.readouterr().err
+
+
+def test_review_at_a_raised_review_limit_posts_a_new_notice(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    """The old notice was for the old limit; reaching the raised one needs its own."""
+    reviews = [
+        {"body": f"{REVIEW_HEADING}\n\nfirst", "user": _BOT},
+        {"body": review_limit_notice(1), "user": _BOT},
+        {"body": f"{REVIEW_HEADING}\n\nsecond", "user": _BOT},
+    ]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_not_called()
+    body = mock_github_client.return_value.create_review.call_args.args[1]
+    assert review_limit_marker(2) in body
 
 
 def test_review_that_posts_nothing_still_counts_toward_the_review_limit(

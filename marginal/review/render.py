@@ -40,8 +40,10 @@ def is_review_summary(body: str | None) -> bool:
     return any(heading in (body or "") for heading in (REVIEW_HEADING, *_EARLIER_HEADINGS))
 
 
-# Hidden in the review-limit notice, so later pushes don't post it again.
-REVIEW_LIMIT_MARKER = "<!-- marginal:review-limit -->"
+def review_limit_marker(max_reviews: int) -> str:
+    """Hidden in the review-limit notice, so later pushes don't post it again.
+    It names the limit, so a raised one gets its own notice when it's reached."""
+    return f"<!-- marginal:review-limit:{max_reviews} -->"
 
 
 # Hidden in marginal's latest review summary: how many times the model reviewed
@@ -70,7 +72,7 @@ def review_limit_notice(max_reviews: int) -> str:
         f"⚠️ **Review limit reached**: marginal has reached its limit of {max_reviews} "
         "reviews on this PR, so later pushes are not reviewed. Raise "
         "`review.max_reviews_per_pr` in `.marginal/config.yaml` on the base branch to "
-        f"allow more.\n{REVIEW_LIMIT_MARKER}"
+        f"allow more.\n{review_limit_marker(max_reviews)}"
     )
 
 

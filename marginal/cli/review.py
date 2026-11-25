@@ -54,7 +54,6 @@ from marginal.review.prompt import (
 from marginal.review.redact import redact_patches, redacted_filenames
 from marginal.review.render import (
     NO_REVIEWER_NOTICE,
-    REVIEW_LIMIT_MARKER,
     anchorable,
     budget_warning_lines,
     build_inline_comments,
@@ -68,6 +67,7 @@ from marginal.review.render import (
     is_ignored,
     is_review_summary,
     redaction_warning_lines,
+    review_limit_marker,
     review_limit_notice,
     severity_labels,
     stale_severity_labels,
@@ -688,7 +688,8 @@ def _at_review_limit(
         f"{calls} time(s), at review.max_reviews_per_pr ({max_reviews})",
         file=sys.stderr,
     )
-    if not any(REVIEW_LIMIT_MARKER in (r.get("body") or "") and trusted(r) for r in reviews):
+    marker = review_limit_marker(max_reviews)
+    if not any(marker in (r.get("body") or "") and trusted(r) for r in reviews):
         client.create_review(pr_number, review_limit_notice(max_reviews), event="COMMENT")
     return True
 
