@@ -46,6 +46,7 @@ from marginal.review.render import (
     REVIEW_HEADING,
     REVIEW_LIMIT_MARKER,
     build_inline_comments,
+    calls_marker,
     coverage_warning_lines,
     finding_badge,
     header_lines,
@@ -851,6 +852,7 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(
             "- `marginal/retry.py`",
             "",
             "</details>",
+            calls_marker(1),
         ]
     )
     client.create_review.assert_called_once_with(
@@ -951,7 +953,7 @@ def test_review_with_unanchored_finding_posts_it_in_the_summary_body_not_inline(
         )
     )
     client.create_review.assert_called_once_with(
-        42, out.rstrip("\n") + "\n" + marker, event="COMMENT", comments=[]
+        42, out.rstrip("\n") + "\n" + marker + "\n" + calls_marker(1), event="COMMENT", comments=[]
     )
 
 
@@ -987,7 +989,7 @@ def test_review_drops_a_finding_whose_quote_is_not_in_the_code(
     assert "dropped 1 finding(s): 1 quoted line not found" in captured.err
     # Dropped entirely, same as if no finding had been generated at all.
     client.create_review.assert_called_once_with(
-        42, captured.out.rstrip("\n"), event="COMMENT", comments=[]
+        42, captured.out.rstrip("\n") + "\n" + calls_marker(1), event="COMMENT", comments=[]
     )
 
 
@@ -1012,7 +1014,9 @@ def test_review_with_zero_findings_stays_metadata_only(
     assert exit_code == 0
     out = capsys.readouterr().out
     assert "confidence" not in out
-    client.create_review.assert_called_once_with(42, out.rstrip("\n"), event="COMMENT", comments=[])
+    client.create_review.assert_called_once_with(
+        42, out.rstrip("\n") + "\n" + calls_marker(1), event="COMMENT", comments=[]
+    )
 
 
 def test_review_with_multiple_findings_posts_all_of_them(
@@ -1295,6 +1299,53 @@ def test_review_past_the_review_limit_does_not_repeat_the_notice(
     mock_provider.return_value.generate_structured.assert_not_called()
     mock_github_client.return_value.create_review.assert_not_called()
     assert "no model called" in capsys.readouterr().err
+
+
+def test_review_that_posts_nothing_still_counts_toward_the_review_limit(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    """A push with nothing new calls the model but posts no review; the count
+    goes into marginal's last review, or an agent's pushes would never hit it."""
+    reviews = [{"id": 7, "body": f"{REVIEW_HEADING}\n\nfirst\n{calls_marker(1)}", "user": _BOT}]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    client = mock_github_client.return_value
+    mock_provider.return_value.generate_structured.assert_called_once()
+    client.create_review.assert_not_called()
+    client.update_review.assert_called_once_with(
+        42, 7, f"{REVIEW_HEADING}\n\nfirst\n{calls_marker(2)}"
+    )
+
+
+def test_review_limit_counts_model_reviews_that_posted_nothing(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    reviews = [{"id": 7, "body": f"{REVIEW_HEADING}\n\nfirst\n{calls_marker(2)}", "user": _BOT}]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_not_called()
+
+
+def test_review_count_that_cant_be_recorded_does_not_fail_the_review(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    mock_github_client.return_value.update_review.side_effect = GitHubAPIError(403, "forbidden")
+    reviews = [{"id": 7, "body": f"{REVIEW_HEADING}\n\nfirst", "user": _BOT}]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    assert "couldn't record the review count" in capsys.readouterr().err
 
 
 def test_review_limit_ignores_reviews_an_untrusted_author_posted(

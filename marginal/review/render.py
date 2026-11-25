@@ -4,6 +4,7 @@ comments, and the warning lines that name what wasn't reviewed."""
 from __future__ import annotations
 
 import fnmatch
+import re
 from collections import Counter
 from collections.abc import Sequence
 
@@ -41,6 +42,26 @@ def is_review_summary(body: str | None) -> bool:
 
 # Hidden in the review-limit notice, so later pushes don't post it again.
 REVIEW_LIMIT_MARKER = "<!-- marginal:review-limit -->"
+
+
+# Hidden in marginal's latest review summary: how many times the model reviewed
+# this PR, counting runs that posted nothing, so the limit caps what was spent.
+_CALLS_MARKER = re.compile(r"<!-- marginal:calls:(\d+) -->")
+
+
+def calls_marker(calls: int) -> str:
+    return f"<!-- marginal:calls:{calls} -->"
+
+
+def calls_in(body: str | None) -> int:
+    """The model reviews a review body records, or 0 if it has no marker."""
+    match = _CALLS_MARKER.search(body or "")
+    return int(match.group(1)) if match else 0
+
+
+def with_calls_marker(body: str, calls: int) -> str:
+    """`body` with its model-review count replaced by `calls`."""
+    return f"{_CALLS_MARKER.sub('', body).rstrip()}\n{calls_marker(calls)}"
 
 
 def review_limit_notice(max_reviews: int) -> str:
