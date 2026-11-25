@@ -13,7 +13,7 @@ from marginal.cli import main
 from marginal.cli.init import WORKFLOW_TEMPLATE
 from marginal.cli.review import run_review
 from marginal.config import MarginalConfig, load_config
-from marginal.config.schema import ModelSpec
+from marginal.config.schema import ModelSpec, ReviewConfig
 from marginal.context import build_graph_context
 from marginal.context import dependencies as deps
 from marginal.github.errors import (
@@ -1943,6 +1943,23 @@ def test_is_ignored_matches_bare_patterns_by_name_and_slashed_ones_by_path(
     filename, patterns, ignored
 ):
     assert is_ignored(filename, patterns) is ignored
+
+
+@pytest.mark.parametrize(
+    ("filename", "ignored"),
+    [
+        ("api/v1/user_pb2.py", True),
+        ("api/v1/user_pb2_grpc.py", True),
+        ("api/v1/user.pb.go", True),
+        ("web/__snapshots__/app.test.js.snap", True),
+        ("tests/__snapshots__/test_api.ambr", True),
+        ("__snapshots__/a.ambr", True),
+        ("api/v1/user.py", False),
+        ("tests/snapshots_test.py", False),
+    ],
+)
+def test_default_ignore_paths_leave_generated_code_out(filename, ignored):
+    assert is_ignored(filename, ReviewConfig().ignore_paths) is ignored
 
 
 def test_review_keeps_ignored_files_from_the_model_and_says_so(
