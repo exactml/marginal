@@ -177,7 +177,8 @@ class AnthropicProvider(ModelProvider):
         if effort is not None:
             # `output_config` isn't a typed parameter in the oldest anthropic
             # SDK marginal supports, so it goes in the raw request body.
-            kwargs["extra_body"] = {"output_config": {"effort": effort}}
+            extra_body = {**(kwargs.get("extra_body") or {}), "output_config": {"effort": effort}}
+            kwargs["extra_body"] = extra_body
         input_schema = _strict_input_schema(schema)
 
         async def attempt() -> BaseModel:

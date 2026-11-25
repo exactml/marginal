@@ -186,10 +186,15 @@ async def test_anthropic_generate_structured_sends_effort_in_output_config():
     client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
     client.messages.create.return_value = _anthropic_tool_response({"approved": True, "reason": ""})
 
-    await _anthropic_provider(client).generate_structured("review this", Verdict, effort="low")
+    await _anthropic_provider(client).generate_structured(
+        "review this", Verdict, effort="low", extra_body={"metadata": {"user_id": "u"}}
+    )
 
     _, kwargs = client.messages.create.call_args
-    assert kwargs["extra_body"] == {"output_config": {"effort": "low"}}
+    assert kwargs["extra_body"] == {
+        "metadata": {"user_id": "u"},
+        "output_config": {"effort": "low"},
+    }
 
 
 async def test_anthropic_generate_structured_sends_no_effort_unless_asked():
