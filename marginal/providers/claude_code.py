@@ -232,7 +232,10 @@ def _account_terms() -> tuple[set[str], set[str]]:
     account = account if isinstance(account, dict) else {}
     email = str(account.get("emailAddress") or "")
     local, _, domain = email.partition("@")
-    names = [str(account.get(key) or "") for key in ("fullName", "displayName")]
+    stored = [str(account.get(key) or "") for key in ("fullName", "displayName")]
+    # A model writes a name capitalized (Jo Doe) whatever the config holds
+    # (`jo doe`, `JO DOE`), so that form counts too.
+    names = [*stored, *(name.title() for name in stored)]
     distinctive = local if re.search(r"[._\-\d]", local) else ""
     # A public mail provider's domain (gmail.com) identifies nobody.
     own_domain = domain if domain.lower() not in _PUBLIC_MAIL_DOMAINS else ""

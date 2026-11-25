@@ -326,3 +326,18 @@ def test_an_error_answer_is_scrubbed_too(tmp_path, monkeypatch):
     with pytest.raises(ProviderAPIError) as raised:
         asyncio.run(provider.generate("review"))
     assert "jo.doe" not in str(raised.value) and "[REDACTED]" in str(raised.value)
+
+
+def test_a_name_stored_in_another_case_is_redacted_as_written(tmp_path, monkeypatch):
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / ".claude.json").write_text(
+        json.dumps(
+            {"oauthAccount": {"emailAddress": "jdoe@corp.example", "fullName": "JONAS DORNE"}}
+        )
+    )
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    said = "Thanks Jonas Dorne; Jonas again."
+    provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result=said)))
+
+    assert asyncio.run(provider.generate("review")) == "Thanks [REDACTED]; [REDACTED] again."
