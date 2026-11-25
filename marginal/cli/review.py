@@ -488,7 +488,10 @@ def _review_files(
     # Checked against what the model was shown: the (redacted) diff and the
     # caller context, plus the rest of each file from the checkout.
     context = build_graph_context_section(graph_context, path) or ""
-    view = CodeView(path, redacted, context)
+    bumps = bumps_section(changes, path, config.dependencies.internal)
+    # A bump's trigger names the API its release notes changed (`getheaders()`),
+    # which the model was shown there, not in the diff.
+    view = CodeView(path, redacted, f"{context}\n{bumps}")
     try:
         response = asyncio.run(
             _generate_findings(
@@ -506,7 +509,7 @@ def _review_files(
                 knowledge=config.proposals.enabled,
                 accepted=accepted,
                 dependency_note=checked_note(changes),
-                dependencies=bumps_section(changes, path, config.dependencies.internal),
+                dependencies=bumps,
             )
         )
     except PromptOverBudget as exc:

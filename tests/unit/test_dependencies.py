@@ -330,7 +330,7 @@ def test_bumps_section_shows_notes_in_range_and_usages(tmp_path):
     assert "--- requests 2.31.0 -> 2.32.0 (requirements.txt:1) ---" in section
     assert "app.py:1: import requests" in section
     assert "requests_cache" not in section
-    assert section.index("## v2.31.1") < section.index("## v2.32.0")
+    assert section.index("## v2.32.0") < section.index("## v2.31.1")  # newest first
     assert "too new" not in section and "the old one" not in section
     assert "another package" not in section
     assert "flask" not in section
@@ -885,3 +885,85 @@ def test_a_timestamp_without_an_offset_is_read_as_utc():
     )
     young = Package(exists=True, created=deps._parse_time("2026-11-20T10:00:00"))
     assert _findings(_new("left-pad-ng"), young)[0].severity is Severity.MEDIUM
+
+
+def test_release_notes_keep_removals_ahead_of_banners_and_other_sections():
+    body = (
+        "## 🚀 urllib3 is fundraising for HTTP/2 support\n" + "please give " * 150 + "\n\n"
+        "## Security\n- Fixed a decompression bomb.\n\n"
+        "## Features\n" + "- a feature\n" * 80 + "\n"
+        "## Removals\n- Removed the `HTTPResponse.getheaders()` method.\n"
+    )
+    bump = Change("pypi", "urllib3", False, "2.5.0", "2.6.0", "requirements.txt", 59, "x")
+    notes = deps._notes(bump, [{"tag_name": "2.6.0", "body": body}])
+    assert "getheaders()" in notes
+    assert notes.index("## Removals") < notes.index("## Security") < notes.index("## Features")
+    assert notes.index("## Features") < notes.index("fundraising")  # the banner goes last
+
+
+def test_bumps_section_allows_indirect_use_through_a_pinned_dependency(tmp_path):
+    bump = Change("pypi", "urllib3", False, "2.5.0", "2.6.0", "requirements.txt", 59, "x")
+    section = bumps_section([bump], str(tmp_path), source=lambda c: None)
+    assert "`# via` comment" in section and "quote the bumped manifest line" in section
+
+
+def test_release_note_subsections_stay_with_their_section():
+    body = (
+        "## Security\n- a fix\n\n## Breaking changes\n### `HTTPResponse`\n- dropped getheaders()\n"
+    )
+    ordered = deps._breaking_first(body)
+    assert ordered.index("## Breaking changes") < ordered.index("### `HTTPResponse`")
+    assert ordered.index("dropped getheaders()") < ordered.index("## Security")
+
+
+def test_comments_in_code_blocks_and_issue_numbers_arent_headings():
+    body = (
+        "## Features\n- new thing\n```bash\n# install the extra\npip install x\n```\n"
+        "#1234: fixed a crash\n\n## Removals\n- removed y()\n"
+    )
+    ordered = deps._breaking_first(body)
+    assert ordered.startswith("## Removals")
+    assert "```bash\n# install the extra\npip install x\n```\n#1234: fixed a crash" in ordered
+
+
+def test_whats_changed_is_not_a_breaking_section():
+    body = "## What's Changed\n" + "- a PR\n" * 50 + "\n## Breaking changes\n- removed x()\n"
+    assert deps._breaking_first(body).startswith("## Breaking changes")
+
+
+def test_a_title_heading_doesnt_stop_the_reordering():
+    body = "# urllib3 2.6.0\n\n## Sponsors\n- thanks\n\n## Removals\n- removed getheaders()\n"
+    ordered = deps._breaking_first(body)
+    assert ordered.index("## Removals") < ordered.index("## Sponsors")
+
+
+def test_a_breaking_subsection_under_whats_changed_comes_first():
+    body = (
+        "## What's Changed\n### Features\n"
+        + "- a feature\n" * 60
+        + "### ⚠ Breaking Changes\n- removed x()\n## New Contributors\n- someone\n"
+    )
+    assert deps._breaking_first(body).startswith("### ⚠ Breaking Changes\n- removed x()")
+
+
+def test_keep_a_changelog_changed_comes_after_removed():
+    body = "## Changed\n" + "- tweak\n" * 60 + "\n## Removed\n- dropped y()\n"
+    ordered = deps._breaking_first(body)
+    assert ordered.index("## Removed") < ordered.index("## Changed")
+
+
+def test_backwards_compatible_sections_arent_breaking():
+    body = (
+        "## Backwards-compatible improvements\n"
+        + "- nicer\n" * 60
+        + "\n## Removals\n- dropped z()\n"
+    )
+    assert deps._breaking_first(body).startswith("## Removals")
+
+
+def test_the_package_cap_drops_the_oldest_releases():
+    bump = Change("pypi", "pkg", False, "1.0", "4.0", "requirements.txt", 1, "x")
+    releases = [{"tag_name": f"v{n}.0", "body": f"release {n} " + "x" * 1800} for n in (2, 3, 4)]
+    notes = deps._notes(bump, releases)
+    assert notes.index("release 4") < notes.index("release 3") < notes.index("release 2")
+    assert "release 4 " + "x" * 1800 in notes  # the newest is kept whole; the oldest is cut
