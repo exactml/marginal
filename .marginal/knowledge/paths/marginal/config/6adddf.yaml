@@ -1,0 +1,8 @@
+repo: marginal
+kind: rule
+statement: A user-supplied review.ignore_paths replaces the default ignore list rather
+  than extending it, and the review still reports how many files were left out.
+about: marginal/config/schema.py
+source: changelog.d/293.improvement.md:5
+pr: 302
+author: exactml
