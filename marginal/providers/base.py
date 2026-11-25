@@ -34,9 +34,13 @@ class ModelProvider(ABC):
 
     @abstractmethod
     async def generate_structured(
-        self, prompt: str, schema: type[BaseModel], **kwargs: object
+        self, prompt: str, schema: type[BaseModel], *, effort: str | None = None, **kwargs: object
     ) -> BaseModel:
-        """Generate a completion validated against `schema`."""
+        """Generate a completion validated against `schema`.
+
+        `effort` ("low" to "max") asks for less or more thinking where the API
+        has such a setting; a provider without one ignores it.
+        """
 
     # Declared without `async` on purpose: concrete implementations are async
     # generator functions (`async def ...: yield ...`), which return an

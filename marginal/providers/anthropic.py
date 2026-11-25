@@ -171,9 +171,13 @@ class AnthropicProvider(ModelProvider):
         )
 
     async def generate_structured(
-        self, prompt: str, schema: type[BaseModel], **kwargs: object
+        self, prompt: str, schema: type[BaseModel], *, effort: str | None = None, **kwargs: object
     ) -> BaseModel:
         max_tokens = kwargs.pop("max_tokens", STRUCTURED_MAX_TOKENS)
+        if effort is not None:
+            # `output_config` isn't a typed parameter in the oldest anthropic
+            # SDK marginal supports, so it goes in the raw request body.
+            kwargs["extra_body"] = {"output_config": {"effort": effort}}
         input_schema = _strict_input_schema(schema)
 
         async def attempt() -> BaseModel:

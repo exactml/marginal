@@ -164,7 +164,7 @@ class ClaudeCodeProvider(ModelProvider):
         return str((await self._run(prompt)).get("result") or "")
 
     async def generate_structured(
-        self, prompt: str, schema: type[BaseModel], **kwargs: object
+        self, prompt: str, schema: type[BaseModel], *, effort: str | None = None, **kwargs: object
     ) -> BaseModel:
         json_schema = json.dumps(schema.model_json_schema())
 
