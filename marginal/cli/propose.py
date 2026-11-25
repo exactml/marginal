@@ -30,7 +30,7 @@ from marginal.oic.services.proposals import (
     render_proposal,
 )
 from marginal.review.knowledge import posted_knowledge
-from marginal.review.render import REVIEW_HEADING
+from marginal.review.render import is_review_summary
 from marginal.review.replies import maintainer_replies
 
 # Permissions that count as a writer; GitHub reports `maintain` as `write`.
@@ -111,7 +111,7 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
         reviews = [
             r.get("body") or ""
             for r in client.list_reviews(pr_number)
-            if REVIEW_HEADING in (r.get("body") or "") and trusted(r)
+            if is_review_summary(r.get("body")) and trusted(r)
         ]
         # Only the newest: each review sees the whole PR, and the model words the
         # same rule differently each time, so older ones would add near-duplicates.

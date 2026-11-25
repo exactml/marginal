@@ -4290,3 +4290,27 @@ def test_a_bump_finding_naming_an_api_from_the_release_notes_is_posted(
 
     comments = mock_github_client.return_value.create_review.call_args.kwargs["comments"]
     assert any("removes `getheaders()`" in c["body"] for c in comments)
+
+
+def test_a_review_posted_before_the_heading_changed_still_counts_as_marginals(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    """An open PR that 0.3.x reviewed (🤖 heading) gets no second summary after
+    the upgrade when the new push has nothing new."""
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [
+        {"filename": "marginal/retry.py", "patch": _RETRY_PATCH}
+    ]
+    client.list_reviews.return_value = [{"body": "### 🤖 marginal review\n\nearlier review"}]
+    client.list_review_comments.return_value = []
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=FindingsResponse(findings=[])
+    )
+
+    assert main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"]) == 0
+
+    client.create_review.assert_not_called()
+    assert "nothing new since marginal's last review" in capsys.readouterr().err
