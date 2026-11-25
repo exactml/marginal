@@ -41,6 +41,7 @@ _METRICS = [
     ("cost_usd", "Cost", "usd"),
     ("duplicates", "Duplicate findings", "count"),
     ("unlabeled", "Unlabeled findings", "count"),
+    ("valid_extra", "Valid extra findings", "count"),
     ("reversal_naming", "Reversals naming their PR", "ratio"),
     ("knowledge_recall", "Knowledge recall", "ratio"),
     ("knowledge_precision", "Knowledge precision", "ratio"),
@@ -50,7 +51,7 @@ _METRICS = [
 _MEANING = {
     "recall": "Known bugs the reviewer posted a finding for",
     "recall_before_rules": "Known bugs the model raised, posted or dropped by the posting rules",
-    "precision": "Posted findings that point at a known bug, not at clean code",
+    "precision": "Posted findings that are real: a known bug or a verified extra, not noise",
     "accuracy": "PRs judged right: a bug PR with a hit, a clean PR with no findings",
     "severity_accuracy": "Hits rated at or above the expected severity",
     "evidence_accuracy": "Hits whose verified quotes include the bug's own lines",
@@ -58,6 +59,7 @@ _MEANING = {
     "cost_usd": "Model cost in USD of reviewing every case once",
     "duplicates": "Extra findings on a bug already hit",
     "unlabeled": "Findings outside the answer key, for a person to judge",
+    "valid_extra": "Real issues outside the known bug, checked against the code",
     "reversal_naming": "Hits on a reversal PR that name the PR the broken rule came from",
     "knowledge_recall": "Rules and decisions a PR states that the review reported",
     "knowledge_precision": "Reported rules and decisions that the PR really states",
@@ -95,6 +97,14 @@ class Location(_Strict):
 
 class Expected(Location):
     severity: Severity
+    # Other places the same bug shows (the same bump in another requirements
+    # file): a finding on any of them is the same hit.
+    also: list[Location] = Field(default_factory=list)
+
+    def contains(self, file: str, line: int | None, end_line: int | None = None) -> bool:
+        return super().contains(file, line, end_line) or any(
+            place.contains(file, line, end_line) for place in self.also
+        )
 
 
 class Seed(_Strict):
@@ -136,6 +146,9 @@ class Case(_Strict):
     why: str | None = None
     must_find: list[Expected] = Field(default_factory=list)
     must_not_flag: list[Location] = Field(default_factory=list)
+    # Real issues outside the known bug, each checked against the code by a
+    # person: counted on their own, never as a hit, a false positive or unlabeled.
+    valid_extra: list[Location] = Field(default_factory=list)
     accepted: list[Seed] = Field(default_factory=list)
     must_propose: list[ExpectedClaim] = Field(default_factory=list)
 
@@ -145,6 +158,15 @@ class Case(_Strict):
             raise ValueError(
                 f"{self.id}: a clean case has no must_find; every other kind needs one"
             )
+        if self.kind == "clean" and self.valid_extra:
+            raise ValueError(f"{self.id}: a clean case has nothing real to find")
+        # An extra inside a known bug's lines could never be credited.
+        for extra in self.valid_extra:
+            for place in (p for entry in self.must_find for p in (entry, *entry.also)):
+                if extra.contains(place.file, place.lines[0], place.lines[1]):
+                    raise ValueError(
+                        f"{self.id}: valid_extra {extra.file}:{extra.lines} overlaps must_find"
+                    )
         broken = [seed for seed in self.accepted if seed.broken]
         if self.kind == "reversal" and len(broken) != 1:
             raise ValueError(f"{self.id}: a reversal case needs one broken accepted claim")
@@ -215,6 +237,8 @@ def score_review(case: Case, review: dict) -> dict:
     """
     hit_by: list[dict | None] = [None] * len(case.must_find)
     false_positives = duplicates = 0
+    # Like a known bug, each verified extra counts once; repeats are duplicates.
+    extra_hit = [False] * len(case.valid_extra)
     unlabeled = []
     for finding in review["findings"]:
         file, line, end = finding["file"], _first_line(finding), finding.get("end_line")
@@ -225,6 +249,13 @@ def score_review(case: Case, review: dict) -> dict:
                 hit_by[free[0]] = finding
             else:
                 duplicates += 1
+        elif extras := [
+            i for i, loc in enumerate(case.valid_extra) if loc.contains(file, line, end)
+        ]:
+            if all(extra_hit[i] for i in extras):
+                duplicates += 1
+            else:
+                extra_hit[next(i for i in extras if not extra_hit[i])] = True
         elif case.kind == "clean" or any(
             loc.contains(file, line, end) for loc in case.must_not_flag
         ):
@@ -258,6 +289,7 @@ def score_review(case: Case, review: dict) -> dict:
             if f.get("evidence")
         ),
         "false_positives": false_positives,
+        "valid_extra": sum(extra_hit),
         "duplicates": duplicates,
         "unlabeled": unlabeled,
         "correct": not review["findings"] if case.kind == "clean" else bool(hits),
@@ -320,7 +352,11 @@ def run_metrics(scores: list[dict]) -> dict[str, float | None]:
         "recall_before_rules": _ratio(
             sum(s["hits_before_rules"] for s in scores), sum(s["expected"] for s in scores)
         ),
-        "precision": _ratio(hits, hits + sum(s["false_positives"] for s in scores)),
+        # A verified extra finding is a real one too, so it counts as correct.
+        "precision": _ratio(
+            real := hits + sum(s["valid_extra"] for s in scores),
+            real + sum(s["false_positives"] for s in scores),
+        ),
         "accuracy": _ratio(sum(s["correct"] for s in scores), len(scores)),
         "severity_accuracy": _ratio(
             sum(s["severe_enough"] for s in scores), sum(s["rated"] for s in scores)
@@ -332,6 +368,7 @@ def run_metrics(scores: list[dict]) -> dict[str, float | None]:
         "cost_usd": None if None in costs else sum(costs),
         "duplicates": sum(s["duplicates"] for s in scores),
         "unlabeled": sum(len(s["unlabeled"]) for s in scores),
+        "valid_extra": sum(s["valid_extra"] for s in scores),
         "reversal_naming": _ratio(
             sum(s["reversals_named"] for s in scores), sum(s["reversal_hits"] for s in scores)
         ),

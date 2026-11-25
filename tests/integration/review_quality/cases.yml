@@ -84,7 +84,16 @@ cases:
     - 1172
     - 1177
     severity: medium
-  must_not_flag: []
+  must_not_flag:
+  - file: mlflow/store/tracking/file_store.py
+    lines:
+    - 887
+    - 900
+  valid_extra:
+  - file: mlflow/store/tracking/sqlalchemy_store.py
+    lines:
+    - 1043
+    - 1053
   accepted:
   - kind: rule
     about: mlflow/store/tracking/file_store.py
@@ -165,6 +174,15 @@ cases:
     - 436
     severity: high
   must_not_flag: []
+  valid_extra:
+  - file: src/click/shell_completion.py
+    lines:
+    - 435
+    - 435
+  - file: tests/test_shell_completion.py
+    lines:
+    - 562
+    - 608
   accepted:
   - kind: decision
     about: src/click/shell_completion.py
@@ -195,6 +213,11 @@ cases:
     - 434
     severity: low
   must_not_flag: []
+  valid_extra:
+  - file: changelog/13047.bugfix.rst
+    lines:
+    - 7
+    - 16
   accepted:
   - kind: decision
     about: src/_pytest/python_api.py
@@ -233,6 +256,19 @@ cases:
     - 481
     severity: high
   must_not_flag: []
+  valid_extra:
+  - file: sklearn/utils/validation.py
+    lines:
+    - 2335
+    - 2338
+  - file: sklearn/utils/validation.py
+    lines:
+    - 482
+    - 486
+  - file: sklearn/model_selection/tests/test_search.py
+    lines:
+    - 842
+    - 846
   accepted:
   - kind: rule
     about: sklearn/utils/validation.py
@@ -282,7 +318,11 @@ cases:
     - 55
     - 56
     severity: medium
-  must_not_flag: []
+  must_not_flag:
+  - file: celery/bin/worker.py
+    lines:
+    - 185
+    - 192
   accepted:
   - kind: rule
     about: celery/app/defaults.py
@@ -384,6 +424,11 @@ cases:
     - 328
     severity: high
   must_not_flag: []
+  valid_extra:
+  - file: aiohttp/worker.py
+    lines:
+    - 111
+    - 128
   accepted:
   - kind: rule
     about: aiohttp/http_parser.py
@@ -422,6 +467,15 @@ cases:
     - 156
     severity: medium
   must_not_flag: []
+  valid_extra:
+  - file: starlette/middleware/gzip.py
+    lines:
+    - 138
+    - 140
+  - file: starlette/middleware/gzip.py
+    lines:
+    - 170
+    - 175
   accepted:
   - kind: rule
     about: docs/middleware.md
@@ -637,6 +691,11 @@ cases:
     - 717
     severity: medium
   must_not_flag: []
+  valid_extra:
+  - file: tests/inline_formsets/tests.py
+    lines:
+    - 116
+    - 126
   accepted:
   - kind: decision
     about: django/db/models/base.py
@@ -1046,6 +1105,11 @@ cases:
     - 78
     - 82
     severity: medium
+  must_not_flag:
+  - file: zerver/lib/push_registration.py
+    lines:
+    - 85
+    - 102
   must_propose:
   - kind: rule
     file: zerver/lib/push_registration.py
@@ -1243,6 +1307,15 @@ cases:
     - 1214
     - 1276
     severity: medium
+  must_not_flag:
+  - file: task-sdk/src/airflow/sdk/execution_time/task_runner.py
+    lines:
+    - 1269
+    - 1278
+  - file: airflow-core/src/airflow/dag_processing/processor.py
+    lines:
+    - 459
+    - 470
   must_propose: []
 - id: pod-resume-callback-no-longer-called
   upstream: apache/airflow
@@ -1285,6 +1358,23 @@ cases:
     - 898
     - 902
     severity: medium
+  valid_extra:
+  - file: providers/cncf/kubernetes/src/airflow/providers/cncf/kubernetes/hooks/kubernetes.py
+    lines:
+    - 932
+    - 939
+  - file: providers/cncf/kubernetes/src/airflow/providers/cncf/kubernetes/triggers/pod.py
+    lines:
+    - 290
+    - 296
+  - file: providers/cncf/kubernetes/src/airflow/providers/cncf/kubernetes/utils/pod_manager.py
+    lines:
+    - 1051
+    - 1066
+  - file: providers/cncf/kubernetes/src/airflow/providers/cncf/kubernetes/utils/pod_manager.py
+    lines:
+    - 1079
+    - 1086
   must_propose:
   - kind: decision
     file: providers/cncf/kubernetes/src/airflow/providers/cncf/kubernetes/utils/pod_manager.py
@@ -1309,6 +1399,19 @@ cases:
     - 59
     - 59
     severity: high
+    also:
+    - file: requirements/dev.txt
+      lines:
+      - 140
+      - 140
+    - file: requirements/functests.txt
+      lines:
+      - 109
+      - 109
+    - file: requirements/tests.txt
+      lines:
+      - 115
+      - 115
   must_not_flag: []
 - id: fused-requirement-names-a-package-that-doesnt-exist
   upstream: microsoft/Biodiversity
@@ -1327,3 +1430,40 @@ cases:
     - 16
     severity: high
   must_not_flag: []
+  valid_extra:
+  - file: PytorchWildlife/models/detection/rtdetr_apache/megadetectorv6_apache.py
+    lines:
+    - 23
+    - 42
+  - file: PytorchWildlife/models/detection/yolo_mit/megadetectorv6_mit.py
+    lines:
+    - 23
+    - 42
+  - file: demo/gradio_demo.py
+    lines:
+    - 271
+    - 271
+  - file: requirements.txt
+    lines:
+    - 17
+    - 17
+  - file: PytorchWildlife/models/detection/rtdetr_apache/rtdetr_apache_base.py
+    lines:
+    - 216
+    - 219
+  - file: demo/video_demo.py
+    lines:
+    - 33
+    - 33
+  - file: demo/image_separation_demo.py
+    lines:
+    - 38
+    - 38
+  - file: PytorchWildlife/models/detection/yolo_mit/yolo_mit_base.py
+    lines:
+    - 156
+    - 207
+  - file: PytorchWildlife/models/detection/yolo_mit/yolo_mit_base.py
+    lines:
+    - 90
+    - 97
