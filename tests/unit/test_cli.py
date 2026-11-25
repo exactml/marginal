@@ -44,6 +44,7 @@ from marginal.review.redact import redact_patches, redacted_filenames
 from marginal.review.render import (
     NO_REVIEWER_NOTICE,
     REVIEW_HEADING,
+    REVIEW_LIMIT_MARKER,
     build_inline_comments,
     coverage_warning_lines,
     finding_badge,
@@ -51,6 +52,7 @@ from marginal.review.render import (
     is_ignored,
     missing_patch_filenames,
     redaction_warning_lines,
+    review_limit_notice,
     verdict_line,
     why_lines,
 )
@@ -1218,6 +1220,75 @@ def test_review_with_comment_reviews_a_pr_no_skip_rule_matches(
 
     assert exit_code == 0
     client.create_review.assert_called_once()
+
+
+def _run_capped_review(tmp_path, monkeypatch, mock_github_client, mock_provider, reviews):
+    """Run `review --comment` with `review.max_reviews_per_pr: 2` over `reviews`."""
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    config_path = tmp_path / ".marginal" / "config.yaml"
+    config_path.write_text(config_path.read_text() + "review:\n  max_reviews_per_pr: 2\n")
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [{"filename": "a.py", "patch": "+x"}]
+    client.list_review_comments.return_value = []
+    client.list_reviews.return_value = reviews
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=FindingsResponse(findings=[])
+    )
+    return main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+
+
+def test_review_under_the_review_limit_calls_the_model(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    reviews = [{"body": f"{REVIEW_HEADING}\n\nearlier"}]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_called_once()
+
+
+def test_review_at_the_review_limit_posts_one_notice_without_calling_the_model(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    reviews = [{"body": f"{REVIEW_HEADING}\n\nfirst"}, {"body": "### 🤖 marginal review\n"}]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_not_called()
+    client = mock_github_client.return_value
+    client.create_review.assert_called_once()
+    body = client.create_review.call_args.args[1]
+    assert "Review limit reached" in body
+    assert "review.max_reviews_per_pr" in body
+    assert REVIEW_LIMIT_MARKER in body
+    assert "review.max_reviews_per_pr (2)" in capsys.readouterr().err
+
+
+def test_review_past_the_review_limit_does_not_repeat_the_notice(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    reviews = [
+        {"body": f"{REVIEW_HEADING}\n\nfirst"},
+        {"body": f"{REVIEW_HEADING}\n\nsecond"},
+        {"body": review_limit_notice(2)},
+    ]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_not_called()
+    mock_github_client.return_value.create_review.assert_not_called()
+    assert "no model called" in capsys.readouterr().err
 
 
 def test_review_without_comment_still_reviews_a_draft(

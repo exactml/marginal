@@ -52,6 +52,7 @@ from marginal.review.prompt import (
 from marginal.review.redact import redact_patches, redacted_filenames
 from marginal.review.render import (
     NO_REVIEWER_NOTICE,
+    REVIEW_LIMIT_MARKER,
     anchorable,
     budget_warning_lines,
     build_inline_comments,
@@ -63,6 +64,7 @@ from marginal.review.render import (
     is_ignored,
     is_review_summary,
     redaction_warning_lines,
+    review_limit_notice,
     severity_labels,
     stale_severity_labels,
     verdict_line,
@@ -210,7 +212,9 @@ def run_review(
 
     With `comment` set, a PR `_skip_reason` names -- `review.enabled` off,
     a draft, a bot author, or a `review.skip_labels` label -- gets no model
-    call and nothing posted: one stderr line says why and it exits 0.
+    call and nothing posted: one stderr line says why and it exits 0. So
+    does a PR marginal already reviewed `review.max_reviews_per_pr` times,
+    except that the first such run posts a notice saying the limit was reached.
 
     Returns 0 on success. An invalid `.marginal/config.yaml` (`ConfigError`),
     a denied permission, missing/invalid token, GitHub API error, or
@@ -279,6 +283,15 @@ def run_review(
     if skip_reason is not None:
         print(f"marginal review: skipped, nothing posted -- {skip_reason}", file=sys.stderr)
         return 0
+    reviews: list[dict[str, object]] = []
+    if comment:
+        try:
+            reviews = client.list_reviews(pr_number)
+            if _at_review_limit(client, pr_number, reviews, config.review.max_reviews_per_pr):
+                return 0
+        except GitHubError as exc:
+            print(f"marginal review: {exc}", file=sys.stderr)
+            return 1
 
     filenames = [str(file["filename"]) for file in files]
     ignore_paths = config.review.ignore_paths
@@ -338,6 +351,7 @@ def run_review(
                 filenames,
                 findings,
                 warning_lines,
+                reviews,
                 review_comments,
                 patches,
                 reviewed=reviewed,
@@ -551,6 +565,7 @@ def _post_review(
     filenames: list[str],
     findings: list[Finding],
     warning_lines: list[str],
+    reviews: list[dict[str, object]],
     review_comments: list[dict[str, object]],
     patches: dict[str, str | None],
     *,
@@ -564,7 +579,6 @@ def _post_review(
     PR, unless the prompt was over budget. Returns whether it posted, and
     whether marginal had reviewed this PR before. Raises `GitHubError`.
     """
-    reviews = client.list_reviews(pr_number)
     posted = posted_fingerprints(
         [review.get("body") for review in reviews] + [c.get("body") for c in review_comments]
     )
@@ -607,6 +621,30 @@ def _post_review(
         ),
     )
     return True, already_reviewed
+
+
+def _at_review_limit(
+    client: GitHubClient,
+    pr_number: int,
+    reviews: list[dict[str, object]],
+    max_reviews: int,
+) -> bool:
+    """Whether marginal already reviewed this PR `max_reviews` times.
+
+    At the limit, posts the limit notice unless an earlier run already did,
+    and says so on stderr either way. Raises `GitHubError`.
+    """
+    count = sum(is_review_summary(r.get("body")) for r in reviews)
+    if count < max_reviews:
+        return False
+    print(
+        f"marginal review: skipped, no model called -- marginal already reviewed this PR "
+        f"{count} time(s), at review.max_reviews_per_pr ({max_reviews})",
+        file=sys.stderr,
+    )
+    if not any(REVIEW_LIMIT_MARKER in (r.get("body") or "") for r in reviews):
+        client.create_review(pr_number, review_limit_notice(max_reviews), event="COMMENT")
+    return True
 
 
 def _update_labels(

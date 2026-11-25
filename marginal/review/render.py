@@ -39,6 +39,20 @@ def is_review_summary(body: str | None) -> bool:
     return any(heading in (body or "") for heading in (REVIEW_HEADING, *_EARLIER_HEADINGS))
 
 
+# Hidden in the review-limit notice, so later pushes don't post it again.
+REVIEW_LIMIT_MARKER = "<!-- marginal:review-limit -->"
+
+
+def review_limit_notice(max_reviews: int) -> str:
+    """The one notice posted once a PR has had `max_reviews` reviews."""
+    return (
+        f"⚠️ **Review limit reached**: marginal has reached its limit of {max_reviews} "
+        "reviews on this PR, so later pushes are not reviewed. Raise "
+        "`review.max_reviews_per_pr` in `.marginal/config.yaml` on the base branch to "
+        f"allow more.\n{REVIEW_LIMIT_MARKER}"
+    )
+
+
 # Shown when no model reviewed the diff; without it, a fresh `marginal init`
 # setup posts just a title and file list with nothing pointing at the gap.
 NO_REVIEWER_NOTICE = (
