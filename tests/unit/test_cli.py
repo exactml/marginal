@@ -828,6 +828,7 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(
 
     call = provider.generate_structured.call_args
     assert call.kwargs["schema"] is FindingsResponse
+    assert "effort" not in call.kwargs
     prompt = call.args[0]
     assert "marginal/retry.py" in prompt
     assert "time.sleep(1)" in prompt
@@ -3760,7 +3761,7 @@ def _rereview(
         {"id": "PRRT_1", "is_resolved": False, "comment_id": 1}
     ]
 
-    async def generate(prompt, schema):
+    async def generate(prompt, schema, effort=None):
         if schema is FindingsResponse:
             return FindingsResponse(findings=[])
         if recheck_error:

@@ -10,7 +10,12 @@ from marginal.config.schema import ModelSpec, PermissionsConfig
 from marginal.context import load_base_config
 from marginal.github.client import GitHubClient
 from marginal.github.errors import GitHubError
-from marginal.providers.errors import MissingCredentialsError, ProviderError, ProviderResponseError
+from marginal.providers.errors import (
+    MissingCredentialsError,
+    ProviderAPIError,
+    ProviderError,
+    ProviderResponseError,
+)
 from marginal.providers.factory import get_provider
 from marginal.review.dedup import _MARKER
 from marginal.review.prompt import RECHECK_INSTRUCTIONS, estimate_tokens
@@ -303,7 +308,15 @@ def _resolution(verdict: Recheck, by_id: dict[object, dict[str, object]]) -> str
 
 async def _recheck(model_spec: ModelSpec, prompt: str) -> list[Recheck]:
     provider = get_provider(model_spec)
-    result = await provider.generate_structured(prompt, schema=RecheckResponse)
+    # Matching findings to the current code needs little thinking, so low
+    # effort saves output tokens; the main review keeps the model default.
+    try:
+        result = await provider.generate_structured(prompt, schema=RecheckResponse, effort="low")
+    except ProviderAPIError as exc:
+        # A model without effort support rejects the setting: retry without it.
+        if "effort" not in str(exc):
+            raise
+        result = await provider.generate_structured(prompt, schema=RecheckResponse)
     if not isinstance(result, RecheckResponse):
         raise ProviderResponseError(
             f"expected a RecheckResponse from generate_structured, got {type(result).__name__}"

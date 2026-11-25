@@ -6,7 +6,7 @@ from conftest import working_tree_file
 from marginal.cli import main
 from marginal.cli.compact import COMPACT_HEADING
 from marginal.github.errors import GitHubAPIError
-from marginal.providers.errors import MissingCredentialsError
+from marginal.providers.errors import MissingCredentialsError, ProviderAPIError
 from marginal.review.dedup import fingerprint_marker
 from marginal.review.replies import RESOLVED_MARKER, maintainer_replies
 from marginal.review.schema import Recheck, RecheckResponse
@@ -93,6 +93,42 @@ def test_a_finding_that_still_applies_stays_open(client, provider, capsys):
     assert "✅ 0 resolved · ⏳ 1 still open" in out
     assert "- ⏳ `retry.py:2`: still applies. Still calls time.sleep." in out
     client.reply_to_review_comment.assert_not_called()
+
+
+def test_the_recheck_asks_for_low_effort(client, provider):
+    client.list_review_comments.return_value = [_finding(1)]
+    provider.generate_structured = _answers((1, True, "Still calls time.sleep."))
+
+    assert _compact() == 0
+
+    assert provider.generate_structured.call_args.kwargs["effort"] == "low"
+
+
+def test_a_model_that_rejects_effort_is_rechecked_without_it(client, provider, capsys):
+    client.list_review_comments.return_value = [_finding(1)]
+    provider.generate_structured = _answers((1, True, "Still calls time.sleep."))
+    provider.generate_structured.side_effect = [
+        ProviderAPIError("anthropic", "effort is not supported on this model"),
+        provider.generate_structured.return_value,
+    ]
+
+    assert _compact() == 0
+
+    assert "⏳ 1 still open" in capsys.readouterr().out
+    first, second = provider.generate_structured.call_args_list
+    assert first.kwargs["effort"] == "low"
+    assert "effort" not in second.kwargs
+
+
+def test_any_other_api_error_is_not_retried(client, provider):
+    client.list_review_comments.return_value = [_finding(1)]
+    provider.generate_structured = AsyncMock(
+        side_effect=ProviderAPIError("anthropic", "overloaded")
+    )
+
+    assert _compact() != 0
+
+    assert provider.generate_structured.call_count == 1
 
 
 def test_a_stale_finding_gets_a_resolution_reply(client, provider, capsys):
