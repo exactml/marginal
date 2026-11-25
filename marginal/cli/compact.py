@@ -313,8 +313,9 @@ async def _recheck(model_spec: ModelSpec, prompt: str) -> list[Recheck]:
     try:
         result = await provider.generate_structured(prompt, schema=RecheckResponse, effort="low")
     except ProviderAPIError as exc:
-        # A model without effort support rejects the setting: retry without it.
-        if not any(name in str(exc) for name in ("effort", "output_config")):
+        # A model without effort support rejects the request (400): retry
+        # without it. Another 400 fails again, unbilled; other errors aren't retried.
+        if exc.status != 400:
             raise
         result = await provider.generate_structured(prompt, schema=RecheckResponse)
     if not isinstance(result, RecheckResponse):

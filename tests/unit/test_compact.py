@@ -106,13 +106,18 @@ def test_the_recheck_asks_for_low_effort(client, provider):
 
 @pytest.mark.parametrize(
     "message",
-    ["effort is not supported on this model", "output_config: Extra inputs are not permitted"],
+    [
+        "effort is not supported on this model",
+        "output_config: Extra inputs are not permitted",
+        "unknown parameter",
+    ],
 )
 def test_a_model_that_rejects_effort_is_rechecked_without_it(client, provider, capsys, message):
+    """Any wording: the API rejects the request with a 400."""
     client.list_review_comments.return_value = [_finding(1)]
     provider.generate_structured = _answers((1, True, "Still calls time.sleep."))
     provider.generate_structured.side_effect = [
-        ProviderAPIError("anthropic", message),
+        ProviderAPIError("anthropic", message, status=400),
         provider.generate_structured.return_value,
     ]
 
@@ -124,11 +129,18 @@ def test_a_model_that_rejects_effort_is_rechecked_without_it(client, provider, c
     assert "effort" not in second.kwargs
 
 
-def test_any_other_api_error_is_not_retried(client, provider):
+@pytest.mark.parametrize(
+    "error",
+    [
+        ProviderAPIError("anthropic", "overloaded", status=529),
+        # Not a rejection, though its text names the setting.
+        ProviderAPIError("anthropic", "rate limited while applying effort", status=429),
+        ProviderAPIError("anthropic", "connection reset"),
+    ],
+)
+def test_any_other_api_error_is_not_retried(client, provider, error):
     client.list_review_comments.return_value = [_finding(1)]
-    provider.generate_structured = AsyncMock(
-        side_effect=ProviderAPIError("anthropic", "overloaded")
-    )
+    provider.generate_structured = AsyncMock(side_effect=error)
 
     assert _compact() != 0
 
