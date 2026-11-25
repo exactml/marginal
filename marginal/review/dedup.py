@@ -17,6 +17,7 @@ from marginal.review.schema import Finding
 _MARKER = re.compile(r"<!-- marginal:finding:([0-9a-f]{16}) -->")
 _HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 _SEVERITY = re.compile(r"^\S+ \*\*(Critical|High|Medium|Low)\*\*")
+_PROMPT_MARKER = re.compile(r"<!-- marginal:prompt:([0-9a-f]{16}) -->")
 
 
 def finding_fingerprint(
@@ -68,6 +69,29 @@ def fingerprint_marker(fingerprint: str) -> str:
 def posted_fingerprints(bodies: Iterable[str | None]) -> set[str]:
     """Every fingerprint marker found in `bodies` (comment/review texts)."""
     return {match for body in bodies if body for match in _MARKER.findall(body)}
+
+
+def prompt_hash(prompt: str) -> str:
+    """A 16-hex-char identity for a whole review prompt."""
+    return hashlib.sha256(prompt.encode()).hexdigest()[:16]
+
+
+def prompt_marker(digest: str) -> str:
+    """The hidden HTML comment carrying the reviewed prompt's hash."""
+    return f"<!-- marginal:prompt:{digest} -->"
+
+
+def with_prompt_marker(body: str, digest: str | None) -> str:
+    """`body` with its prompt hash replaced by `digest`, or unchanged without one."""
+    if digest is None:
+        return body
+    return f"{_PROMPT_MARKER.sub('', body).rstrip()}\n{prompt_marker(digest)}"
+
+
+def last_prompt_hash(bodies: Iterable[str | None]) -> str | None:
+    """The prompt hash in the newest of `bodies` (oldest first) that has one."""
+    found = [match for body in bodies if body for match in _PROMPT_MARKER.findall(body)]
+    return found[-1] if found else None
 
 
 def current_fingerprints(

@@ -7,9 +7,11 @@ import json
 import os
 import sys
 from collections import Counter
+from collections.abc import Callable
 from typing import Literal, get_args
 
 from marginal.cli.compact import CompactSkipped, close_resolved_findings, is_closed
+from marginal.cli.propose import trusted_author
 from marginal.config.errors import ConfigError
 from marginal.config.schema import MarginalConfig, ModelSpec, PermissionsConfig, ReviewConfig
 from marginal.context import (
@@ -37,8 +39,12 @@ from marginal.review.dedup import (
     current_fingerprints,
     fingerprint_marker,
     fingerprint_of,
+    last_prompt_hash,
     nearby_fingerprints_of,
     posted_fingerprints,
+    prompt_hash,
+    prompt_marker,
+    with_prompt_marker,
 )
 from marginal.review.evidence import OVER_MAX_COMMENTS, CodeView, Decision, decide
 from marginal.review.knowledge import knowledge_marker
@@ -55,6 +61,8 @@ from marginal.review.render import (
     anchorable,
     budget_warning_lines,
     build_inline_comments,
+    calls_in,
+    calls_marker,
     config_change_lines,
     coverage_warning_lines,
     finding_lines,
@@ -63,14 +71,21 @@ from marginal.review.render import (
     is_ignored,
     is_review_summary,
     redaction_warning_lines,
+    review_limit_marker,
+    review_limit_notice,
     severity_labels,
     stale_severity_labels,
     verdict_line,
+    with_calls_marker,
 )
 from marginal.review.replies import ReplyThread, maintainer_replies
 from marginal.review.schema import FindingsResponse, Knowledge
 
 OutputFormat = Literal["text", "json"]
+
+
+class _SamePrompt(Exception):
+    """The built prompt is the one marginal's last review on this PR was given."""
 
 
 def run_review(
@@ -210,7 +225,14 @@ def run_review(
 
     With `comment` set, a PR `_skip_reason` names -- `review.enabled` off,
     a draft, a bot author, or a `review.skip_labels` label -- gets no model
-    call and nothing posted: one stderr line says why and it exits 0.
+    call and nothing posted: one stderr line says why and it exits 0. So
+    does a PR marginal already reviewed `review.max_reviews_per_pr` times,
+    except that the first such run posts a notice saying the limit was reached.
+
+    With `comment` set, marginal's reviews carry a hidden hash of the whole
+    prompt the model was given and the config it ran with. A re-run whose hash
+    matches the newest one on the PR makes no model call and posts nothing:
+    one stderr line says so and it exits 0.
 
     Returns 0 on success. An invalid `.marginal/config.yaml` (`ConfigError`),
     a denied permission, missing/invalid token, GitHub API error, or
@@ -279,6 +301,29 @@ def run_review(
     if skip_reason is not None:
         print(f"marginal review: skipped, nothing posted -- {skip_reason}", file=sys.stderr)
         return 0
+    reviews: list[dict[str, object]] = []
+    summaries: list[dict[str, object]] = []
+    last_hash = None
+    calls = 0
+    if comment:
+        try:
+            reviews = client.list_reviews(pr_number)
+            # Only reviews by marginal's own account or a writer count, so the PR's
+            # author can't forge a marker to silence marginal or skip a push.
+            trusted = trusted_author(client)
+            summaries = [r for r in reviews if is_review_summary(r.get("body")) and trusted(r)]
+            # Any summary: a run that posted nothing records it in one it can edit.
+            last_hash = last_prompt_hash(r.get("body") for r in summaries)
+            # The highest count any summary records; on a PR reviewed only
+            # before the count existed, each summary counts as one.
+            calls = max((calls_in(r.get("body")) for r in summaries), default=0) or len(summaries)
+            if _at_review_limit(
+                client, pr_number, reviews, calls, config.review.max_reviews_per_pr, trusted
+            ):
+                return 0
+        except GitHubError as exc:
+            print(f"marginal review: {exc}", file=sys.stderr)
+            return 1
 
     filenames = [str(file["filename"]) for file in files]
     ignore_paths = config.review.ignore_paths
@@ -289,7 +334,7 @@ def run_review(
         coverage_lines += coverage_warning_lines(pull_request, files, ignore_paths)
 
     try:
-        findings, dropped, redacted_files, over_budget, knowledge = _review_files(
+        findings, dropped, redacted_files, over_budget, knowledge, reviewed_hash = _review_files(
             client,
             config,
             pull_request,
@@ -299,7 +344,11 @@ def run_review(
             policies,
             anti_policies,
             repo,
+            last_hash,
         )
+    except _SamePrompt:
+        print("marginal review: same prompt as the last review, no model call", file=sys.stderr)
+        return 0
     except MissingCredentialsError as exc:
         print(f"marginal review: {exc}", file=sys.stderr)
         return 3
@@ -340,9 +389,12 @@ def run_review(
                 warning_lines,
                 review_comments,
                 patches,
+                summaries=summaries,
+                calls=calls + 1 if reviewed else None,
                 reviewed=reviewed,
                 over_budget=over_budget is not None,
                 knowledge=knowledge,
+                prompt_hash=reviewed_hash,
             )
         except GitHubError as exc:
             print(f"marginal review: {exc}", file=sys.stderr)
@@ -444,18 +496,23 @@ def _review_files(
     policies: list[tuple[str, str]],
     anti_policies: list[tuple[str, str]],
     repo: str,
-) -> tuple[list[Finding], list[Decision], list[str], PromptOverBudget | None, list[Knowledge]]:
+    last_prompt_hash: str | None = None,
+) -> tuple[
+    list[Finding], list[Decision], list[str], PromptOverBudget | None, list[Knowledge], str | None
+]:
     """Have the reviewer model review `files`, then check what it found.
 
     Returns the findings to post, the dropped ones with their reason, the
     files whose diff had a likely secret redacted, the over-budget error if
-    the prompt was too big to send, and the business knowledge whose quote
-    was found in the diff. Nothing happens without a reviewer
-    model or when every changed file is ignored. Raises `ProviderError`.
+    the prompt was too big to send, the business knowledge whose quote
+    was found in the diff, and the hash of the prompt the model was given.
+    Nothing happens without a reviewer model or when every changed file is
+    ignored. Raises `ProviderError`, or `_SamePrompt` when the prompt hashes
+    to `last_prompt_hash`.
     """
     reviewer_model = config.models.get("reviewer")
     if reviewer_model is None or not files:
-        return [], [], [], None, []
+        return [], [], [], None, [], None
     redacted = redact_patches(files)
     redacted_files = redacted_filenames(files, redacted)
     graph_context = build_graph_context(path, files, enabled=config.context.code_graph)
@@ -493,7 +550,7 @@ def _review_files(
     # which the model was shown there, not in the diff.
     view = CodeView(path, redacted, f"{context}\n{bumps}")
     try:
-        response = asyncio.run(
+        response, reviewed_hash = asyncio.run(
             _generate_findings(
                 reviewer_model,
                 redacted,
@@ -510,6 +567,9 @@ def _review_files(
                 accepted=accepted,
                 dependency_note=checked_note(changes),
                 dependencies=bumps,
+                last_prompt_hash=last_prompt_hash,
+                # The model and post-processing settings change the result too.
+                settings=config.model_dump_json(),
             )
         )
     except PromptOverBudget as exc:
@@ -520,7 +580,7 @@ def _review_files(
         )
         # The dependency checks need no model, so they still post.
         decisions = decide(dependency_issues, view, max_comments=config.review.max_comments)
-        return [d.finding for d in decisions if d.posted], [], redacted_files, exc, []
+        return [d.finding for d in decisions if d.posted], [], redacted_files, exc, [], None
 
     knowledge = [
         k
@@ -531,7 +591,7 @@ def _review_files(
     # decide() sorts by severity; on a tie the code findings, listed first, win a slot.
     findings = [*response.findings, *dependency_issues]
     if not findings:
-        return [], [], redacted_files, None, knowledge
+        return [], [], redacted_files, None, knowledge, reviewed_hash
     decisions = decide(findings, view, max_comments=config.review.max_comments)
     dropped = [d for d in decisions if not d.posted]
     if dropped:
@@ -541,7 +601,14 @@ def _review_files(
             + ", ".join(f"{count} {reason}" for reason, count in reasons.most_common()),
             file=sys.stderr,
         )
-    return [d.finding for d in decisions if d.posted], dropped, redacted_files, None, knowledge
+    return (
+        [d.finding for d in decisions if d.posted],
+        dropped,
+        redacted_files,
+        None,
+        knowledge,
+        reviewed_hash,
+    )
 
 
 def _post_review(
@@ -554,9 +621,12 @@ def _post_review(
     review_comments: list[dict[str, object]],
     patches: dict[str, str | None],
     *,
+    summaries: list[dict[str, object]],
+    calls: int | None,
     reviewed: bool,
     over_budget: bool,
     knowledge: list[Knowledge] | None = None,
+    prompt_hash: str | None = None,
 ) -> tuple[bool, bool]:
     """Post the review, leaving out findings already posted on this PR.
 
@@ -564,6 +634,8 @@ def _post_review(
     PR, unless the prompt was over budget. Returns whether it posted, and
     whether marginal had reviewed this PR before. Raises `GitHubError`.
     """
+    # Read just before posting: the model call can take a while, and a run
+    # that overlapped this one may have posted since.
     reviews = client.list_reviews(pr_number)
     posted = posted_fingerprints(
         [review.get("body") for review in reviews] + [c.get("body") for c in review_comments]
@@ -577,13 +649,16 @@ def _post_review(
             "neighbouring line)",
             file=sys.stderr,
         )
-    already_reviewed = any(is_review_summary(r.get("body")) for r in reviews)
+    # Only trusted summaries: a pasted heading mustn't pass for marginal's first review.
+    already_reviewed = bool(summaries)
     if not (new_findings or not already_reviewed or over_budget):
         print(
             "marginal review: nothing new since marginal's last review on this PR, "
             "so nothing was posted",
             file=sys.stderr,
         )
+        if calls:
+            _record_calls(client, pr_number, summaries, calls, prompt_hash)
         return False, already_reviewed
     verdict = verdict_line(new_findings, already_posted=len(findings) - len(new_findings))
     body = "\n".join(
@@ -597,6 +672,9 @@ def _post_review(
         ]
         # Hidden: the knowledge proposal a merged PR posts reads it back.
         + ([knowledge_marker(knowledge)] if knowledge else [])
+        # Hidden: the next push compares its prompt with this one.
+        + ([prompt_marker(prompt_hash)] if prompt_hash else [])
+        + ([calls_marker(calls)] if calls else [])
     )
     client.create_review(
         pr_number,
@@ -607,6 +685,61 @@ def _post_review(
         ),
     )
     return True, already_reviewed
+
+
+def _record_calls(
+    client: GitHubClient,
+    pr_number: int,
+    summaries: list[dict[str, object]],
+    calls: int,
+    digest: str | None,
+) -> None:
+    """Write the model-review count, and the reviewed prompt's hash, into
+    marginal's newest summary this token can edit, for a run that posted
+    nothing; one a writer posted with their own token can't be. Best-effort:
+    if none can, the limit only counts low and the next same push reviews again."""
+    error: GitHubError | None = None
+    for review in reversed(summaries):
+        if review.get("id") is None:
+            continue
+        try:
+            client.update_review(
+                pr_number,
+                int(review["id"]),
+                with_prompt_marker(with_calls_marker(str(review.get("body") or ""), calls), digest),
+            )
+            return
+        except GitHubError as exc:
+            error = exc
+    if error is not None:
+        print(f"marginal review: couldn't record the review count: {error}", file=sys.stderr)
+
+
+def _at_review_limit(
+    client: GitHubClient,
+    pr_number: int,
+    reviews: list[dict[str, object]],
+    calls: int,
+    max_reviews: int,
+    trusted: Callable[[dict[str, object]], bool],
+) -> bool:
+    """Whether the model already reviewed this PR `max_reviews` times
+    (`calls`), counting runs that posted nothing.
+
+    At the limit, posts the limit notice unless an earlier run already did,
+    and says so on stderr either way. Raises `GitHubError`.
+    """
+    if calls < max_reviews:
+        return False
+    print(
+        f"marginal review: skipped, no model called -- marginal already reviewed this PR "
+        f"{calls} time(s), at review.max_reviews_per_pr ({max_reviews})",
+        file=sys.stderr,
+    )
+    marker = review_limit_marker(max_reviews)
+    if not any(marker in (r.get("body") or "") and trusted(r) for r in reviews):
+        client.create_review(pr_number, review_limit_notice(max_reviews), event="COMMENT")
+    return True
 
 
 def _update_labels(
@@ -706,16 +839,20 @@ async def _generate_findings(
     accepted: list[AcceptedClaim] | None = None,
     dependencies: str = "",
     dependency_note: str = "",
-) -> FindingsResponse:
+    last_prompt_hash: str | None = None,
+    settings: str = "",
+) -> tuple[FindingsResponse, str]:
     """Generate a bounded list of unvalidated `Finding`s, and any business
     `Knowledge` the diff states, from `model_spec` over
     `files`' diffs, `policies`, `graph_context`, maintainer `replies`,
     `anti_policies`, the triggering CI run's `ci_conclusion`, and the
     team's `accepted` rules and decisions.
 
-    Raises `PromptOverBudget` without touching the provider if the built
-    prompt is estimated over `max_prompt_tokens`. The check runs on the final
-    prompt string, so every section the builder adds counts toward the cap.
+    Returns them with the prompt's hash. Raises `PromptOverBudget` without
+    touching the provider if the built prompt is estimated over
+    `max_prompt_tokens`, and `_SamePrompt` if it hashes to `last_prompt_hash`.
+    The checks run on the final prompt string, so every section the builder
+    adds counts toward them.
     """
 
     def build(dependencies: str) -> str:
@@ -751,10 +888,14 @@ async def _generate_findings(
             f"the review prompt is an estimated {estimated_tokens:,} tokens, over "
             f"review.max_prompt_tokens ({max_prompt_tokens:,}), so no model was called"
         )
+    digest = prompt_hash(f"{settings}\n{prompt}")
+    # The model would see exactly what it saw last time: nothing new to review.
+    if digest == last_prompt_hash:
+        raise _SamePrompt
     provider = get_provider(model_spec)
     result = await provider.generate_structured(prompt, schema=FindingsResponse)
     if not isinstance(result, FindingsResponse):
         raise ProviderResponseError(
             f"expected a FindingsResponse from generate_structured, got {type(result).__name__}"
         )
-    return result
+    return result, digest

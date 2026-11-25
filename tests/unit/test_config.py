@@ -72,6 +72,7 @@ def test_missing_config_returns_defaults(tmp_path):
     assert config.review.enabled is True
     assert config.review.max_comments == 8
     assert config.review.max_prompt_tokens == 100_000
+    assert config.review.max_reviews_per_pr == 20
     assert config.review.tone == ReviewTone.CONCISE
     assert config.context.cross_repository is False
     assert config.ownership.notify_responsible is False
@@ -230,6 +231,20 @@ def test_invalid_max_prompt_tokens_is_rejected(tmp_path, max_prompt_tokens):
     write_config(tmp_path, f"review:\n  max_prompt_tokens: {max_prompt_tokens}\n")
 
     with pytest.raises(ConfigValidationError, match="review.max_prompt_tokens"):
+        load_config(tmp_path)
+
+
+def test_max_reviews_per_pr_can_be_overridden(tmp_path):
+    write_config(tmp_path, "review:\n  max_reviews_per_pr: 5\n")
+
+    assert load_config(tmp_path).review.max_reviews_per_pr == 5
+
+
+@pytest.mark.parametrize("max_reviews", ["0", "-1", "1.5", "true", "'20'", "many"])
+def test_invalid_max_reviews_per_pr_is_rejected(tmp_path, max_reviews):
+    write_config(tmp_path, f"review:\n  max_reviews_per_pr: {max_reviews}\n")
+
+    with pytest.raises(ConfigValidationError, match="review.max_reviews_per_pr"):
         load_config(tmp_path)
 
 
