@@ -44,6 +44,7 @@ from marginal.review.dedup import (
     posted_fingerprints,
     prompt_hash,
     prompt_marker,
+    with_prompt_marker,
 )
 from marginal.review.evidence import OVER_MAX_COMMENTS, CodeView, Decision, decide
 from marginal.review.knowledge import knowledge_marker
@@ -291,12 +292,6 @@ def run_review(
             if pr_number is not None and (reviewer_model is not None or comment)
             else []
         )
-        reviews = client.list_reviews(pr_number) if comment else []
-        # Only reviews by marginal's own account or a writer count, so the PR's
-        # author can't forge a marker to silence marginal or skip a push.
-        trusted = trusted_author(client)
-        summaries = [r for r in reviews if is_review_summary(r.get("body")) and trusted(r)]
-        last_hash = last_prompt_hash([r.get("body") for r in summaries][-1:])
     except GitHubError as exc:
         print(f"marginal review: {exc}", file=sys.stderr)
         return 1
@@ -306,9 +301,19 @@ def run_review(
     if skip_reason is not None:
         print(f"marginal review: skipped, nothing posted -- {skip_reason}", file=sys.stderr)
         return 0
+    reviews: list[dict[str, object]] = []
+    summaries: list[dict[str, object]] = []
+    last_hash = None
     calls = 0
     if comment:
         try:
+            reviews = client.list_reviews(pr_number)
+            # Only reviews by marginal's own account or a writer count, so the PR's
+            # author can't forge a marker to silence marginal or skip a push.
+            trusted = trusted_author(client)
+            summaries = [r for r in reviews if is_review_summary(r.get("body")) and trusted(r)]
+            # Any summary: a run that posted nothing records it in one it can edit.
+            last_hash = last_prompt_hash(r.get("body") for r in summaries)
             # The highest count any summary records; on a PR reviewed only
             # before the count existed, each summary counts as one.
             calls = max((calls_in(r.get("body")) for r in summaries), default=0) or len(summaries)
@@ -563,6 +568,8 @@ def _review_files(
                 dependency_note=checked_note(changes),
                 dependencies=bumps,
                 last_prompt_hash=last_prompt_hash,
+                # The model and post-processing settings change the result too.
+                settings=config.model_dump_json(),
             )
         )
     except PromptOverBudget as exc:
@@ -651,7 +658,7 @@ def _post_review(
             file=sys.stderr,
         )
         if calls:
-            _record_calls(client, pr_number, summaries, calls)
+            _record_calls(client, pr_number, summaries, calls, prompt_hash)
         return False, already_reviewed
     verdict = verdict_line(new_findings, already_posted=len(findings) - len(new_findings))
     body = "\n".join(
@@ -681,11 +688,16 @@ def _post_review(
 
 
 def _record_calls(
-    client: GitHubClient, pr_number: int, summaries: list[dict[str, object]], calls: int
+    client: GitHubClient,
+    pr_number: int,
+    summaries: list[dict[str, object]],
+    calls: int,
+    digest: str | None,
 ) -> None:
-    """Write the model-review count into marginal's newest summary this token
-    can edit, for a run that posted nothing; one a writer posted with their own
-    token can't be. Best-effort: if none can, the limit only counts low."""
+    """Write the model-review count, and the reviewed prompt's hash, into
+    marginal's newest summary this token can edit, for a run that posted
+    nothing; one a writer posted with their own token can't be. Best-effort:
+    if none can, the limit only counts low and the next same push reviews again."""
     error: GitHubError | None = None
     for review in reversed(summaries):
         if review.get("id") is None:
@@ -694,7 +706,7 @@ def _record_calls(
             client.update_review(
                 pr_number,
                 int(review["id"]),
-                with_calls_marker(str(review.get("body") or ""), calls),
+                with_prompt_marker(with_calls_marker(str(review.get("body") or ""), calls), digest),
             )
             return
         except GitHubError as exc:
@@ -828,6 +840,7 @@ async def _generate_findings(
     dependencies: str = "",
     dependency_note: str = "",
     last_prompt_hash: str | None = None,
+    settings: str = "",
 ) -> tuple[FindingsResponse, str]:
     """Generate a bounded list of unvalidated `Finding`s, and any business
     `Knowledge` the diff states, from `model_spec` over
@@ -875,7 +888,7 @@ async def _generate_findings(
             f"the review prompt is an estimated {estimated_tokens:,} tokens, over "
             f"review.max_prompt_tokens ({max_prompt_tokens:,}), so no model was called"
         )
-    digest = prompt_hash(prompt)
+    digest = prompt_hash(f"{settings}\n{prompt}")
     # The model would see exactly what it saw last time: nothing new to review.
     if digest == last_prompt_hash:
         raise _SamePrompt

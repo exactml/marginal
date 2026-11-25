@@ -81,6 +81,13 @@ def prompt_marker(digest: str) -> str:
     return f"<!-- marginal:prompt:{digest} -->"
 
 
+def with_prompt_marker(body: str, digest: str | None) -> str:
+    """`body` with its prompt hash replaced by `digest`, or unchanged without one."""
+    if digest is None:
+        return body
+    return f"{_PROMPT_MARKER.sub('', body).rstrip()}\n{prompt_marker(digest)}"
+
+
 def last_prompt_hash(bodies: Iterable[str | None]) -> str | None:
     """The prompt hash in the newest of `bodies` (oldest first) that has one."""
     found = [match for body in bodies if body for match in _PROMPT_MARKER.findall(body)]
