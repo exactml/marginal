@@ -1,0 +1,8 @@
+repo: marginal
+kind: rule
+statement: A re-run whose review prompt hashes the same as the one in marginal's latest
+  review on the PR makes no model call, posts nothing and exits 0.
+about: marginal/cli/review.py
+source: marginal/cli/review.py:350
+pr: 305
+author: exactml
