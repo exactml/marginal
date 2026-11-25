@@ -2,6 +2,125 @@
 
 <!-- towncrier release notes start -->
 
+## marginal v0.4.0, 2026-11-25
+
+### Breaking Changes
+
+### Security
+
+- The `claude-code` provider (`--provider claude-code`, `/marginal:marginal-pair`)
+  no longer lets the reviewer see your Claude Code auto-memory or real workspace
+  path, and removes your account's email, names and home path from its answers
+  before marginal uses them, so they can't reach a posted comment
+
+  ([PR-285](https://github.com/exactml/marginal/pull/285) by [@exactml](https://github.com/exactml))
+
+### New Features
+
+- With `dependencies.check: true` (off by default), a review checks the packages
+  a PR adds or bumps in `pyproject.toml`, requirements files or `package.json`
+  against PyPI or npm, with no model call.
+  A package that doesn't exist (naming the popular one it may have meant), a
+  recent lookalike of a popular package, a package published days ago, an npm
+  security placeholder, and a `dependencies.internal` name that is also public
+  each get a finding. For a version bump, the review prompt gets the upstream
+  release notes between the two versions and the lines that use the package
+
+  ([ISSUE-156](https://github.com/exactml/marginal/issues/156), [PR-279](https://github.com/exactml/marginal/pull/279) by [@exactml](https://github.com/exactml))
+
+- With `proposals.enabled: true` in `.marginal/config.yaml` (off by default),
+  when a pull request merges, `marginal propose --comment` posts one knowledge
+  proposal on it: the dependencies (with their version range and the reason
+  their line gives), owners and releases its diff shows, plus business rules
+  and decisions taken from maintainer replies to findings and the review itself (up to 5 per review, each with a
+  quote checked against the diff, in the same model call). The claims are
+  candidates for a later team review, not knowledge yet.
+
+  ([ISSUE-256](https://github.com/exactml/marginal/issues/256), [PR-257](https://github.com/exactml/marginal/pull/257) by [@exactml](https://github.com/exactml))
+
+- A review loads the rules and decisions your team accepted from
+  `.marginal/knowledge/`, one YAML file per claim, read from the PR's base
+  commit: the newest 5 repo-wide ones under `repo/`, then the newest under
+  `paths/` about a changed file, a file in its folder, or a folder holding it,
+  15 in all. A change that breaks a rule or reverses a decision gets a finding
+  that names the pull request it came from. Without the folder, a review is
+  unchanged; a bad file is skipped with a warning.
+
+  ([ISSUE-259](https://github.com/exactml/marginal/issues/259), [PR-260](https://github.com/exactml/marginal/pull/260) by [@exactml](https://github.com/exactml))
+
+- With `proposals.enabled` and `permissions.write.push: true`, `marginal propose`
+  adds each merged PR's rules and decisions to `.marginal/knowledge/paths/`, one
+  file per claim, on a `marginal/knowledge` branch with one open PR,
+  *marginal: knowledge to review*. The team keeps, edits, deletes or moves files
+  to `repo/`, and merging accepts what's left. Closing it rejects everything in
+  it. Without `permissions.write.push`, marginal still never pushes.
+
+  ([ISSUE-261](https://github.com/exactml/marginal/issues/261), [PR-262](https://github.com/exactml/marginal/pull/262) by [@exactml](https://github.com/exactml))
+
+- A claim your team deletes from the knowledge PR stays rejected: when the next
+  knowledge PR starts, marginal records it under `.marginal/knowledge/rejected/`
+  and never proposes it again. Closing a knowledge PR without merging rejects
+  everything in it. Delete a record to let its claim come back. Reviews never
+  load `rejected/`.
+
+  ([ISSUE-263](https://github.com/exactml/marginal/issues/263), [PR-265](https://github.com/exactml/marginal/pull/265) by [@exactml](https://github.com/exactml))
+
+- When a merged PR changes or reverses a rule or decision your team accepted,
+  the review names the one it replaces, in the same model call, and the knowledge
+  PR adds the new claim with `supersedes: <id>` and deletes the old claim's file.
+  Merging retires the old claim; restoring its file keeps both.
+
+  ([ISSUE-264](https://github.com/exactml/marginal/issues/264), [PR-266](https://github.com/exactml/marginal/pull/266) by [@exactml](https://github.com/exactml))
+
+- Pin marginal and upgrade on your own schedule: with `marginal-version` set,
+  `marginal-action` also installs the dependency versions that release was
+  tested with, from the `constraints.txt` now attached to every GitHub release.
+  Release notes gain a **Security** section, and `SECURITY.md` says how a pinned
+  team is told about security fixes (a GitHub Security Advisory for each)
+
+  ([ISSUE-270](https://github.com/exactml/marginal/issues/270), [PR-277](https://github.com/exactml/marginal/pull/277) by [@exactml](https://github.com/exactml))
+
+- The workflow `marginal init` writes now also runs when a pull request closes,
+  so with `proposals.enabled: true` a merged PR gets its knowledge proposal
+  from marginal-action. A PR closed without merging is skipped. Existing
+  workflows need `closed` added to their `pull_request` types to opt in
+
+  ([PR-271](https://github.com/exactml/marginal/pull/271) by [@exactml](https://github.com/exactml))
+
+### Improvements
+
+- `docs/compliance.md` maps marginal to SOC 2 and ISO 27001 controls: what data
+  reaches the model provider, what marginal may write, where the evidence of
+  each review lives, what your team stays responsible for, and what marginal
+  does not cover. A mapping to help teams, not a certification
+
+  ([ISSUE-269](https://github.com/exactml/marginal/issues/269), [PR-278](https://github.com/exactml/marginal/pull/278) by [@exactml](https://github.com/exactml))
+
+- Each knowledge file `marginal propose` writes now records `source`: the
+  `path:line` where the pull request states the rule or decision, so whoever
+  reviews the knowledge PR can check it in one click. It's optional, reviews
+  don't read it, and files without it load as before.
+
+- marginal's review summary now opens with `### 👾 marginal review` instead of
+  `### 🤖 marginal review`. A review posted under the old heading still counts as
+  marginal's own, so a pull request open while you upgrade gets no extra summary.
+
+### Fixes
+
+- A finding whose quoted line the model numbered a line or two off is posted on
+  the line the quote is really on, so its inline comment no longer lands next
+  to the code it's about
+
+  ([PR-288](https://github.com/exactml/marginal/pull/288) by [@exactml](https://github.com/exactml))
+
+- After upgrading, a pull request that an earlier marginal already reviewed is
+  still recognized as reviewed: no second summary is posted, and findings a later
+  push fixes are still closed
+
+  ([PR-289](https://github.com/exactml/marginal/pull/289) by [@exactml](https://github.com/exactml))
+
+### Warnings
+
 ## marginal v0.3.1, 2026-11-17
 
 ### Breaking Changes

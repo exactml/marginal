@@ -4,6 +4,7 @@
       "runs": 1,
       "cases": [
         "async-login-leaves-stale-request-user",
+        "build-env-cert-disables-truststore",
         "clean-bytes-password-hashing",
         "clean-close-transport-on-base-exception",
         "clean-default-thread-minimum-size",
@@ -15,44 +16,51 @@
         "deprecated-module-imported-eagerly",
         "disable-prefetch-assumes-virtual-channel-qos",
         "eager-optional-numpy-import-in-approx-eq",
+        "failure-email-ignores-email-backend",
         "fish-completion-splits-on-unquoted-newline",
+        "fused-requirement-names-a-package-that-doesnt-exist",
         "hardcoded-kwarg-collides-with-user-option",
         "hostname-regex-rejects-multi-label-domains",
         "indexable-hands-wrapped-frames-to-estimators",
+        "indirect-parametrize-precedence-removed",
+        "initial-conftests-skip-test-subdirs",
         "limit-read-before-connection-opened",
         "missing-auth-on-camelcase-alias",
         "new-required-kwarg-breaks-direct-responder-use",
         "parser-cancellation-leaves-connection-open",
         "password-hasher-decodes-bytes-as-utf8",
+        "pod-resume-callback-no-longer-called",
         "sync-wrapper-hides-async-view",
         "tar-filter-kwarg-needs-newer-python-patch",
-        "unset-proto-field-treated-as-zero"
+        "unset-proto-field-treated-as-zero",
+        "urllib3-bump-removes-getheaders-elasticsearch-calls",
+        "zulip-apns-token-case-on-cleanup"
       ],
       "overall": {
         "recall": {
-          "median": 0.7272727272727273,
-          "min": 0.7272727272727273,
-          "max": 0.7272727272727273
+          "median": 0.8333333333333334,
+          "min": 0.8333333333333334,
+          "max": 0.8333333333333334
         },
         "recall_before_rules": {
-          "median": 0.7272727272727273,
-          "min": 0.7272727272727273,
-          "max": 0.7272727272727273
+          "median": 0.8333333333333334,
+          "min": 0.8333333333333334,
+          "max": 0.8333333333333334
         },
         "precision": {
-          "median": 1.0,
-          "min": 1.0,
-          "max": 1.0
+          "median": 0.9545454545454546,
+          "min": 0.9545454545454546,
+          "max": 0.9545454545454546
         },
         "accuracy": {
-          "median": 0.875,
-          "min": 0.875,
-          "max": 0.875
+          "median": 0.90625,
+          "min": 0.90625,
+          "max": 0.90625
         },
         "severity_accuracy": {
-          "median": 0.8125,
-          "min": 0.8125,
-          "max": 0.8125
+          "median": 0.96,
+          "min": 0.96,
+          "max": 0.96
         },
         "evidence_accuracy": {
           "median": 1.0,
@@ -60,14 +68,14 @@
           "max": 1.0
         },
         "seconds": {
-          "median": 20.83,
-          "min": 20.83,
-          "max": 20.83
+          "median": 20.625,
+          "min": 20.625,
+          "max": 20.625
         },
         "cost_usd": {
-          "median": 1.1358720000000002,
-          "min": 1.1358720000000002,
-          "max": 1.1358720000000002
+          "median": 2.28396,
+          "min": 2.28396,
+          "max": 2.28396
         },
         "duplicates": {
           "median": 2,
@@ -75,9 +83,34 @@
           "max": 2
         },
         "unlabeled": {
-          "median": 11,
-          "min": 11,
-          "max": 11
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "valid_extra": {
+          "median": 17,
+          "min": 17,
+          "max": 17
+        },
+        "reversal_naming": {
+          "median": 1.0,
+          "min": 1.0,
+          "max": 1.0
+        },
+        "knowledge_recall": {
+          "median": 0.35714285714285715,
+          "min": 0.35714285714285715,
+          "max": 0.35714285714285715
+        },
+        "knowledge_precision": {
+          "median": 0.20833333333333334,
+          "min": 0.20833333333333334,
+          "max": 0.20833333333333334
+        },
+        "invented_knowledge": {
+          "median": 19,
+          "min": 19,
+          "max": 19
         }
       },
       "by_kind": {
@@ -113,14 +146,14 @@
             "max": 1.0
           },
           "seconds": {
-            "median": 26.93,
-            "min": 26.93,
-            "max": 26.93
+            "median": 24.63,
+            "min": 24.63,
+            "max": 24.63
           },
           "cost_usd": {
-            "median": 0.17652,
-            "min": 0.17652,
-            "max": 0.17652
+            "median": 0.18235600000000002,
+            "min": 0.18235600000000002,
+            "max": 0.18235600000000002
           },
           "duplicates": {
             "median": 0,
@@ -128,9 +161,30 @@
             "max": 0
           },
           "unlabeled": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "valid_extra": {
             "median": 3,
             "min": 3,
             "max": 3
+          },
+          "reversal_naming": null,
+          "knowledge_recall": {
+            "median": 0.6666666666666666,
+            "min": 0.6666666666666666,
+            "max": 0.6666666666666666
+          },
+          "knowledge_precision": {
+            "median": 0.5,
+            "min": 0.5,
+            "max": 0.5
+          },
+          "invented_knowledge": {
+            "median": 2,
+            "min": 2,
+            "max": 2
           }
         },
         "clean": {
@@ -145,14 +199,14 @@
           "severity_accuracy": null,
           "evidence_accuracy": null,
           "seconds": {
-            "median": 16.685000000000002,
-            "min": 16.685000000000002,
-            "max": 16.685000000000002
+            "median": 15.950000000000001,
+            "min": 15.950000000000001,
+            "max": 15.950000000000001
           },
           "cost_usd": {
-            "median": 0.12884,
-            "min": 0.12884,
-            "max": 0.12884
+            "median": 0.159636,
+            "min": 0.159636,
+            "max": 0.159636
           },
           "duplicates": {
             "median": 0,
@@ -163,18 +217,35 @@
             "median": 0,
             "min": 0,
             "max": 0
+          },
+          "valid_extra": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "reversal_naming": null,
+          "knowledge_recall": null,
+          "knowledge_precision": {
+            "median": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "invented_knowledge": {
+            "median": 3,
+            "min": 3,
+            "max": 3
           }
         },
         "dependency": {
           "recall": {
-            "median": 1.0,
-            "min": 1.0,
-            "max": 1.0
+            "median": 0.8333333333333334,
+            "min": 0.8333333333333334,
+            "max": 0.8333333333333334
           },
           "recall_before_rules": {
-            "median": 1.0,
-            "min": 1.0,
-            "max": 1.0
+            "median": 0.8333333333333334,
+            "min": 0.8333333333333334,
+            "max": 0.8333333333333334
           },
           "precision": {
             "median": 1.0,
@@ -182,9 +253,9 @@
             "max": 1.0
           },
           "accuracy": {
-            "median": 1.0,
-            "min": 1.0,
-            "max": 1.0
+            "median": 0.8,
+            "min": 0.8,
+            "max": 0.8
           },
           "severity_accuracy": {
             "median": 1.0,
@@ -197,14 +268,14 @@
             "max": 1.0
           },
           "seconds": {
-            "median": 20.06,
-            "min": 20.06,
-            "max": 20.06
+            "median": 17.91,
+            "min": 17.91,
+            "max": 17.91
           },
           "cost_usd": {
-            "median": 0.21749600000000002,
-            "min": 0.21749600000000002,
-            "max": 0.21749600000000002
+            "median": 0.7680199999999999,
+            "min": 0.7680199999999999,
+            "max": 0.7680199999999999
           },
           "duplicates": {
             "median": 0,
@@ -215,33 +286,54 @@
             "median": 0,
             "min": 0,
             "max": 0
+          },
+          "valid_extra": {
+            "median": 7,
+            "min": 7,
+            "max": 7
+          },
+          "reversal_naming": null,
+          "knowledge_recall": {
+            "median": 0.5,
+            "min": 0.5,
+            "max": 0.5
+          },
+          "knowledge_precision": {
+            "median": 0.3333333333333333,
+            "min": 0.3333333333333333,
+            "max": 0.3333333333333333
+          },
+          "invented_knowledge": {
+            "median": 2,
+            "min": 2,
+            "max": 2
           }
         },
         "logic": {
           "recall": {
-            "median": 0.6428571428571429,
-            "min": 0.6428571428571429,
-            "max": 0.6428571428571429
+            "median": 0.7857142857142857,
+            "min": 0.7857142857142857,
+            "max": 0.7857142857142857
           },
           "recall_before_rules": {
-            "median": 0.6428571428571429,
-            "min": 0.6428571428571429,
-            "max": 0.6428571428571429
+            "median": 0.7857142857142857,
+            "min": 0.7857142857142857,
+            "max": 0.7857142857142857
           },
           "precision": {
-            "median": 1.0,
-            "min": 1.0,
-            "max": 1.0
+            "median": 0.9333333333333333,
+            "min": 0.9333333333333333,
+            "max": 0.9333333333333333
           },
           "accuracy": {
-            "median": 0.8181818181818182,
-            "min": 0.8181818181818182,
-            "max": 0.8181818181818182
+            "median": 0.9090909090909091,
+            "min": 0.9090909090909091,
+            "max": 0.9090909090909091
           },
           "severity_accuracy": {
-            "median": 0.7777777777777778,
-            "min": 0.7777777777777778,
-            "max": 0.7777777777777778
+            "median": 0.9090909090909091,
+            "min": 0.9090909090909091,
+            "max": 0.9090909090909091
           },
           "evidence_accuracy": {
             "median": 1.0,
@@ -249,14 +341,14 @@
             "max": 1.0
           },
           "seconds": {
-            "median": 24.74,
-            "min": 24.74,
-            "max": 24.74
+            "median": 24.25,
+            "min": 24.25,
+            "max": 24.25
           },
           "cost_usd": {
-            "median": 0.533084,
-            "min": 0.533084,
-            "max": 0.533084
+            "median": 0.6337240000000001,
+            "min": 0.6337240000000001,
+            "max": 0.6337240000000001
           },
           "duplicates": {
             "median": 1,
@@ -264,9 +356,107 @@
             "max": 1
           },
           "unlabeled": {
-            "median": 8,
-            "min": 8,
-            "max": 8
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "valid_extra": {
+            "median": 3,
+            "min": 3,
+            "max": 3
+          },
+          "reversal_naming": null,
+          "knowledge_recall": {
+            "median": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "knowledge_precision": {
+            "median": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "invented_knowledge": {
+            "median": 7,
+            "min": 7,
+            "max": 7
+          }
+        },
+        "reversal": {
+          "recall": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "recall_before_rules": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "precision": {
+            "median": 0.9090909090909091,
+            "min": 0.9090909090909091,
+            "max": 0.9090909090909091
+          },
+          "accuracy": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "severity_accuracy": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "evidence_accuracy": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "seconds": {
+            "median": 24.955,
+            "min": 24.955,
+            "max": 24.955
+          },
+          "cost_usd": {
+            "median": 0.470652,
+            "min": 0.470652,
+            "max": 0.470652
+          },
+          "duplicates": {
+            "median": 1,
+            "min": 1,
+            "max": 1
+          },
+          "unlabeled": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "valid_extra": {
+            "median": 4,
+            "min": 4,
+            "max": 4
+          },
+          "reversal_naming": {
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
+          },
+          "knowledge_recall": {
+            "median": 0.5,
+            "min": 0.5,
+            "max": 0.5
+          },
+          "knowledge_precision": {
+            "median": 0.3333333333333333,
+            "min": 0.3333333333333333,
+            "max": 0.3333333333333333
+          },
+          "invented_knowledge": {
+            "median": 4,
+            "min": 4,
+            "max": 4
           }
         },
         "security": {
@@ -291,9 +481,9 @@
             "max": 1.0
           },
           "severity_accuracy": {
-            "median": 0.0,
-            "min": 0.0,
-            "max": 0.0
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
           },
           "evidence_accuracy": {
             "median": 1.0,
@@ -301,24 +491,45 @@
             "max": 1.0
           },
           "seconds": {
-            "median": 41.54,
-            "min": 41.54,
-            "max": 41.54
+            "median": 32.52,
+            "min": 32.52,
+            "max": 32.52
           },
           "cost_usd": {
-            "median": 0.079932,
-            "min": 0.079932,
-            "max": 0.079932
+            "median": 0.069572,
+            "min": 0.069572,
+            "max": 0.069572
           },
           "duplicates": {
-            "median": 1,
-            "min": 1,
-            "max": 1
+            "median": 0,
+            "min": 0,
+            "max": 0
           },
           "unlabeled": {
             "median": 0,
             "min": 0,
             "max": 0
+          },
+          "valid_extra": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "reversal_naming": null,
+          "knowledge_recall": {
+            "median": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "knowledge_precision": {
+            "median": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "invented_knowledge": {
+            "median": 1,
+            "min": 1,
+            "max": 1
           }
         }
       },
@@ -329,6 +540,13 @@
           "correct": 1,
           "raised": 1,
           "posted": 2
+        },
+        "build-env-cert-disables-truststore": {
+          "kind": "reversal",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
         },
         "clean-bytes-password-hashing": {
           "kind": "clean",
@@ -384,7 +602,7 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 2
+          "posted": 1
         },
         "deprecated-module-imported-eagerly": {
           "kind": "dependency",
@@ -398,7 +616,7 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 1
+          "posted": 2
         },
         "eager-optional-numpy-import-in-approx-eq": {
           "kind": "dependency",
@@ -407,12 +625,26 @@
           "raised": 1,
           "posted": 1
         },
+        "failure-email-ignores-email-backend": {
+          "kind": "reversal",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 2
+        },
         "fish-completion-splits-on-unquoted-newline": {
           "kind": "logic",
           "runs": 1,
-          "correct": 0,
-          "raised": 0,
-          "posted": 3
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "fused-requirement-names-a-package-that-doesnt-exist": {
+          "kind": "dependency",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
         },
         "hardcoded-kwarg-collides-with-user-option": {
           "kind": "logic",
@@ -433,7 +665,21 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 3
+          "posted": 1
+        },
+        "indirect-parametrize-precedence-removed": {
+          "kind": "reversal",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "initial-conftests-skip-test-subdirs": {
+          "kind": "reversal",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
         },
         "limit-read-before-connection-opened": {
           "kind": "logic",
@@ -454,21 +700,28 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 2
+          "posted": 1
         },
         "parser-cancellation-leaves-connection-open": {
           "kind": "logic",
           "runs": 1,
           "correct": 0,
           "raised": 0,
-          "posted": 1
+          "posted": 0
         },
         "password-hasher-decodes-bytes-as-utf8": {
           "kind": "logic",
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 2
+          "posted": 1
+        },
+        "pod-resume-callback-no-longer-called": {
+          "kind": "reversal",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
         },
         "sync-wrapper-hides-async-view": {
           "kind": "logic",
@@ -489,104 +742,30 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 2
+          "posted": 1
+        },
+        "urllib3-bump-removes-getheaders-elasticsearch-calls": {
+          "kind": "dependency",
+          "runs": 1,
+          "correct": 0,
+          "raised": 0,
+          "posted": 0
+        },
+        "zulip-apns-token-case-on-cleanup": {
+          "kind": "reversal",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
         }
       },
-      "unlabeled": [
-        {
-          "case": "unset-proto-field-treated-as-zero",
-          "run": "1",
-          "file": "mlflow/store/tracking/sqlalchemy_store.py",
-          "line": 1050,
-          "severity": "medium",
-          "message": "When `max_results=0`, the query uses `limit(1)`. If at least one row exists, `len(metrics) == max_results + 1` is true and the store returns an empty page with a next token whose offset equals the current offset. A client that follows tokens until none is left loops forever. Together with the handler defaulting `max_results` to 0, ordinary paging clients could hang."
-        },
-        {
-          "case": "fish-completion-splits-on-unquoted-newline",
-          "run": "1",
-          "file": "src/click/shell_completion.py",
-          "line": 182,
-          "severity": "high",
-          "message": "Fish command substitution splits the output on newlines, so `$response` now holds one line per element instead of one whole completion. The loop handles each line as its own completion, which means `string split \\n` always returns a single element and `$metadata[2]`/`$metadata[3]` are empty. As a result, Fish completion stops working entirely. The loop has to step through `$response` three elements at a time, the way the zsh script does."
-        },
-        {
-          "case": "fish-completion-splits-on-unquoted-newline",
-          "run": "1",
-          "file": "src/click/shell_completion.py",
-          "line": 189,
-          "severity": "medium",
-          "message": "Because the loop sees one line at a time, `$metadata[3]` is always empty here. An unquoted empty list expansion makes `test` receive `!= _` with no left operand, so it fails or prints errors. Even after the loop is fixed, the variables should be quoted."
-        },
-        {
-          "case": "fish-completion-splits-on-unquoted-newline",
-          "run": "1",
-          "file": "tests/test_shell_completion.py",
-          "line": 594,
-          "severity": "low",
-          "message": "The new test only checks the Python output format, so it can't catch the broken Fish script. That is how the per-line split bug got through. A test against the real Fish script, or at least one that checks the script's parsing logic, is needed."
-        },
-        {
-          "case": "indexable-hands-wrapped-frames-to-estimators",
-          "run": "1",
-          "file": "sklearn/utils/validation.py",
-          "line": 2335,
-          "severity": "medium",
-          "message": "Fit params such as a pandas `sample_weight` Series now become narwhals Series before they reach `fit`. Downstream code such as `check_array` only recognises native dataframes through `_nw_is_into_df_or_series`, so a narwhals wrapper may skip the dataframe path. This could cause wrong conversion or dropped feature names."
-        },
-        {
-          "case": "indexable-hands-wrapped-frames-to-estimators",
-          "run": "1",
-          "file": "sklearn/utils/validation.py",
-          "line": 482,
-          "severity": "low",
-          "message": "The `hasattr(iterable, 'iloc')` check was removed. Objects that expose `iloc` but not `__getitem__`, and that narwhals doesn't recognise, are now converted with `np.array`, which loses their type. The MockDataFrame tests that covered this case were deleted rather than adapted."
-        },
-        {
-          "case": "db-pool-closed-after-each-task-in-thread-pools",
-          "run": "1",
-          "file": "celery/fixups/django.py",
-          "line": 204,
-          "severity": "low",
-          "message": "`close_pool()` is in the same `try` block as `conn.close()`. If `close()` raises an interface or DatabaseError that gets swallowed, the pool is never closed, so pooled connections can still be shared with the forked process."
-        },
-        {
-          "case": "parser-cancellation-leaves-connection-open",
-          "run": "1",
-          "file": "aiohttp/worker.py",
-          "line": 125,
-          "severity": "medium",
-          "message": "`_run` used to catch `BaseException`, which included `asyncio.CancelledError`. Now that it only catches `Exception`, cancelling the `_run` task (or a `KeyboardInterrupt`/`SystemExit` raised inside it) skips `await runner.cleanup()`. Sites stay unclosed, connections aren't drained and on_shutdown/on_cleanup hooks don't run during graceful shutdown."
-        },
-        {
-          "case": "new-required-kwarg-breaks-direct-responder-use",
-          "run": "1",
-          "file": "starlette/middleware/gzip.py",
-          "line": 138,
-          "severity": "medium",
-          "message": "`IdentityResponder.apply_compression` changed from a sync method to a coroutine, and `send_with_compression` now awaits it. Existing subclasses that override `apply_compression` with a plain method returning bytes (e.g. Brotli or zstd responders built on `IdentityResponder`) will raise `TypeError: object bytes can't be used in 'await' expression` on every response."
-        },
-        {
-          "case": "password-hasher-decodes-bytes-as-utf8",
-          "run": "1",
-          "file": "django/contrib/auth/hashers.py",
-          "line": 256,
-          "severity": "low",
-          "message": "`_check_encode_args` now runs `force_str` on bytes salts. If a bytes salt isn't valid UTF-8, it raises a decode error instead of the documented `ValueError` about salt validity. The same check runs for MD5, PBKDF2 and scrypt."
-        },
-        {
-          "case": "async-login-leaves-stale-request-user",
-          "run": "1",
-          "file": "django/contrib/auth/__init__.py",
-          "line": 276,
-          "severity": "medium",
-          "message": "`alogout` no longer resets `request.user` to `AnonymousUser`. After logout, `request.user` can still return the logged-out user, so the rest of that request may treat them as authenticated, for example when rendering templates or running permission checks."
-        }
-      ]
+      "unlabeled": []
     },
     "pr-agent/anthropic/claude-opus-5-5": {
       "runs": 1,
       "cases": [
         "async-login-leaves-stale-request-user",
+        "build-env-cert-disables-truststore",
         "clean-bytes-password-hashing",
         "clean-close-transport-on-base-exception",
         "clean-default-thread-minimum-size",
@@ -598,74 +777,94 @@
         "deprecated-module-imported-eagerly",
         "disable-prefetch-assumes-virtual-channel-qos",
         "eager-optional-numpy-import-in-approx-eq",
+        "failure-email-ignores-email-backend",
         "fish-completion-splits-on-unquoted-newline",
+        "fused-requirement-names-a-package-that-doesnt-exist",
         "hardcoded-kwarg-collides-with-user-option",
         "hostname-regex-rejects-multi-label-domains",
         "indexable-hands-wrapped-frames-to-estimators",
+        "indirect-parametrize-precedence-removed",
+        "initial-conftests-skip-test-subdirs",
         "limit-read-before-connection-opened",
         "missing-auth-on-camelcase-alias",
         "new-required-kwarg-breaks-direct-responder-use",
         "parser-cancellation-leaves-connection-open",
         "password-hasher-decodes-bytes-as-utf8",
+        "pod-resume-callback-no-longer-called",
         "sync-wrapper-hides-async-view",
         "tar-filter-kwarg-needs-newer-python-patch",
-        "unset-proto-field-treated-as-zero"
+        "unset-proto-field-treated-as-zero",
+        "urllib3-bump-removes-getheaders-elasticsearch-calls",
+        "zulip-apns-token-case-on-cleanup"
       ],
       "overall": {
         "recall": {
-          "median": 0.7272727272727273,
-          "min": 0.7272727272727273,
-          "max": 0.7272727272727273
-        },
-        "recall_before_rules": {
-          "median": 0.7272727272727273,
-          "min": 0.7272727272727273,
-          "max": 0.7272727272727273
-        },
-        "precision": {
-          "median": 1.0,
-          "min": 1.0,
-          "max": 1.0
-        },
-        "accuracy": {
           "median": 0.8333333333333334,
           "min": 0.8333333333333334,
           "max": 0.8333333333333334
         },
+        "recall_before_rules": {
+          "median": 0.8333333333333334,
+          "min": 0.8333333333333334,
+          "max": 0.8333333333333334
+        },
+        "precision": {
+          "median": 0.925,
+          "min": 0.925,
+          "max": 0.925
+        },
+        "accuracy": {
+          "median": 0.875,
+          "min": 0.875,
+          "max": 0.875
+        },
         "severity_accuracy": null,
         "evidence_accuracy": null,
         "seconds": {
-          "median": 16.03,
-          "min": 16.03,
-          "max": 16.03
+          "median": 18.935000000000002,
+          "min": 18.935000000000002,
+          "max": 18.935000000000002
         },
         "cost_usd": {
-          "median": 1.158448,
-          "min": 1.158448,
-          "max": 1.158448
+          "median": 1.9110040000000004,
+          "min": 1.9110040000000004,
+          "max": 1.9110040000000004
         },
         "duplicates": {
-          "median": 1,
-          "min": 1,
-          "max": 1
+          "median": 4,
+          "min": 4,
+          "max": 4
         },
         "unlabeled": {
-          "median": 10,
-          "min": 10,
-          "max": 10
-        }
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "valid_extra": {
+          "median": 12,
+          "min": 12,
+          "max": 12
+        },
+        "reversal_naming": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "knowledge_recall": null,
+        "knowledge_precision": null,
+        "invented_knowledge": null
       },
       "by_kind": {
         "caller": {
           "recall": {
-            "median": 0.3333333333333333,
-            "min": 0.3333333333333333,
-            "max": 0.3333333333333333
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
           },
           "recall_before_rules": {
-            "median": 0.3333333333333333,
-            "min": 0.3333333333333333,
-            "max": 0.3333333333333333
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
           },
           "precision": {
             "median": 1.0,
@@ -673,21 +872,21 @@
             "max": 1.0
           },
           "accuracy": {
-            "median": 0.3333333333333333,
-            "min": 0.3333333333333333,
-            "max": 0.3333333333333333
+            "median": 1.0,
+            "min": 1.0,
+            "max": 1.0
           },
           "severity_accuracy": null,
           "evidence_accuracy": null,
           "seconds": {
-            "median": 16.91,
-            "min": 16.91,
-            "max": 16.91
+            "median": 19.85,
+            "min": 19.85,
+            "max": 19.85
           },
           "cost_usd": {
-            "median": 0.16036,
-            "min": 0.16036,
-            "max": 0.16036
+            "median": 0.16621999999999998,
+            "min": 0.16621999999999998,
+            "max": 0.16621999999999998
           },
           "duplicates": {
             "median": 0,
@@ -695,10 +894,19 @@
             "max": 0
           },
           "unlabeled": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "valid_extra": {
             "median": 3,
             "min": 3,
             "max": 3
-          }
+          },
+          "reversal_naming": null,
+          "knowledge_recall": null,
+          "knowledge_precision": null,
+          "invented_knowledge": null
         },
         "clean": {
           "recall": null,
@@ -712,14 +920,14 @@
           "severity_accuracy": null,
           "evidence_accuracy": null,
           "seconds": {
-            "median": 9.535,
-            "min": 9.535,
-            "max": 9.535
+            "median": 11.02,
+            "min": 11.02,
+            "max": 11.02
           },
           "cost_usd": {
-            "median": 0.14095999999999997,
-            "min": 0.14095999999999997,
-            "max": 0.14095999999999997
+            "median": 0.1428,
+            "min": 0.1428,
+            "max": 0.1428
           },
           "duplicates": {
             "median": 0,
@@ -730,18 +938,27 @@
             "median": 0,
             "min": 0,
             "max": 0
-          }
+          },
+          "valid_extra": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "reversal_naming": null,
+          "knowledge_recall": null,
+          "knowledge_precision": null,
+          "invented_knowledge": null
         },
         "dependency": {
           "recall": {
-            "median": 1.0,
-            "min": 1.0,
-            "max": 1.0
+            "median": 0.8333333333333334,
+            "min": 0.8333333333333334,
+            "max": 0.8333333333333334
           },
           "recall_before_rules": {
-            "median": 1.0,
-            "min": 1.0,
-            "max": 1.0
+            "median": 0.8333333333333334,
+            "min": 0.8333333333333334,
+            "max": 0.8333333333333334
           },
           "precision": {
             "median": 1.0,
@@ -749,21 +966,21 @@
             "max": 1.0
           },
           "accuracy": {
-            "median": 1.0,
-            "min": 1.0,
-            "max": 1.0
+            "median": 0.8,
+            "min": 0.8,
+            "max": 0.8
           },
           "severity_accuracy": null,
           "evidence_accuracy": null,
           "seconds": {
-            "median": 14.78,
-            "min": 14.78,
-            "max": 14.78
+            "median": 19.11,
+            "min": 19.11,
+            "max": 19.11
           },
           "cost_usd": {
-            "median": 0.255284,
-            "min": 0.255284,
-            "max": 0.255284
+            "median": 0.574648,
+            "min": 0.574648,
+            "max": 0.574648
           },
           "duplicates": {
             "median": 0,
@@ -771,26 +988,35 @@
             "max": 0
           },
           "unlabeled": {
-            "median": 1,
-            "min": 1,
-            "max": 1
-          }
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "valid_extra": {
+            "median": 4,
+            "min": 4,
+            "max": 4
+          },
+          "reversal_naming": null,
+          "knowledge_recall": null,
+          "knowledge_precision": null,
+          "invented_knowledge": null
         },
         "logic": {
           "recall": {
-            "median": 0.7142857142857143,
-            "min": 0.7142857142857143,
-            "max": 0.7142857142857143
+            "median": 0.7857142857142857,
+            "min": 0.7857142857142857,
+            "max": 0.7857142857142857
           },
           "recall_before_rules": {
-            "median": 0.7142857142857143,
-            "min": 0.7142857142857143,
-            "max": 0.7142857142857143
+            "median": 0.7857142857142857,
+            "min": 0.7857142857142857,
+            "max": 0.7857142857142857
           },
           "precision": {
-            "median": 1.0,
-            "min": 1.0,
-            "max": 1.0
+            "median": 0.9333333333333333,
+            "min": 0.9333333333333333,
+            "max": 0.9333333333333333
           },
           "accuracy": {
             "median": 0.8181818181818182,
@@ -800,14 +1026,67 @@
           "severity_accuracy": null,
           "evidence_accuracy": null,
           "seconds": {
-            "median": 17.56,
-            "min": 17.56,
-            "max": 17.56
+            "median": 18.84,
+            "min": 18.84,
+            "max": 18.84
           },
           "cost_usd": {
-            "median": 0.541572,
-            "min": 0.541572,
-            "max": 0.541572
+            "median": 0.5422920000000001,
+            "min": 0.5422920000000001,
+            "max": 0.5422920000000001
+          },
+          "duplicates": {
+            "median": 2,
+            "min": 2,
+            "max": 2
+          },
+          "unlabeled": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "valid_extra": {
+            "median": 3,
+            "min": 3,
+            "max": 3
+          },
+          "reversal_naming": null,
+          "knowledge_recall": null,
+          "knowledge_precision": null,
+          "invented_knowledge": null
+        },
+        "reversal": {
+          "recall": {
+            "median": 0.8333333333333334,
+            "min": 0.8333333333333334,
+            "max": 0.8333333333333334
+          },
+          "recall_before_rules": {
+            "median": 0.8333333333333334,
+            "min": 0.8333333333333334,
+            "max": 0.8333333333333334
+          },
+          "precision": {
+            "median": 0.7777777777777778,
+            "min": 0.7777777777777778,
+            "max": 0.7777777777777778
+          },
+          "accuracy": {
+            "median": 0.8333333333333334,
+            "min": 0.8333333333333334,
+            "max": 0.8333333333333334
+          },
+          "severity_accuracy": null,
+          "evidence_accuracy": null,
+          "seconds": {
+            "median": 24.335,
+            "min": 24.335,
+            "max": 24.335
+          },
+          "cost_usd": {
+            "median": 0.413732,
+            "min": 0.413732,
+            "max": 0.413732
           },
           "duplicates": {
             "median": 1,
@@ -815,10 +1094,23 @@
             "max": 1
           },
           "unlabeled": {
-            "median": 6,
-            "min": 6,
-            "max": 6
-          }
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "valid_extra": {
+            "median": 2,
+            "min": 2,
+            "max": 2
+          },
+          "reversal_naming": {
+            "median": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "knowledge_recall": null,
+          "knowledge_precision": null,
+          "invented_knowledge": null
         },
         "security": {
           "recall": {
@@ -844,25 +1136,34 @@
           "severity_accuracy": null,
           "evidence_accuracy": null,
           "seconds": {
-            "median": 21.88,
-            "min": 21.88,
-            "max": 21.88
+            "median": 27.32,
+            "min": 27.32,
+            "max": 27.32
           },
           "cost_usd": {
-            "median": 0.060272,
-            "min": 0.060272,
-            "max": 0.060272
+            "median": 0.071312,
+            "min": 0.071312,
+            "max": 0.071312
           },
           "duplicates": {
-            "median": 0,
-            "min": 0,
-            "max": 0
+            "median": 1,
+            "min": 1,
+            "max": 1
           },
           "unlabeled": {
             "median": 0,
             "min": 0,
             "max": 0
-          }
+          },
+          "valid_extra": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "reversal_naming": null,
+          "knowledge_recall": null,
+          "knowledge_precision": null,
+          "invented_knowledge": null
         }
       },
       "by_case": {
@@ -872,6 +1173,13 @@
           "correct": 1,
           "raised": 1,
           "posted": 2
+        },
+        "build-env-cert-disables-truststore": {
+          "kind": "reversal",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
         },
         "clean-bytes-password-hashing": {
           "kind": "clean",
@@ -918,8 +1226,8 @@
         "db-default-pk-treated-as-unset-on-save": {
           "kind": "caller",
           "runs": 1,
-          "correct": 0,
-          "raised": 0,
+          "correct": 1,
+          "raised": 1,
           "posted": 1
         },
         "db-pool-closed-after-each-task-in-thread-pools": {
@@ -927,7 +1235,7 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 2
+          "posted": 1
         },
         "deprecated-module-imported-eagerly": {
           "kind": "dependency",
@@ -948,6 +1256,13 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
+          "posted": 1
+        },
+        "failure-email-ignores-email-backend": {
+          "kind": "reversal",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
           "posted": 2
         },
         "fish-completion-splits-on-unquoted-newline": {
@@ -956,6 +1271,13 @@
           "correct": 1,
           "raised": 1,
           "posted": 2
+        },
+        "fused-requirement-names-a-package-that-doesnt-exist": {
+          "kind": "dependency",
+          "runs": 1,
+          "correct": 0,
+          "raised": 0,
+          "posted": 0
         },
         "hardcoded-kwarg-collides-with-user-option": {
           "kind": "logic",
@@ -976,14 +1298,28 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 2
+          "posted": 1
+        },
+        "indirect-parametrize-precedence-removed": {
+          "kind": "reversal",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "initial-conftests-skip-test-subdirs": {
+          "kind": "reversal",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
         },
         "limit-read-before-connection-opened": {
           "kind": "logic",
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 2
+          "posted": 1
         },
         "missing-auth-on-camelcase-alias": {
           "kind": "security",
@@ -995,8 +1331,8 @@
         "new-required-kwarg-breaks-direct-responder-use": {
           "kind": "caller",
           "runs": 1,
-          "correct": 0,
-          "raised": 0,
+          "correct": 1,
+          "raised": 1,
           "posted": 1
         },
         "parser-cancellation-leaves-connection-open": {
@@ -1004,7 +1340,7 @@
           "runs": 1,
           "correct": 0,
           "raised": 0,
-          "posted": 1
+          "posted": 0
         },
         "password-hasher-decodes-bytes-as-utf8": {
           "kind": "logic",
@@ -1012,6 +1348,13 @@
           "correct": 0,
           "raised": 0,
           "posted": 0
+        },
+        "pod-resume-callback-no-longer-called": {
+          "kind": "reversal",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
         },
         "sync-wrapper-hides-async-view": {
           "kind": "logic",
@@ -1032,91 +1375,24 @@
           "runs": 1,
           "correct": 1,
           "raised": 1,
-          "posted": 3
+          "posted": 2
+        },
+        "urllib3-bump-removes-getheaders-elasticsearch-calls": {
+          "kind": "dependency",
+          "runs": 1,
+          "correct": 1,
+          "raised": 1,
+          "posted": 1
+        },
+        "zulip-apns-token-case-on-cleanup": {
+          "kind": "reversal",
+          "runs": 1,
+          "correct": 0,
+          "raised": 0,
+          "posted": 1
         }
       },
-      "unlabeled": [
-        {
-          "case": "unset-proto-field-treated-as-zero",
-          "run": "1",
-          "file": "mlflow/store/tracking/sqlalchemy_store.py",
-          "line": 1043,
-          "severity": null,
-          "message": "Pagination loop: With `max_results=0`, the query uses `limit(1)`. If at least one metric exists, `len(metrics) == max_results + 1` holds. The store then returns an empty list plus a token for `offset + 0`, which is the same offset that was requested. A client that follows `next_page_token` gets the same empty page and the same token forever. The Java `getMetricHistory` `while (!token.isEmpty())` loop is one such client. `max_results` is also not validated, so negative values reach `limit()` as zero or negative numbers. Reject `max_results <= 0` (or treat 0 as \"no limit\"), or skip emitting a token when no rows are returned."
-        },
-        {
-          "case": "unset-proto-field-treated-as-zero",
-          "run": "1",
-          "file": "mlflow/store/tracking/file_store.py",
-          "line": 894,
-          "severity": null,
-          "message": "Same zero-size issue: `SearchUtils.paginate(all_metrics, page_token, 0)` can likewise return an empty page with a non-advancing next token. This depends on `paginate` emitting a token whenever more items remain. Combined with an unset proto `max_results` arriving as `0`, REST clients backed by FileStore could loop forever or receive empty histories. Validate that `max_results` is a positive integer before paginating."
-        },
-        {
-          "case": "fish-completion-splits-on-unquoted-newline",
-          "run": "1",
-          "file": "tests/test_shell_completion.py",
-          "line": 564,
-          "severity": null,
-          "message": "Test Gap: The new and updated tests only check the Python `format_completion` output. They never exercise the Fish script's parsing of that output.\n\nThis is why the newline-delimited format passes CI even though the Fish source script can no longer consume it. A test that runs the generated script, or at least checks that the script parses records in groups of three lines, would catch this."
-        },
-        {
-          "case": "eager-optional-numpy-import-in-approx-eq",
-          "run": "1",
-          "file": "changelog/13047.bugfix.rst",
-          "line": 7,
-          "severity": null,
-          "message": "Doc Example Error: The example runs `from pytest import approx` but then calls `pytest.approx(...)`. Because `pytest` is never imported, copying the snippet raises a `NameError`. Either use `approx(...)` or change the import to `import pytest`."
-        },
-        {
-          "case": "indexable-hands-wrapped-frames-to-estimators",
-          "run": "1",
-          "file": "sklearn/model_selection/tests/test_search.py",
-          "line": 842,
-          "severity": null,
-          "message": "Weakened assertion: The previous tests checked that the estimator receives exactly the input type. The new `check_df`/`check_series` also accept any object whose `to_native()` matches, so the test passes whether the estimator gets the native frame or a narwhals wrapper. This hides the behavior change described above.\n\nThe check also fails badly if data was converted to a numpy array. `isinstance` returns False, then `x.to_native()` raises `AttributeError` instead of giving a clean check failure.\n\nThe same pattern appears in `test_cross_val_and_permutation_test_on_dataframe`."
-        },
-        {
-          "case": "db-pool-closed-after-each-task-in-thread-pools",
-          "run": "1",
-          "file": "t/unit/fixups/test_django.py",
-          "line": 302,
-          "severity": null,
-          "message": "Test relies on Mock: `test_close_database_suppresses_close_pool_keyerror` does not configure `DATABASES` or `conn.alias`. Reaching `close_pool()` then depends on `f._settings.DATABASES.get(...)` returning a truthy `Mock`. If the fixture's settings are a real object, or `pool` lookup returns a falsy value, this test fails for unrelated reasons. If `_settings` is mocked, the test may also hide a regression in the settings check. Setting `DATABASES = {\"default\": {\"OPTIONS\": {\"pool\": True}}}` explicitly would make the test independent of this."
-        },
-        {
-          "case": "parser-cancellation-leaves-connection-open",
-          "run": "1",
-          "file": "aiohttp/worker.py",
-          "line": 125,
-          "severity": null,
-          "message": "Cleanup Skipped: Narrowing `except BaseException` to `except Exception` stops this block from catching `asyncio.CancelledError`, which subclasses `BaseException` on Python 3.8+. If the `_run` task is cancelled while awaiting `_wait_next_notify()` or the startup awaits (for example, during loop shutdown or a forced worker stop), the cancellation now propagates past the `try` block. `await runner.cleanup()` is then skipped. Listening sockets stay open and the app's `on_shutdown`/`on_cleanup` handlers never run. `KeyboardInterrupt`/`SystemExit` raised inside the task also skip cleanup. Consider running `runner.cleanup()` in a `finally` block, or catching `asyncio.CancelledError` explicitly so cleanup still happens before re-raising."
-        },
-        {
-          "case": "new-required-kwarg-breaks-direct-responder-use",
-          "run": "1",
-          "file": "starlette/middleware/gzip.py",
-          "line": 138,
-          "severity": null,
-          "message": "Breaking Override Signature: `apply_compression` changed from a sync method returning `bytes` to an `async` method, and `send_with_compression` now `await`s it. Any existing subclass of `IdentityResponder` or `GZipResponder` that overrides `apply_compression` synchronously will now fail: `await` on a `bytes` value raises `TypeError` on the first compressed response. Example: a custom brotli or zstd responder built on these classes.\n\nThese responders may be considered internal, which would make this acceptable. If they are used as an extension point, keep a sync hook (for example, the new `_compress_body`) as the overridable method, or call out the change in release notes."
-        },
-        {
-          "case": "db-default-pk-treated-as-unset-on-save",
-          "run": "1",
-          "file": "tests/inline_formsets/tests.py",
-          "line": 116,
-          "severity": null,
-          "message": "Ineffective Test: The formset data uses the `child_set-` prefix. The default prefix for `ChildUUIDPk` is `childuuidpk_set`, so the management form data is never found. `is_valid()` therefore returns `False` because the ManagementForm is missing or invalid, not because of the `_is_pk_set`/`DatabaseDefault` handling.\n\nThe test would pass with or without the fix in `base.py`. It also sets `INITIAL_FORMS` to \"1\" without an existing object.\n\nTo exercise the regression, use the correct prefix (or pass `prefix=`) and pass `instance=ParentUUIDPk()`. Then assert the expected outcome of the inline formset with an unsaved parent whose PK is a `DatabaseDefault`."
-        },
-        {
-          "case": "limit-read-before-connection-opened",
-          "run": "1",
-          "file": "tests/backends/sqlite/test_features.py",
-          "line": 22,
-          "severity": null,
-          "message": "Order-dependent test: This test reads `connection.features.max_query_params` and calls `connection.connection.setlimit(...)` without first ensuring a connection is open.\n\nIf it runs first, or after the connection was closed, it errors instead of testing the behavior. Because of this, the test can't catch the missing-connection bug above.\n\nAdding `connection.ensure_connection()` makes it deterministic. A separate test should cover a closed connection."
-        }
-      ]
+      "unlabeled": []
     }
   }
 }
