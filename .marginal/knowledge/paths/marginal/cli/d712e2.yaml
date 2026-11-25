@@ -1,0 +1,7 @@
+repo: marginal
+kind: decision
+statement: Correct, and left as is on purpose.
+about: marginal/cli/review.py
+source: marginal/cli/review.py:316
+pr: 305
+author: exactml

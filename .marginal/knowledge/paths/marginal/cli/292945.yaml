@@ -1,0 +1,9 @@
+repo: marginal
+kind: decision
+statement: Re-checking earlier findings asks the model for low effort, because matching
+  findings to the current code needs little thinking. The main review keeps the model's
+  default effort.
+about: marginal/cli/compact.py
+source: marginal/cli/compact.py:313
+pr: 303
+author: exactml

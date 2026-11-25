@@ -1,0 +1,8 @@
+repo: marginal
+kind: decision
+statement: The skip hash covers the whole config as well as the prompt, because the
+  model and post-processing settings change the result too.
+about: marginal/cli/review.py
+source: marginal/cli/review.py:571
+pr: 305
+author: exactml

@@ -1,0 +1,8 @@
+repo: marginal
+kind: decision
+statement: The review limit counts model calls, including pushes that posted nothing,
+  so the cap limits what was actually spent.
+about: marginal/review/render.py
+source: marginal/review/render.py:50
+pr: 304
+author: exactml

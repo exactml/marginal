@@ -1,0 +1,9 @@
+repo: marginal
+kind: decision
+statement: 'Known and accepted for this change (#292): a run that posts nothing stores
+  no hash, so the next push with that prompt makes one more model call and then the
+  skip resumes once a review posts.'
+about: marginal/cli/review.py
+source: marginal/cli/review.py:676
+pr: 305
+author: exactml
