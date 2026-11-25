@@ -631,12 +631,16 @@ def test_finding_prompt_defines_every_severity():
 
 
 def test_build_finding_prompt_without_policies_is_unchanged():
-    files = [{"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}]
+    files = [
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n import time\n+time.sleep(1)"}
+    ]
 
     prompt = build_finding_prompt(files, [], [], ".")
 
     assert "policies" not in prompt.lower()
-    assert prompt.endswith("--- marginal/retry.py ---\n@@ -1,3 +1,4 @@\n+time.sleep(1)")
+    assert prompt.endswith(
+        "--- marginal/retry.py ---\n@@ -1,3 +1,4 @@\n import time\n+time.sleep(1)"
+    )
 
 
 def test_build_finding_prompt_folds_policy_content_in():
@@ -804,7 +808,7 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(
     client = mock_github_client.return_value
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = [
-        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n import time\n+time.sleep(1)"}
     ]
     provider = mock_provider.return_value
     finding = _evidenced(
@@ -871,7 +875,7 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(
                         2,
                         "high",
                         "This introduces a blocking sleep in an async retry loop.",
-                        "@@ -1,3 +1,4 @@\n+time.sleep(1)",
+                        "@@ -1,3 +1,4 @@\n import time\n+time.sleep(1)",
                     )
                 ),
             }
@@ -957,7 +961,7 @@ def test_review_drops_a_finding_whose_quote_is_not_in_the_code(
     client = mock_github_client.return_value
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = [
-        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n import time\n+time.sleep(1)"}
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
@@ -1017,7 +1021,7 @@ def test_review_with_multiple_findings_posts_all_of_them(
     client = mock_github_client.return_value
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = [
-        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"},
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n import time\n+time.sleep(1)"},
         {"filename": "marginal/backoff.py", "patch": "@@ -1,2 +1,3 @@\n+delay = 1"},
     ]
     provider = mock_provider.return_value
@@ -1259,7 +1263,7 @@ def test_review_folds_a_configured_policy_file_into_the_prompt(
     client = mock_github_client.return_value
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = [
-        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n import time\n+time.sleep(1)"}
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
@@ -1826,7 +1830,7 @@ def test_review_omits_the_redaction_warning_when_nothing_is_redacted(
     client = mock_github_client.return_value
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = [
-        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n import time\n+time.sleep(1)"}
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
@@ -2105,7 +2109,7 @@ def test_review_format_json_includes_surviving_findings(
     client = mock_github_client.return_value
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = [
-        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n import time\n+time.sleep(1)"}
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
@@ -2154,7 +2158,7 @@ def test_review_format_json_lists_a_dropped_finding_with_its_reason(
     client = mock_github_client.return_value
     client.get_pull_request.return_value = _pull_request()
     client.get_pull_request_files.return_value = [
-        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n+time.sleep(1)"}
+        {"filename": "marginal/retry.py", "patch": "@@ -1,3 +1,4 @@\n import time\n+time.sleep(1)"}
     ]
     provider = mock_provider.return_value
     provider.generate_structured = AsyncMock(
