@@ -26,7 +26,10 @@ from marginal.github.errors import (
 from marginal.graph import CallSite, ChangedDefinition, Definition
 from marginal.providers.errors import MissingCredentialsError, ProviderResponseError
 from marginal.review import Checks, Evidence, Finding, Severity
-from marginal.review.dedup import finding_fingerprint, fingerprint_marker
+from marginal.review.dedup import (
+    finding_fingerprint,
+    fingerprint_marker,
+)
 from marginal.review.knowledge import posted_knowledge
 from marginal.review.output import build_json_result
 from marginal.review.prompt import (
@@ -852,6 +855,7 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(
             "- `marginal/retry.py`",
             "",
             "</details>",
+            _posted_prompt_marker(client),
             calls_marker(1),
         ]
     )
@@ -953,7 +957,10 @@ def test_review_with_unanchored_finding_posts_it_in_the_summary_body_not_inline(
         )
     )
     client.create_review.assert_called_once_with(
-        42, out.rstrip("\n") + "\n" + marker + "\n" + calls_marker(1), event="COMMENT", comments=[]
+        42,
+        "\n".join([out.rstrip("\n"), marker, _posted_prompt_marker(client), calls_marker(1)]),
+        event="COMMENT",
+        comments=[],
     )
 
 
@@ -989,7 +996,10 @@ def test_review_drops_a_finding_whose_quote_is_not_in_the_code(
     assert "dropped 1 finding(s): 1 quoted line not found" in captured.err
     # Dropped entirely, same as if no finding had been generated at all.
     client.create_review.assert_called_once_with(
-        42, captured.out.rstrip("\n") + "\n" + calls_marker(1), event="COMMENT", comments=[]
+        42,
+        "\n".join([captured.out.rstrip("\n"), _posted_prompt_marker(client), calls_marker(1)]),
+        event="COMMENT",
+        comments=[],
     )
 
 
@@ -1015,7 +1025,10 @@ def test_review_with_zero_findings_stays_metadata_only(
     out = capsys.readouterr().out
     assert "confidence" not in out
     client.create_review.assert_called_once_with(
-        42, out.rstrip("\n") + "\n" + calls_marker(1), event="COMMENT", comments=[]
+        42,
+        "\n".join([out.rstrip("\n"), _posted_prompt_marker(client), calls_marker(1)]),
+        event="COMMENT",
+        comments=[],
     )
 
 
@@ -1194,6 +1207,8 @@ def test_review_with_comment_skips_a_pr_without_calling_the_model(
     assert reason in capsys.readouterr().err
     mock_provider.assert_not_called()
     client.create_review.assert_not_called()
+    # A skipped PR costs no review-list read, so a failing one can't fail the skip.
+    client.list_reviews.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -1344,7 +1359,7 @@ def test_review_that_posts_nothing_still_counts_toward_the_review_limit(
     mock_provider.return_value.generate_structured.assert_called_once()
     client.create_review.assert_not_called()
     client.update_review.assert_called_once_with(
-        42, 7, f"{REVIEW_HEADING}\n\nfirst\n{calls_marker(2)}"
+        42, 7, f"{REVIEW_HEADING}\n\nfirst\n{calls_marker(2)}\n{_posted_prompt_marker(client)}"
     )
 
 
@@ -1379,7 +1394,7 @@ def test_review_count_goes_into_an_older_summary_when_the_newest_cant_be_edited(
 
     assert exit_code == 0
     assert [c.args[1] for c in client.update_review.call_args_list] == [8, 7]
-    assert client.update_review.call_args.args[2].endswith(calls_marker(2))
+    assert calls_marker(2) in client.update_review.call_args.args[2]
 
 
 def test_review_limit_counts_only_recorded_calls_once_any_summary_has_one(
@@ -3035,6 +3050,8 @@ def _run_review_posting(
 
     `posted` is a list of `create_review` calls from an earlier run; their
     review bodies and inline comment bodies become the PR's existing ones.
+    Their prompt hash is dropped, as if the earlier run's prompt differed:
+    otherwise the same prompt would skip the model call these runs exercise.
     """
     monkeypatch.chdir(tmp_path)
     client = mock_github_client.return_value
@@ -3046,7 +3063,10 @@ def _run_review_posting(
     client.get_pull_request_files.return_value = [
         {"filename": "marginal/retry.py", "patch": _RETRY_PATCH}
     ]
-    client.list_reviews.return_value = [{"body": c.args[1], "user": _BOT} for c in posted]
+    client.list_reviews.return_value = [
+        {"body": re.sub(r"<!-- marginal:prompt:\w+ -->", "", c.args[1]), "user": _BOT}
+        for c in posted
+    ]
     client.list_review_comments.return_value = [
         {"id": i, "body": comment["body"], "path": comment["path"], "line": comment["line"]}
         for i, comment in enumerate(
@@ -3497,7 +3517,9 @@ def test_rerun_json_reports_no_comment_posted_when_everything_was_skipped(
     capsys.readouterr()
 
     client.create_review.reset_mock()
-    client.list_reviews.return_value = [{"body": first_post.args[1], "user": _BOT}]
+    # Without its prompt hash, as if the prompt changed, so the model is called.
+    body = re.sub(r"<!-- marginal:prompt:\w+ -->", "", first_post.args[1])
+    client.list_reviews.return_value = [{"body": body, "user": _BOT}]
     client.list_review_comments.return_value = [
         {"id": i, "body": c["body"], "path": c["path"], "line": c["line"]}
         for i, c in enumerate(first_post.kwargs["comments"], start=1)
@@ -3511,6 +3533,95 @@ def test_rerun_json_reports_no_comment_posted_when_everything_was_skipped(
     assert result["comment_posted"] is False
     # stdout still lists the finding; only the GitHub post is skipped.
     assert len(result["findings"]) == 1
+
+
+_WORKFLOW_BOT = {"login": "github-actions[bot]", "type": "Bot"}
+
+
+def _posted_prompt_marker(client):
+    """The prompt-hash marker marginal wrote, from what it posted or edited."""
+    bodies = [c.args[1] for c in client.create_review.call_args_list]
+    bodies += [c.args[2] for c in client.update_review.call_args_list]
+    return next(m for b in bodies for m in re.findall(r"<!-- marginal:prompt:\w+ -->", b))
+
+
+def _rerun_after_review(
+    tmp_path, monkeypatch, mock_github_client, mock_provider, author, ci, model=None
+):
+    """Post a first review with CI `success`, then re-run with CI `ci` and
+    that review on the PR, posted by `author`, and with the reviewer switched
+    to `model` if given. Returns the re-run's exit code."""
+    _write_reviewer_config(tmp_path)
+    client = mock_github_client.return_value
+    finding = _finding_at(2, "This sleep blocks the async retry loop.")
+    monkeypatch.setattr("marginal.cli.review.read_ci_conclusion", lambda *_: "success")
+    _run_review_posting(tmp_path, monkeypatch, mock_github_client, mock_provider, [finding], [])
+    first_post = client.create_review.call_args
+    assert "<!-- marginal:prompt:" in first_post.args[1]
+
+    client.create_review.reset_mock()
+    mock_provider.return_value.generate_structured.reset_mock()
+    client.list_reviews.return_value = [{"body": first_post.args[1], "user": author}]
+    monkeypatch.setattr("marginal.cli.review.read_ci_conclusion", lambda *_: ci)
+    model_args = ["--model", model] if model else []
+    return main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment", *model_args])
+
+
+def test_rerun_with_the_same_prompt_makes_no_model_call(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    exit_code = _rerun_after_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, _WORKFLOW_BOT, "success"
+    )
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_not_called()
+    mock_github_client.return_value.create_review.assert_not_called()
+    assert "same prompt as the last review, no model call" in capsys.readouterr().err
+
+
+def test_rerun_with_a_new_ci_conclusion_calls_the_model(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    _rerun_after_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, _WORKFLOW_BOT, "failure"
+    )
+
+    mock_provider.return_value.generate_structured.assert_called_once()
+
+
+def test_rerun_with_another_reviewer_model_calls_the_model(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    """The prompt is the same, but a stronger model may find more."""
+    _rerun_after_review(
+        tmp_path,
+        monkeypatch,
+        mock_github_client,
+        mock_provider,
+        _WORKFLOW_BOT,
+        "success",
+        model="claude-sonnet-5-5",
+    )
+
+    mock_provider.return_value.generate_structured.assert_called_once()
+
+
+def test_rerun_ignores_a_prompt_marker_from_an_untrusted_author(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    mock_github_client.return_value.get_permission.return_value = "read"
+
+    _rerun_after_review(
+        tmp_path,
+        monkeypatch,
+        mock_github_client,
+        mock_provider,
+        {"login": "someone", "type": "User"},
+        "success",
+    )
+
+    mock_provider.return_value.generate_structured.assert_called_once()
 
 
 def test_review_fails_cleanly_when_reading_existing_comments_fails(
