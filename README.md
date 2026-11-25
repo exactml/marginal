@@ -300,6 +300,7 @@ review:
   enabled: true
   max_comments: 8
   max_prompt_tokens: 100000  # estimated; over this, the model is never called
+  max_reviews_per_pr: 20     # after this many model reviews of a PR (posted or not): one notice, then no model call
   ignore_paths:    # never sent to the model; no "/" matches the file name anywhere
     - "*.lock"
     - package-lock.json

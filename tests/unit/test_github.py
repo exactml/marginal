@@ -429,6 +429,29 @@ def test_reply_to_review_comment_posts_in_the_thread(monkeypatch):
     assert call.kwargs["json"] == {"body": "done"}
 
 
+def test_update_review_replaces_the_review_body(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    session.request.return_value = _response(200, {"id": 5})
+    client = _client(session=session)
+
+    client.update_review(7, 5, "new body")
+
+    call = session.request.call_args
+    assert call.args == ("PUT", "https://api.github.com/repos/acme/widgets/pulls/7/reviews/5")
+    assert call.kwargs["json"] == {"body": "new body"}
+
+
+def test_update_review_denied_without_write_comments(monkeypatch):
+    monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    session = MagicMock()
+    client = _client(PermissionsConfig(write=PermissionsWrite(comments=False)), session)
+
+    with pytest.raises(PermissionDeniedError):
+        client.update_review(7, 5, "new body")
+    session.request.assert_not_called()
+
+
 def test_reply_to_review_comment_denied_without_write_comments(monkeypatch):
     monkeypatch.setenv(GITHUB_TOKEN_ENV_VAR, "ghp_secret")
     session = MagicMock()

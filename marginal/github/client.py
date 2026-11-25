@@ -263,6 +263,16 @@ class GitHubClient:
         payload = {"body": body, "event": event, "comments": comments or []}
         return self._request("POST", f"/repos/{self._repo}/pulls/{number}/reviews", json=payload)
 
+    def update_review(self, number: int, review_id: int, body: str) -> dict[str, object]:
+        """Replace the body of review `review_id`, one this token's account posted.
+
+        Requires `permissions.write.comments`, like `create_review`.
+        """
+        self._require_write("comments")
+        return self._request(
+            "PUT", f"/repos/{self._repo}/pulls/{number}/reviews/{review_id}", json={"body": body}
+        )
+
     def reply_to_review_comment(self, number: int, comment_id: int, body: str) -> dict[str, object]:
         """Post `body` as a reply in the thread of review comment `comment_id`.
 

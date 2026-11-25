@@ -59,6 +59,9 @@ class ReviewConfig(BaseModel):
     # huge prompt is skipped rather than paid for. Strict so a stray `true` or
     # `"100k"` is a config error instead of being coerced into a number.
     max_prompt_tokens: int = Field(default=100_000, gt=0, strict=True)
+    # Every push to a PR is a paid review, so an agent pushing dozens of times
+    # would otherwise have no ceiling. Past this many, `--comment` stops.
+    max_reviews_per_pr: int = Field(default=20, gt=0, strict=True)
     # Changed files never sent to the model: machine-written, so a finding on
     # them is noise, and often huge, so they'd eat `max_prompt_tokens`. A
     # pattern with no `/` matches the file name in any directory; one with a
