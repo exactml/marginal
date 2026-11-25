@@ -1,0 +1,8 @@
+repo: marginal
+kind: rule
+statement: Once a PR reaches the review limit, later pushes get no model call, and
+  a single notice says the limit was reached and how to raise it.
+about: marginal/review/render.py
+source: marginal/review/render.py:71
+pr: 304
+author: exactml
