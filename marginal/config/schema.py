@@ -71,6 +71,13 @@ class ReviewConfig(BaseModel):
             "go.sum",
             "*.min.js",
             "*.min.css",
+            "*_pb2.py",
+            "*_pb2_grpc.py",
+            "*.pb.go",
+            "*.snap",
+            # `*` crosses `/`, so these catch a snapshot directory at any depth.
+            "__snapshots__/*",
+            "*/__snapshots__/*",
         ]
     )
     tone: ReviewTone = ReviewTone.CONCISE
