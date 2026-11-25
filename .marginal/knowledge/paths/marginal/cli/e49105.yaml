@@ -1,0 +1,8 @@
+repo: marginal
+kind: rule
+statement: Only reviews by marginal's own account or a writer count, so a PR author
+  can't forge a marker to silence marginal or skip a push.
+about: marginal/cli/review.py
+source: marginal/cli/review.py:312
+pr: 305
+author: exactml
