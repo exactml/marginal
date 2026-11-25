@@ -1413,6 +1413,24 @@ def test_review_count_that_cant_be_recorded_does_not_fail_the_review(
     assert "couldn't record the review count" in capsys.readouterr().err
 
 
+def test_review_posts_its_first_review_when_only_a_pasted_heading_is_there(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    """A heading the PR's author pasted isn't marginal's review, so the first
+    real one is posted, and it carries the count."""
+    mock_github_client.return_value.get_permission.return_value = "read"
+    reviews = [{"id": 7, "body": f"{REVIEW_HEADING}\n\nfake", "user": {"login": "octocat"}}]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    client = mock_github_client.return_value
+    client.update_review.assert_not_called()
+    assert client.create_review.call_args.args[1].endswith(calls_marker(1))
+
+
 def test_review_limit_ignores_reviews_an_untrusted_author_posted(
     tmp_path, monkeypatch, mock_github_client, mock_provider
 ):
@@ -3011,7 +3029,7 @@ def _run_review_posting(
     client.get_pull_request_files.return_value = [
         {"filename": "marginal/retry.py", "patch": _RETRY_PATCH}
     ]
-    client.list_reviews.return_value = [{"body": c.args[1]} for c in posted]
+    client.list_reviews.return_value = [{"body": c.args[1], "user": _BOT} for c in posted]
     client.list_review_comments.return_value = [
         {"id": i, "body": comment["body"], "path": comment["path"], "line": comment["line"]}
         for i, comment in enumerate(
@@ -3374,7 +3392,7 @@ def test_rerun_after_a_rename_does_not_post_the_finding_again(
             "patch": _RETRY_PATCH,
         }
     ]
-    client.list_reviews.return_value = [{"body": posted.args[1]}]
+    client.list_reviews.return_value = [{"body": posted.args[1], "user": _BOT}]
     client.list_review_comments.return_value = [
         {"id": 1, "body": c["body"], "path": "marginal/backoff.py", "line": c["line"]}
         for c in posted.kwargs["comments"]
@@ -3462,7 +3480,7 @@ def test_rerun_json_reports_no_comment_posted_when_everything_was_skipped(
     capsys.readouterr()
 
     client.create_review.reset_mock()
-    client.list_reviews.return_value = [{"body": first_post.args[1]}]
+    client.list_reviews.return_value = [{"body": first_post.args[1], "user": _BOT}]
     client.list_review_comments.return_value = [
         {"id": i, "body": c["body"], "path": c["path"], "line": c["line"]}
         for i, c in enumerate(first_post.kwargs["comments"], start=1)
@@ -3800,7 +3818,9 @@ def test_review_over_the_prompt_budget_posts_even_after_an_earlier_review(
     monkeypatch.chdir(tmp_path)
     _write_reviewer_config_with_budget(tmp_path, 1)
     client = mock_github_client.return_value
-    client.list_reviews.return_value = [{"body": f"{REVIEW_HEADING}\n\nearlier review"}]
+    client.list_reviews.return_value = [
+        {"body": f"{REVIEW_HEADING}\n\nearlier review", "user": _BOT}
+    ]
     client.list_review_comments.return_value = []
 
     exit_code = _run_budgeted_review(mock_github_client, mock_provider, "--comment")
@@ -3962,7 +3982,7 @@ def _rereview(
         {"filename": "marginal/retry.py", "patch": _RETRY_PATCH}
     ]
     client.list_reviews.return_value = (
-        [{"body": f"{REVIEW_HEADING}\n\nearlier"}] if earlier_review else []
+        [{"body": f"{REVIEW_HEADING}\n\nearlier", "user": _BOT}] if earlier_review else []
     )
     client.list_review_comments.return_value = [_earlier_finding_comment()]
     client.list_review_threads.return_value = [
@@ -4513,7 +4533,9 @@ def test_a_review_posted_before_the_heading_changed_still_counts_as_marginals(
     client.get_pull_request_files.return_value = [
         {"filename": "marginal/retry.py", "patch": _RETRY_PATCH}
     ]
-    client.list_reviews.return_value = [{"body": "### 🤖 marginal review\n\nearlier review"}]
+    client.list_reviews.return_value = [
+        {"body": "### 🤖 marginal review\n\nearlier review", "user": _BOT}
+    ]
     client.list_review_comments.return_value = []
     mock_provider.return_value.generate_structured = AsyncMock(
         return_value=FindingsResponse(findings=[])

@@ -611,7 +611,8 @@ def _post_review(
             "neighbouring line)",
             file=sys.stderr,
         )
-    already_reviewed = any(is_review_summary(r.get("body")) for r in reviews)
+    # Only trusted summaries: a pasted heading mustn't pass for marginal's first review.
+    already_reviewed = bool(summaries)
     if not (new_findings or not already_reviewed or over_budget):
         print(
             "marginal review: nothing new since marginal's last review on this PR, "
@@ -654,6 +655,8 @@ def _record_calls(
     token can't be. Best-effort: if none can, the limit only counts low."""
     error: GitHubError | None = None
     for review in reversed(summaries):
+        if review.get("id") is None:
+            continue
         try:
             client.update_review(
                 pr_number,
