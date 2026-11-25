@@ -148,7 +148,10 @@ class ClaudeCodeProvider(ModelProvider):
                 self._name, detail or f"exited {process.returncode} without a JSON object"
             )
         if response.get("is_error"):
-            message = str(response.get("result") or response.get("subtype"))
+            # Error text gets the same scrub: it reaches logs and the terminal too.
+            message = str(
+                _without_injected_emails(response.get("result") or response.get("subtype"), prompt)
+            )
             if "log in" in message.lower() or "login" in message.lower():
                 raise MissingCredentialsError(
                     f"the {self._name!r} provider: {message} -- run `claude` and sign in"

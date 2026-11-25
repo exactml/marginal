@@ -199,6 +199,7 @@ def test_the_signed_in_account_and_machine_are_removed_from_the_answer(tmp_path,
         json.dumps({"oauthAccount": {"emailAddress": "jo.doe@corp.example", "fullName": "Jo Doe"}})
     )
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))  # not `/`, as in some containers
     leaked = "Jo Doe at corp.example (jo.doe) works in " + str(Path.home())
     provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, _answer(result=leaked)))
 
@@ -310,3 +311,18 @@ def test_a_multi_word_name_matches_as_written_and_public_domains_stay(tmp_path, 
     answer = asyncio.run(provider.generate("review"))
 
     assert answer == "[REDACTED]: the server will grant access; validate gmail.com addresses."
+
+
+def test_an_error_answer_is_scrubbed_too(tmp_path, monkeypatch):
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / ".claude.json").write_text(
+        json.dumps({"oauthAccount": {"emailAddress": "jo.doe@corp.example"}})
+    )
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    error = _answer(is_error=True, result="quota exceeded for jo.doe@corp.example")
+    provider = ClaudeCodeProvider("opus", executable=_fake_claude(tmp_path, error))
+
+    with pytest.raises(ProviderAPIError) as raised:
+        asyncio.run(provider.generate("review"))
+    assert "jo.doe" not in str(raised.value) and "[REDACTED]" in str(raised.value)
