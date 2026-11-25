@@ -21,7 +21,9 @@ class ProviderAPIError(ProviderError):
     """A provider's own SDK raised an API-level error (bad request, auth,
     rate limit, network failure, etc.) while making a call."""
 
-    def __init__(self, provider: str, message: str) -> None:
+    def __init__(self, provider: str, message: str, status: int | None = None) -> None:
         self.provider = provider
         self.message = message
+        # The HTTP status when the API answered (400 for a rejected request).
+        self.status = status
         super().__init__(f"{provider} API error: {message}")

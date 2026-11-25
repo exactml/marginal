@@ -60,7 +60,7 @@ class ModelProvider(ABC):
         try:
             yield
         except self._api_error as exc:
-            raise ProviderAPIError(self._name, str(exc)) from exc
+            raise ProviderAPIError(self._name, str(exc), getattr(exc, "status_code", None)) from exc
 
     async def _send(self, request: Awaitable[_Response]) -> _Response:
         """Await one SDK call and record the tokens its response used."""

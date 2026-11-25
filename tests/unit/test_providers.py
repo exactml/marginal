@@ -439,6 +439,18 @@ async def test_anthropic_generate_structured_wraps_sdk_api_error():
         await provider.generate_structured("review this", Verdict)
 
 
+async def test_anthropic_api_error_keeps_the_http_status():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    error = _sdk_error(anthropic.BadRequestError, "effort: not supported")
+    error.status_code = 400
+    client.messages.create.side_effect = error
+    provider = _anthropic_provider(client)
+
+    with pytest.raises(ProviderAPIError) as raised:
+        await provider.generate_structured("review this", Verdict)
+    assert raised.value.status == 400
+
+
 async def test_anthropic_stream_wraps_sdk_api_error():
     client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
     client.messages.create.side_effect = _sdk_error(anthropic.APIError, "connection reset")
