@@ -23,7 +23,7 @@ permissions:
     pull_requests: true
   write:
     comments: true
-    labels: false
+    labels: true
     approve: false
     push: false
     merge: false
