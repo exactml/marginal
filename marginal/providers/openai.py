@@ -45,7 +45,7 @@ class OpenAIProvider(ModelProvider):
         return response.choices[0].message.content or ""
 
     async def generate_structured(
-        self, prompt: str, schema: type[BaseModel], **kwargs: object
+        self, prompt: str, schema: type[BaseModel], *, effort: str | None = None, **kwargs: object
     ) -> BaseModel:
         async def attempt() -> BaseModel:
             response = await self._send(

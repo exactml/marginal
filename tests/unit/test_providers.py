@@ -182,6 +182,32 @@ async def test_anthropic_generate_structured_requests_strict_tool_use():
     assert kwargs["tools"][0]["strict"] is True
 
 
+async def test_anthropic_generate_structured_sends_effort_in_output_config():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.return_value = _anthropic_tool_response({"approved": True, "reason": ""})
+
+    await _anthropic_provider(client).generate_structured(
+        "review this", Verdict, effort="low", extra_body={"metadata": {"user_id": "u"}}
+    )
+
+    _, kwargs = client.messages.create.call_args
+    assert kwargs["extra_body"] == {
+        "metadata": {"user_id": "u"},
+        "output_config": {"effort": "low"},
+    }
+
+
+async def test_anthropic_generate_structured_sends_no_effort_unless_asked():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    client.messages.create.return_value = _anthropic_tool_response({"approved": True, "reason": ""})
+
+    await _anthropic_provider(client).generate_structured("review this", Verdict)
+
+    _, kwargs = client.messages.create.call_args
+    assert "extra_body" not in kwargs
+    assert "output_config" not in kwargs
+
+
 class Scored(BaseModel):
     score: float = Field(ge=0.0, le=1.0)
     tags: list[str] = Field(max_length=3)
@@ -413,6 +439,18 @@ async def test_anthropic_generate_structured_wraps_sdk_api_error():
         await provider.generate_structured("review this", Verdict)
 
 
+async def test_anthropic_api_error_keeps_the_http_status():
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
+    error = _sdk_error(anthropic.BadRequestError, "effort: not supported")
+    error.status_code = 400
+    client.messages.create.side_effect = error
+    provider = _anthropic_provider(client)
+
+    with pytest.raises(ProviderAPIError) as raised:
+        await provider.generate_structured("review this", Verdict)
+    assert raised.value.status == 400
+
+
 async def test_anthropic_stream_wraps_sdk_api_error():
     client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock()))
     client.messages.create.side_effect = _sdk_error(anthropic.APIError, "connection reset")
@@ -478,6 +516,19 @@ async def test_openai_generate_structured_parses_json_content():
     result = await provider.generate_structured("review this", Verdict)
 
     assert result == Verdict(approved=False, reason="missing tests")
+
+
+async def test_openai_generate_structured_ignores_effort():
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock())))
+    client.chat.completions.create.return_value = _openai_content_response(
+        '{"approved": true, "reason": "ok"}'
+    )
+
+    await _openai_provider(client).generate_structured("review this", Verdict, effort="low")
+
+    _, kwargs = client.chat.completions.create.call_args
+    assert "effort" not in kwargs
+    assert "extra_body" not in kwargs
 
 
 async def test_openai_generate_structured_wraps_validation_error():
