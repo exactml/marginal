@@ -1,0 +1,8 @@
+repo: marginal
+kind: decision
+statement: Each PR gets at most 20 model reviews by default, because every push is
+  a paid review and an agent pushing many times would otherwise have no ceiling.
+about: marginal/config/schema.py
+source: marginal/config/schema.py:64
+pr: 304
+author: exactml
