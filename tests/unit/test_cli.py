@@ -1222,6 +1222,9 @@ def test_review_with_comment_reviews_a_pr_no_skip_rule_matches(
     client.create_review.assert_called_once()
 
 
+_BOT = {"login": "github-actions[bot]", "type": "Bot"}
+
+
 def _run_capped_review(tmp_path, monkeypatch, mock_github_client, mock_provider, reviews):
     """Run `review --comment` with `review.max_reviews_per_pr: 2` over `reviews`."""
     monkeypatch.chdir(tmp_path)
@@ -1255,7 +1258,10 @@ def test_review_under_the_review_limit_calls_the_model(
 def test_review_at_the_review_limit_posts_one_notice_without_calling_the_model(
     tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
 ):
-    reviews = [{"body": f"{REVIEW_HEADING}\n\nfirst"}, {"body": "### 🤖 marginal review\n"}]
+    reviews = [
+        {"body": f"{REVIEW_HEADING}\n\nfirst", "user": _BOT},
+        {"body": "### 🤖 marginal review\n", "user": _BOT},
+    ]
 
     exit_code = _run_capped_review(
         tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
@@ -1276,9 +1282,9 @@ def test_review_past_the_review_limit_does_not_repeat_the_notice(
     tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
 ):
     reviews = [
-        {"body": f"{REVIEW_HEADING}\n\nfirst"},
-        {"body": f"{REVIEW_HEADING}\n\nsecond"},
-        {"body": review_limit_notice(2)},
+        {"body": f"{REVIEW_HEADING}\n\nfirst", "user": _BOT},
+        {"body": f"{REVIEW_HEADING}\n\nsecond", "user": _BOT},
+        {"body": review_limit_notice(2), "user": _BOT},
     ]
 
     exit_code = _run_capped_review(
@@ -1289,6 +1295,22 @@ def test_review_past_the_review_limit_does_not_repeat_the_notice(
     mock_provider.return_value.generate_structured.assert_not_called()
     mock_github_client.return_value.create_review.assert_not_called()
     assert "no model called" in capsys.readouterr().err
+
+
+def test_review_limit_ignores_reviews_an_untrusted_author_posted(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    """Otherwise the PR's author could silence marginal by pasting its heading."""
+    mock_github_client.return_value.get_permission.return_value = "read"
+    author = {"login": "octocat", "type": "User"}
+    reviews = [{"body": f"{REVIEW_HEADING}\n\nfake", "user": author}] * 2
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_called_once()
 
 
 def test_review_without_comment_still_reviews_a_draft(

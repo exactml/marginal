@@ -10,6 +10,7 @@ from collections import Counter
 from typing import Literal, get_args
 
 from marginal.cli.compact import CompactSkipped, close_resolved_findings, is_closed
+from marginal.cli.propose import trusted_author
 from marginal.config.errors import ConfigError
 from marginal.config.schema import MarginalConfig, ModelSpec, PermissionsConfig, ReviewConfig
 from marginal.context import (
@@ -632,9 +633,12 @@ def _at_review_limit(
     """Whether marginal already reviewed this PR `max_reviews` times.
 
     At the limit, posts the limit notice unless an earlier run already did,
-    and says so on stderr either way. Raises `GitHubError`.
+    and says so on stderr either way. Only reviews by marginal's own account
+    or a writer count, so the PR's author can't silence marginal by posting
+    the heading or the marker. Raises `GitHubError`.
     """
-    count = sum(is_review_summary(r.get("body")) for r in reviews)
+    trusted = trusted_author(client)
+    count = sum(is_review_summary(r.get("body")) and trusted(r) for r in reviews)
     if count < max_reviews:
         return False
     print(
@@ -642,7 +646,7 @@ def _at_review_limit(
         f"{count} time(s), at review.max_reviews_per_pr ({max_reviews})",
         file=sys.stderr,
     )
-    if not any(REVIEW_LIMIT_MARKER in (r.get("body") or "") for r in reviews):
+    if not any(REVIEW_LIMIT_MARKER in (r.get("body") or "") and trusted(r) for r in reviews):
         client.create_review(pr_number, review_limit_notice(max_reviews), event="COMMENT")
     return True
 
