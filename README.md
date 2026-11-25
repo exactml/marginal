@@ -307,6 +307,12 @@ review:
     - go.sum
     - "*.min.js"
     - "*.min.css"
+    - "*_pb2.py"      # generated code: protobuf stubs, test snapshots
+    - "*_pb2_grpc.py"
+    - "*.pb.go"
+    - "*.snap"
+    - "__snapshots__/*"
+    - "*/__snapshots__/*"
   # With --comment, these PRs get no review and no model call
   skip_drafts: true
   skip_bots: true           # dependabot, renovate, any GitHub App author
