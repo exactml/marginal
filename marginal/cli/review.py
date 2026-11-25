@@ -367,7 +367,6 @@ def run_review(
                 filenames,
                 findings,
                 warning_lines,
-                reviews,
                 review_comments,
                 patches,
                 summaries=summaries,
@@ -583,7 +582,6 @@ def _post_review(
     filenames: list[str],
     findings: list[Finding],
     warning_lines: list[str],
-    reviews: list[dict[str, object]],
     review_comments: list[dict[str, object]],
     patches: dict[str, str | None],
     *,
@@ -599,6 +597,9 @@ def _post_review(
     PR, unless the prompt was over budget. Returns whether it posted, and
     whether marginal had reviewed this PR before. Raises `GitHubError`.
     """
+    # Read just before posting: the model call can take a while, and a run
+    # that overlapped this one may have posted since.
+    reviews = client.list_reviews(pr_number)
     posted = posted_fingerprints(
         [review.get("body") for review in reviews] + [c.get("body") for c in review_comments]
     )
