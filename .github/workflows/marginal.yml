@@ -38,8 +38,9 @@ jobs:
     # newer one, so a merged PR could lose its proposal comment.
     permissions:
       pull-requests: write
-      # `write` with permissions.write.push, to add to the rolling knowledge PR.
-      contents: read
+      # permissions.write.push: propose adds each merged PR's rules and decisions
+      # to the rolling knowledge PR's branch, marginal/knowledge.
+      contents: write
     steps:
       - uses: exactml/marginal-action@v1
         with:

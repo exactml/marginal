@@ -11,6 +11,8 @@ context:
 ownership:
   codeowners: true
   notify_responsible: false
+proposals:
+  enabled: true
 models:
   reviewer:
     provider: anthropic
@@ -25,5 +27,5 @@ permissions:
     comments: true
     labels: false
     approve: false
-    push: false
+    push: true
     merge: false
