@@ -104,11 +104,15 @@ def test_the_recheck_asks_for_low_effort(client, provider):
     assert provider.generate_structured.call_args.kwargs["effort"] == "low"
 
 
-def test_a_model_that_rejects_effort_is_rechecked_without_it(client, provider, capsys):
+@pytest.mark.parametrize(
+    "message",
+    ["effort is not supported on this model", "output_config: Extra inputs are not permitted"],
+)
+def test_a_model_that_rejects_effort_is_rechecked_without_it(client, provider, capsys, message):
     client.list_review_comments.return_value = [_finding(1)]
     provider.generate_structured = _answers((1, True, "Still calls time.sleep."))
     provider.generate_structured.side_effect = [
-        ProviderAPIError("anthropic", "effort is not supported on this model"),
+        ProviderAPIError("anthropic", message),
         provider.generate_structured.return_value,
     ]
 
