@@ -97,20 +97,23 @@ Each merged PR proposes what it decided; the team accepts it the way it accepts 
 
 ## Review quality
 
-Every release is scored on a fixed set of real PRs from public repos: PRs that introduced a bug someone later fixed, and clean PRs with nothing to flag. **24 cases from 9 repos** (mlflow, Django, scikit-learn, celery, aiohttp, Starlette, click, pytest, setuptools): 18 bugs and 6 clean PRs, each answer key checked against the upstream fix. [PR-Agent](https://github.com/qodo-ai/pr-agent) runs on the same cases, model and key, for comparison.
+Every release is scored on a fixed set of real changes from public repos (merged PRs, and one pushed merge): changes that introduced a bug someone later fixed, and clean PRs with nothing to flag. **32 cases from 14 repos** (mlflow, Django, scikit-learn, celery, aiohttp, Starlette, click, pytest, setuptools, pip, Airflow, Zulip, hypothesis/bouncer, microsoft/Biodiversity): 26 bugs, 6 of them reversals of an earlier accepted rule or decision, and 6 clean PRs. Each answer key is checked against the upstream fix, and every finding outside a key is checked against the code and labeled as a real extra issue or as noise. [PR-Agent](https://github.com/qodo-ai/pr-agent) runs on the same cases, model and key, for comparison.
 
 | Metric | What it measures | marginal · Claude Opus 5.5 | PR-Agent · Claude Opus 5.5 |
 |---|---|--:|--:|
-| Recall | known bugs the reviewer posted a finding for | 🟡 0.73 | 🟡 0.73 |
-| Recall before rules | known bugs the model raised, posted or not | 🟡 0.73 | 🟡 0.73 |
-| Precision | posted findings that point at a known bug | 🟢 1.00 | 🟢 1.00 |
-| Accuracy per PR | bug PRs with a hit, clean PRs with no findings | 🟢 0.88 | 🟢 0.83 |
-| Severity accuracy | hits rated at or above the expected severity | 🟢 0.81 | ⚪ n/a |
+| Recall | known bugs the reviewer posted a finding for | 🟢 0.83 | 🟢 0.83 |
+| Recall before rules | known bugs the model raised, posted or not | 🟢 0.83 | 🟢 0.83 |
+| Precision | posted findings that are real: a known bug or a verified extra issue | 🟢 0.95 | 🟢 0.93 |
+| Accuracy per PR | bug PRs with a hit, clean PRs with no findings | 🟢 0.91 | 🟢 0.88 |
+| Severity accuracy | hits rated at or above the expected severity | 🟢 0.96 | ⚪ n/a |
 | Evidence accuracy | hits whose verified quotes include the bug's own lines | 🟢 1.00 | ⚪ n/a |
-| Time | median seconds per review | 20.8 | 16.0 |
-| Cost | model cost in USD of reviewing all 24 cases once | $1.14 | $1.16 |
+| Valid extra findings | real issues found outside the known bug, checked against the code | 17 | 12 |
+| Time | median seconds per review | 20.6 | 18.9 |
+| Cost | model cost in USD of reviewing all 32 cases once | $2.28 | $1.91 |
 
-🟢 0.80 or more, 🟡 0.50 or more, 🔴 below 0.50, ⚪ not measured (PR-Agent rates no severity and quotes no evidence). marginal v0.3.0, one run per case ([run 40756859982](https://github.com/exactml/marginal/actions/runs/40756859982), 2026-10-28).
+🟢 0.80 or more, 🟡 0.50 or more, 🔴 below 0.50, ⚪ not measured (PR-Agent rates no severity and quotes no evidence). marginal v0.4.0, one run per case ([run 45413353927](https://github.com/exactml/marginal/actions/runs/45413353927), 2026-11-24), scored with the labeled answer keys of [#287](https://github.com/exactml/marginal/pull/287).
+
+That run used the code before [#286](https://github.com/exactml/marginal/pull/286) and [#288](https://github.com/exactml/marginal/pull/288), which ship in v0.4.0. With them, the one case marginal missed and PR-Agent caught (a `urllib3` bump that broke the pinned `elasticsearch` client) was found in 3 of 3 local runs. The table counts it as missed.
 
 marginal posts every bug its model raises that it can back with a verified quote: Recall equals Recall before rules. Before v0.3.0 it posted only findings whose self-rated confidence cleared a threshold, and its Recall was 0.41 at 0.6 (0.05 at the old 0.85 default) while the model had raised 0.82 of the known bugs ([#200](https://github.com/exactml/marginal/issues/200)).
 
