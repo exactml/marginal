@@ -1,0 +1,8 @@
+repo: marginal
+kind: rule
+statement: Generated code (protobuf stubs, *.snap files and anything under a __snapshots__/
+  directory) is not sent to the model for review by default.
+about: marginal/config/schema.py
+source: changelog.d/293.improvement.md:1
+pr: 302
+author: exactml
