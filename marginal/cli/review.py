@@ -7,10 +7,11 @@ import json
 import os
 import sys
 from collections import Counter
+from collections.abc import Callable
 from typing import Literal, get_args
 
 from marginal.cli.compact import CompactSkipped, close_resolved_findings, is_closed
-from marginal.cli.propose import _trusted_author
+from marginal.cli.propose import trusted_author
 from marginal.config.errors import ConfigError
 from marginal.config.schema import MarginalConfig, ModelSpec, PermissionsConfig, ReviewConfig
 from marginal.context import (
@@ -59,6 +60,8 @@ from marginal.review.render import (
     anchorable,
     budget_warning_lines,
     build_inline_comments,
+    calls_in,
+    calls_marker,
     config_change_lines,
     coverage_warning_lines,
     finding_lines,
@@ -67,9 +70,12 @@ from marginal.review.render import (
     is_ignored,
     is_review_summary,
     redaction_warning_lines,
+    review_limit_marker,
+    review_limit_notice,
     severity_labels,
     stale_severity_labels,
     verdict_line,
+    with_calls_marker,
 )
 from marginal.review.replies import ReplyThread, maintainer_replies
 from marginal.review.schema import FindingsResponse, Knowledge
@@ -218,7 +224,9 @@ def run_review(
 
     With `comment` set, a PR `_skip_reason` names -- `review.enabled` off,
     a draft, a bot author, or a `review.skip_labels` label -- gets no model
-    call and nothing posted: one stderr line says why and it exits 0.
+    call and nothing posted: one stderr line says why and it exits 0. So
+    does a PR marginal already reviewed `review.max_reviews_per_pr` times,
+    except that the first such run posts a notice saying the limit was reached.
 
     With `comment` set, each posted review carries a hidden hash of the whole
     prompt the model was given. A re-run whose prompt hashes the same as the
@@ -284,11 +292,11 @@ def run_review(
             else []
         )
         reviews = client.list_reviews(pr_number) if comment else []
-        # Only a review marginal (or a writer) posted: anyone could forge the
-        # marker to keep a push from being reviewed.
-        trusted = _trusted_author(client)
-        ours = [r.get("body") for r in reviews if is_review_summary(r.get("body")) and trusted(r)]
-        last_hash = last_prompt_hash(ours[-1:])
+        # Only reviews by marginal's own account or a writer count, so the PR's
+        # author can't forge a marker to silence marginal or skip a push.
+        trusted = trusted_author(client)
+        summaries = [r for r in reviews if is_review_summary(r.get("body")) and trusted(r)]
+        last_hash = last_prompt_hash([r.get("body") for r in summaries][-1:])
     except GitHubError as exc:
         print(f"marginal review: {exc}", file=sys.stderr)
         return 1
@@ -298,6 +306,19 @@ def run_review(
     if skip_reason is not None:
         print(f"marginal review: skipped, nothing posted -- {skip_reason}", file=sys.stderr)
         return 0
+    calls = 0
+    if comment:
+        try:
+            # The highest count any summary records; on a PR reviewed only
+            # before the count existed, each summary counts as one.
+            calls = max((calls_in(r.get("body")) for r in summaries), default=0) or len(summaries)
+            if _at_review_limit(
+                client, pr_number, reviews, calls, config.review.max_reviews_per_pr, trusted
+            ):
+                return 0
+        except GitHubError as exc:
+            print(f"marginal review: {exc}", file=sys.stderr)
+            return 1
 
     filenames = [str(file["filename"]) for file in files]
     ignore_paths = config.review.ignore_paths
@@ -362,8 +383,9 @@ def run_review(
                 findings,
                 warning_lines,
                 review_comments,
-                reviews,
                 patches,
+                summaries=summaries,
+                calls=calls + 1 if reviewed else None,
                 reviewed=reviewed,
                 over_budget=over_budget is not None,
                 knowledge=knowledge,
@@ -590,9 +612,10 @@ def _post_review(
     findings: list[Finding],
     warning_lines: list[str],
     review_comments: list[dict[str, object]],
-    reviews: list[dict[str, object]],
     patches: dict[str, str | None],
     *,
+    summaries: list[dict[str, object]],
+    calls: int | None,
     reviewed: bool,
     over_budget: bool,
     knowledge: list[Knowledge] | None = None,
@@ -604,6 +627,9 @@ def _post_review(
     PR, unless the prompt was over budget. Returns whether it posted, and
     whether marginal had reviewed this PR before. Raises `GitHubError`.
     """
+    # Read just before posting: the model call can take a while, and a run
+    # that overlapped this one may have posted since.
+    reviews = client.list_reviews(pr_number)
     posted = posted_fingerprints(
         [review.get("body") for review in reviews] + [c.get("body") for c in review_comments]
     )
@@ -616,13 +642,16 @@ def _post_review(
             "neighbouring line)",
             file=sys.stderr,
         )
-    already_reviewed = any(is_review_summary(r.get("body")) for r in reviews)
+    # Only trusted summaries: a pasted heading mustn't pass for marginal's first review.
+    already_reviewed = bool(summaries)
     if not (new_findings or not already_reviewed or over_budget):
         print(
             "marginal review: nothing new since marginal's last review on this PR, "
             "so nothing was posted",
             file=sys.stderr,
         )
+        if calls:
+            _record_calls(client, pr_number, summaries, calls)
         return False, already_reviewed
     verdict = verdict_line(new_findings, already_posted=len(findings) - len(new_findings))
     body = "\n".join(
@@ -638,6 +667,7 @@ def _post_review(
         + ([knowledge_marker(knowledge)] if knowledge else [])
         # Hidden: the next push compares its prompt with this one.
         + ([prompt_marker(prompt_hash)] if prompt_hash else [])
+        + ([calls_marker(calls)] if calls else [])
     )
     client.create_review(
         pr_number,
@@ -648,6 +678,56 @@ def _post_review(
         ),
     )
     return True, already_reviewed
+
+
+def _record_calls(
+    client: GitHubClient, pr_number: int, summaries: list[dict[str, object]], calls: int
+) -> None:
+    """Write the model-review count into marginal's newest summary this token
+    can edit, for a run that posted nothing; one a writer posted with their own
+    token can't be. Best-effort: if none can, the limit only counts low."""
+    error: GitHubError | None = None
+    for review in reversed(summaries):
+        if review.get("id") is None:
+            continue
+        try:
+            client.update_review(
+                pr_number,
+                int(review["id"]),
+                with_calls_marker(str(review.get("body") or ""), calls),
+            )
+            return
+        except GitHubError as exc:
+            error = exc
+    if error is not None:
+        print(f"marginal review: couldn't record the review count: {error}", file=sys.stderr)
+
+
+def _at_review_limit(
+    client: GitHubClient,
+    pr_number: int,
+    reviews: list[dict[str, object]],
+    calls: int,
+    max_reviews: int,
+    trusted: Callable[[dict[str, object]], bool],
+) -> bool:
+    """Whether the model already reviewed this PR `max_reviews` times
+    (`calls`), counting runs that posted nothing.
+
+    At the limit, posts the limit notice unless an earlier run already did,
+    and says so on stderr either way. Raises `GitHubError`.
+    """
+    if calls < max_reviews:
+        return False
+    print(
+        f"marginal review: skipped, no model called -- marginal already reviewed this PR "
+        f"{calls} time(s), at review.max_reviews_per_pr ({max_reviews})",
+        file=sys.stderr,
+    )
+    marker = review_limit_marker(max_reviews)
+    if not any(marker in (r.get("body") or "") and trusted(r) for r in reviews):
+        client.create_review(pr_number, review_limit_notice(max_reviews), event="COMMENT")
+    return True
 
 
 def _update_labels(

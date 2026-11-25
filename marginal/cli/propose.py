@@ -95,7 +95,7 @@ def run_propose(repo: str, pr_number: int, path: str = ".", *, comment: bool = F
                     if text is not None:
                         contents[name] = text
         claims = extract_claims(repo.split("/")[-1], files, head, base)
-        trusted = _trusted_author(client)
+        trusted = trusted_author(client)
         # A maintainer explaining a marginal finding away is a recorded decision;
         # a reply from someone without write access isn't a maintainer's.
         threads = maintainer_replies(
@@ -285,7 +285,7 @@ def _rejected(client: GitHubClient, previous: dict[str, object], base_sha: str) 
     return {path: text for path, text in texts.items() if text is not None}
 
 
-def _trusted_author(client: GitHubClient) -> Callable[[dict[str, object]], bool]:
+def trusted_author(client: GitHubClient) -> Callable[[dict[str, object]], bool]:
     """Whether a comment or review's author speaks for the repository: the
     account marginal posts as with the workflow's token, or someone with write
     access (marginal run with a personal token posts as that person). Any other

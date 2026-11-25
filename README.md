@@ -300,6 +300,7 @@ review:
   enabled: true
   max_comments: 8
   max_prompt_tokens: 100000  # estimated; over this, the model is never called
+  max_reviews_per_pr: 20     # after this many model reviews of a PR (posted or not): one notice, then no model call
   ignore_paths:    # never sent to the model; no "/" matches the file name anywhere
     - "*.lock"
     - package-lock.json
@@ -307,6 +308,12 @@ review:
     - go.sum
     - "*.min.js"
     - "*.min.css"
+    - "*_pb2.py"      # generated code: protobuf stubs, test snapshots
+    - "*_pb2_grpc.py"
+    - "*.pb.go"
+    - "*.snap"
+    - "__snapshots__/*"
+    - "*/__snapshots__/*"
   # With --comment, these PRs get no review and no model call
   skip_drafts: true
   skip_bots: true           # dependabot, renovate, any GitHub App author

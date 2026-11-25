@@ -13,7 +13,7 @@ from marginal.cli import main
 from marginal.cli.init import WORKFLOW_TEMPLATE
 from marginal.cli.review import run_review
 from marginal.config import MarginalConfig, load_config
-from marginal.config.schema import ModelSpec
+from marginal.config.schema import ModelSpec, ReviewConfig
 from marginal.context import build_graph_context
 from marginal.context import dependencies as deps
 from marginal.github.errors import (
@@ -50,12 +50,15 @@ from marginal.review.render import (
     NO_REVIEWER_NOTICE,
     REVIEW_HEADING,
     build_inline_comments,
+    calls_marker,
     coverage_warning_lines,
     finding_badge,
     header_lines,
     is_ignored,
     missing_patch_filenames,
     redaction_warning_lines,
+    review_limit_marker,
+    review_limit_notice,
     verdict_line,
     why_lines,
 )
@@ -855,6 +858,7 @@ def test_review_with_anchored_finding_posts_it_as_inline_comment(
             "",
             "</details>",
             prompt_marker(prompt_hash(prompt)),
+            calls_marker(1),
         ]
     )
     client.create_review.assert_called_once_with(
@@ -957,7 +961,7 @@ def test_review_with_unanchored_finding_posts_it_in_the_summary_body_not_inline(
     prompt = provider.generate_structured.call_args.args[0]
     client.create_review.assert_called_once_with(
         42,
-        "\n".join([out.rstrip("\n"), marker, prompt_marker(prompt_hash(prompt))]),
+        "\n".join([out.rstrip("\n"), marker, prompt_marker(prompt_hash(prompt)), calls_marker(1)]),
         event="COMMENT",
         comments=[],
     )
@@ -997,7 +1001,7 @@ def test_review_drops_a_finding_whose_quote_is_not_in_the_code(
     prompt = provider.generate_structured.call_args.args[0]
     client.create_review.assert_called_once_with(
         42,
-        captured.out.rstrip("\n") + "\n" + prompt_marker(prompt_hash(prompt)),
+        "\n".join([captured.out.rstrip("\n"), prompt_marker(prompt_hash(prompt)), calls_marker(1)]),
         event="COMMENT",
         comments=[],
     )
@@ -1027,7 +1031,7 @@ def test_review_with_zero_findings_stays_metadata_only(
     prompt = provider.generate_structured.call_args.args[0]
     client.create_review.assert_called_once_with(
         42,
-        out.rstrip("\n") + "\n" + prompt_marker(prompt_hash(prompt)),
+        "\n".join([out.rstrip("\n"), prompt_marker(prompt_hash(prompt)), calls_marker(1)]),
         event="COMMENT",
         comments=[],
     )
@@ -1238,6 +1242,227 @@ def test_review_with_comment_reviews_a_pr_no_skip_rule_matches(
 
     assert exit_code == 0
     client.create_review.assert_called_once()
+
+
+_BOT = {"login": "github-actions[bot]", "type": "Bot"}
+
+
+_WRITER = {"login": "maintainer", "type": "User"}
+
+
+def _run_capped_review(
+    tmp_path, monkeypatch, mock_github_client, mock_provider, reviews, max_reviews=2
+):
+    """Run `review --comment` with `review.max_reviews_per_pr` over `reviews`."""
+    monkeypatch.chdir(tmp_path)
+    _write_reviewer_config(tmp_path)
+    config_path = tmp_path / ".marginal" / "config.yaml"
+    config_path.write_text(
+        config_path.read_text() + f"review:\n  max_reviews_per_pr: {max_reviews}\n"
+    )
+    client = mock_github_client.return_value
+    client.get_pull_request.return_value = _pull_request()
+    client.get_pull_request_files.return_value = [{"filename": "a.py", "patch": "+x"}]
+    client.list_review_comments.return_value = []
+    client.list_reviews.return_value = reviews
+    mock_provider.return_value.generate_structured = AsyncMock(
+        return_value=FindingsResponse(findings=[])
+    )
+    return main(["review", "--repo", "acme/widgets", "--pr", "42", "--comment"])
+
+
+def test_review_under_the_review_limit_calls_the_model(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    reviews = [{"body": f"{REVIEW_HEADING}\n\nearlier"}]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_called_once()
+
+
+def test_review_at_the_review_limit_posts_one_notice_without_calling_the_model(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    reviews = [
+        {"body": f"{REVIEW_HEADING}\n\nfirst", "user": _BOT},
+        {"body": "### 🤖 marginal review\n", "user": _BOT},
+    ]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_not_called()
+    client = mock_github_client.return_value
+    client.create_review.assert_called_once()
+    body = client.create_review.call_args.args[1]
+    assert "Review limit reached" in body
+    assert "review.max_reviews_per_pr" in body
+    assert review_limit_marker(2) in body
+    assert "review.max_reviews_per_pr (2)" in capsys.readouterr().err
+
+
+def test_review_past_the_review_limit_does_not_repeat_the_notice(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    reviews = [
+        {"body": f"{REVIEW_HEADING}\n\nfirst", "user": _BOT},
+        {"body": f"{REVIEW_HEADING}\n\nsecond", "user": _BOT},
+        {"body": review_limit_notice(2), "user": _BOT},
+    ]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_not_called()
+    mock_github_client.return_value.create_review.assert_not_called()
+    assert "no model called" in capsys.readouterr().err
+
+
+def test_review_at_a_raised_review_limit_posts_a_new_notice(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    """The old notice was for the old limit; reaching the raised one needs its own."""
+    reviews = [
+        {"body": f"{REVIEW_HEADING}\n\nfirst", "user": _BOT},
+        {"body": review_limit_notice(1), "user": _BOT},
+        {"body": f"{REVIEW_HEADING}\n\nsecond", "user": _BOT},
+    ]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_not_called()
+    body = mock_github_client.return_value.create_review.call_args.args[1]
+    assert review_limit_marker(2) in body
+
+
+def test_review_that_posts_nothing_still_counts_toward_the_review_limit(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    """A push with nothing new calls the model but posts no review; the count
+    goes into marginal's last review, or an agent's pushes would never hit it."""
+    reviews = [{"id": 7, "body": f"{REVIEW_HEADING}\n\nfirst\n{calls_marker(1)}", "user": _BOT}]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    client = mock_github_client.return_value
+    mock_provider.return_value.generate_structured.assert_called_once()
+    client.create_review.assert_not_called()
+    client.update_review.assert_called_once_with(
+        42, 7, f"{REVIEW_HEADING}\n\nfirst\n{calls_marker(2)}"
+    )
+
+
+def test_review_limit_counts_model_reviews_that_posted_nothing(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    reviews = [{"id": 7, "body": f"{REVIEW_HEADING}\n\nfirst\n{calls_marker(2)}", "user": _BOT}]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_not_called()
+
+
+def test_review_count_goes_into_an_older_summary_when_the_newest_cant_be_edited(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    """The newest summary may be a writer's own-token run, which this token can't edit."""
+    client = mock_github_client.return_value
+    client.get_permission.return_value = "write"
+    client.update_review.side_effect = [GitHubAPIError(403, "forbidden"), {}]
+    reviews = [
+        {"id": 7, "body": f"{REVIEW_HEADING}\n\nfirst\n{calls_marker(1)}", "user": _BOT},
+        {"id": 8, "body": f"{REVIEW_HEADING}\n\nby hand", "user": _WRITER},
+    ]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews, max_reviews=5
+    )
+
+    assert exit_code == 0
+    assert [c.args[1] for c in client.update_review.call_args_list] == [8, 7]
+    assert client.update_review.call_args.args[2].endswith(calls_marker(2))
+
+
+def test_review_limit_counts_only_recorded_calls_once_any_summary_has_one(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    """Over-budget or no-reviewer summaries carry no count, and called no model."""
+    reviews = [
+        {"id": 7, "body": f"{REVIEW_HEADING}\n\nfirst\n{calls_marker(1)}", "user": _BOT},
+        {"id": 8, "body": f"{REVIEW_HEADING}\n\nover budget", "user": _BOT},
+    ]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_called_once()
+
+
+def test_review_count_that_cant_be_recorded_does_not_fail_the_review(
+    tmp_path, capsys, monkeypatch, mock_github_client, mock_provider
+):
+    mock_github_client.return_value.update_review.side_effect = GitHubAPIError(403, "forbidden")
+    reviews = [{"id": 7, "body": f"{REVIEW_HEADING}\n\nfirst", "user": _BOT}]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    assert "couldn't record the review count" in capsys.readouterr().err
+
+
+def test_review_posts_its_first_review_when_only_a_pasted_heading_is_there(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    """A heading the PR's author pasted isn't marginal's review, so the first
+    real one is posted, and it carries the count."""
+    mock_github_client.return_value.get_permission.return_value = "read"
+    reviews = [{"id": 7, "body": f"{REVIEW_HEADING}\n\nfake", "user": {"login": "octocat"}}]
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    client = mock_github_client.return_value
+    client.update_review.assert_not_called()
+    assert client.create_review.call_args.args[1].endswith(calls_marker(1))
+
+
+def test_review_limit_ignores_reviews_an_untrusted_author_posted(
+    tmp_path, monkeypatch, mock_github_client, mock_provider
+):
+    """Otherwise the PR's author could silence marginal by pasting its heading."""
+    mock_github_client.return_value.get_permission.return_value = "read"
+    author = {"login": "octocat", "type": "User"}
+    reviews = [{"body": f"{REVIEW_HEADING}\n\nfake", "user": author}] * 2
+
+    exit_code = _run_capped_review(
+        tmp_path, monkeypatch, mock_github_client, mock_provider, reviews
+    )
+
+    assert exit_code == 0
+    mock_provider.return_value.generate_structured.assert_called_once()
 
 
 def test_review_without_comment_still_reviews_a_draft(
@@ -1963,6 +2188,23 @@ def test_is_ignored_matches_bare_patterns_by_name_and_slashed_ones_by_path(
     filename, patterns, ignored
 ):
     assert is_ignored(filename, patterns) is ignored
+
+
+@pytest.mark.parametrize(
+    ("filename", "ignored"),
+    [
+        ("api/v1/user_pb2.py", True),
+        ("api/v1/user_pb2_grpc.py", True),
+        ("api/v1/user.pb.go", True),
+        ("web/__snapshots__/app.test.js.snap", True),
+        ("tests/__snapshots__/test_api.ambr", True),
+        ("__snapshots__/a.ambr", True),
+        ("api/v1/user.py", False),
+        ("tests/snapshots_test.py", False),
+    ],
+)
+def test_default_ignore_paths_leave_generated_code_out(filename, ignored):
+    assert is_ignored(filename, ReviewConfig().ignore_paths) is ignored
 
 
 def test_review_keeps_ignored_files_from_the_model_and_says_so(
@@ -2811,6 +3053,8 @@ def _run_review_posting(
 
     `posted` is a list of `create_review` calls from an earlier run; their
     review bodies and inline comment bodies become the PR's existing ones.
+    Their prompt hash is dropped, as if the earlier run's prompt differed:
+    otherwise the same prompt would skip the model call these runs exercise.
     """
     monkeypatch.chdir(tmp_path)
     client = mock_github_client.return_value
@@ -2822,7 +3066,10 @@ def _run_review_posting(
     client.get_pull_request_files.return_value = [
         {"filename": "marginal/retry.py", "patch": _RETRY_PATCH}
     ]
-    client.list_reviews.return_value = [{"body": c.args[1]} for c in posted]
+    client.list_reviews.return_value = [
+        {"body": re.sub(r"<!-- marginal:prompt:\w+ -->", "", c.args[1]), "user": _BOT}
+        for c in posted
+    ]
     client.list_review_comments.return_value = [
         {"id": i, "body": comment["body"], "path": comment["path"], "line": comment["line"]}
         for i, comment in enumerate(
@@ -3185,7 +3432,7 @@ def test_rerun_after_a_rename_does_not_post_the_finding_again(
             "patch": _RETRY_PATCH,
         }
     ]
-    client.list_reviews.return_value = [{"body": posted.args[1]}]
+    client.list_reviews.return_value = [{"body": posted.args[1], "user": _BOT}]
     client.list_review_comments.return_value = [
         {"id": 1, "body": c["body"], "path": "marginal/backoff.py", "line": c["line"]}
         for c in posted.kwargs["comments"]
@@ -3273,7 +3520,9 @@ def test_rerun_json_reports_no_comment_posted_when_everything_was_skipped(
     capsys.readouterr()
 
     client.create_review.reset_mock()
-    client.list_reviews.return_value = [{"body": first_post.args[1]}]
+    # Without its prompt hash, as if the prompt changed, so the model is called.
+    body = re.sub(r"<!-- marginal:prompt:\w+ -->", "", first_post.args[1])
+    client.list_reviews.return_value = [{"body": body, "user": _BOT}]
     client.list_review_comments.return_value = [
         {"id": i, "body": c["body"], "path": c["path"], "line": c["line"]}
         for i, c in enumerate(first_post.kwargs["comments"], start=1)
@@ -3672,7 +3921,9 @@ def test_review_over_the_prompt_budget_posts_even_after_an_earlier_review(
     monkeypatch.chdir(tmp_path)
     _write_reviewer_config_with_budget(tmp_path, 1)
     client = mock_github_client.return_value
-    client.list_reviews.return_value = [{"body": f"{REVIEW_HEADING}\n\nearlier review"}]
+    client.list_reviews.return_value = [
+        {"body": f"{REVIEW_HEADING}\n\nearlier review", "user": _BOT}
+    ]
     client.list_review_comments.return_value = []
 
     exit_code = _run_budgeted_review(mock_github_client, mock_provider, "--comment")
@@ -3834,7 +4085,7 @@ def _rereview(
         {"filename": "marginal/retry.py", "patch": _RETRY_PATCH}
     ]
     client.list_reviews.return_value = (
-        [{"body": f"{REVIEW_HEADING}\n\nearlier"}] if earlier_review else []
+        [{"body": f"{REVIEW_HEADING}\n\nearlier", "user": _BOT}] if earlier_review else []
     )
     client.list_review_comments.return_value = [_earlier_finding_comment()]
     client.list_review_threads.return_value = [
@@ -4385,7 +4636,9 @@ def test_a_review_posted_before_the_heading_changed_still_counts_as_marginals(
     client.get_pull_request_files.return_value = [
         {"filename": "marginal/retry.py", "patch": _RETRY_PATCH}
     ]
-    client.list_reviews.return_value = [{"body": "### 🤖 marginal review\n\nearlier review"}]
+    client.list_reviews.return_value = [
+        {"body": "### 🤖 marginal review\n\nearlier review", "user": _BOT}
+    ]
     client.list_review_comments.return_value = []
     mock_provider.return_value.generate_structured = AsyncMock(
         return_value=FindingsResponse(findings=[])

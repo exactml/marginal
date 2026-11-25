@@ -4,6 +4,7 @@ comments, and the warning lines that name what wasn't reviewed."""
 from __future__ import annotations
 
 import fnmatch
+import re
 from collections import Counter
 from collections.abc import Sequence
 
@@ -37,6 +38,42 @@ _EARLIER_HEADINGS = ("### 🤖 marginal review",)
 def is_review_summary(body: str | None) -> bool:
     """Whether `body` is a review summary marginal posted, by any release."""
     return any(heading in (body or "") for heading in (REVIEW_HEADING, *_EARLIER_HEADINGS))
+
+
+def review_limit_marker(max_reviews: int) -> str:
+    """Hidden in the review-limit notice, so later pushes don't post it again.
+    It names the limit, so a raised one gets its own notice when it's reached."""
+    return f"<!-- marginal:review-limit:{max_reviews} -->"
+
+
+# Hidden in marginal's latest review summary: how many times the model reviewed
+# this PR, counting runs that posted nothing, so the limit caps what was spent.
+_CALLS_MARKER = re.compile(r"<!-- marginal:calls:(\d+) -->")
+
+
+def calls_marker(calls: int) -> str:
+    return f"<!-- marginal:calls:{calls} -->"
+
+
+def calls_in(body: str | None) -> int:
+    """The model reviews a review body records, or 0 if it has no marker."""
+    match = _CALLS_MARKER.search(body or "")
+    return int(match.group(1)) if match else 0
+
+
+def with_calls_marker(body: str, calls: int) -> str:
+    """`body` with its model-review count replaced by `calls`."""
+    return f"{_CALLS_MARKER.sub('', body).rstrip()}\n{calls_marker(calls)}"
+
+
+def review_limit_notice(max_reviews: int) -> str:
+    """The one notice posted once a PR has had `max_reviews` reviews."""
+    return (
+        f"⚠️ **Review limit reached**: marginal has reached its limit of {max_reviews} "
+        "reviews on this PR, so later pushes are not reviewed. Raise "
+        "`review.max_reviews_per_pr` in `.marginal/config.yaml` on the base branch to "
+        f"allow more.\n{review_limit_marker(max_reviews)}"
+    )
 
 
 # Shown when no model reviewed the diff; without it, a fresh `marginal init`
