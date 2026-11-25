@@ -229,10 +229,10 @@ def run_review(
     does a PR marginal already reviewed `review.max_reviews_per_pr` times,
     except that the first such run posts a notice saying the limit was reached.
 
-    With `comment` set, each posted review carries a hidden hash of the whole
-    prompt the model was given. A re-run whose prompt hashes the same as the
-    one in marginal's latest review on the PR makes no model call and posts
-    nothing: one stderr line says so and it exits 0.
+    With `comment` set, marginal's reviews carry a hidden hash of the whole
+    prompt the model was given and the config it ran with. A re-run whose hash
+    matches the newest one on the PR makes no model call and posts nothing:
+    one stderr line says so and it exits 0.
 
     Returns 0 on success. An invalid `.marginal/config.yaml` (`ConfigError`),
     a denied permission, missing/invalid token, GitHub API error, or
